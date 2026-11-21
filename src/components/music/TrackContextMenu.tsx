@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Disc3,
   Edit3,
+  ExternalLink,
   FileText,
   FolderKanban,
   GitBranch,
@@ -455,6 +456,20 @@ export function TrackContextMenu({
               <Unlink size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
               <span className="font-medium">Détacher en son séparé</span>
             </button>
+          )}
+
+          {/* Open exact file directly in Google Drive */}
+          {track.googleDriveFileId && (
+            <a
+              href={`https://drive.google.com/file/d/${encodeURIComponent(track.googleDriveFileId)}/view`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={onClose}
+              className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+            >
+              <ExternalLink size={14} className="text-sky-500 shrink-0" />
+              <span className="font-medium truncate">Ouvrir sur Google Drive</span>
+            </a>
           )}
 
           {/* Open Lyrics (LexCore) */}

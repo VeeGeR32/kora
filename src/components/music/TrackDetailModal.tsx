@@ -4,6 +4,7 @@ import {
   Camera,
   ChevronLeft,
   Disc3,
+  ExternalLink,
   FileText,
   FolderKanban,
   GitBranch,
@@ -339,13 +340,34 @@ export function TrackDetailModal({
                     title="Renomme le son sans modifier le nom de ses versions"
                     className="w-full bg-transparent text-lg font-bold tracking-tight text-slate-900 dark:text-zinc-50 outline-none border-b border-transparent focus:border-slate-300 dark:focus:border-zinc-700 pb-0.5 text-center sm:text-left"
                   />
-                  <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 truncate">
-                    Version : <span className="font-mono text-slate-600 dark:text-zinc-300">{activeEntry.versionLabel}</span>
-                    {track.sourceFilename ? ` · ${track.sourceFilename}` : ''}
-                    {track.durationSec ? ` · ${fmt(track.durationSec)}` : ''}
-                    {track.modifiedAt || track.addedAt
-                      ? ` · ${fmtDate(track.modifiedAt || track.addedAt)}`
-                      : ''}
+                  <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 flex flex-wrap items-center justify-center sm:justify-start gap-x-1.5 gap-y-0.5">
+                    <span>
+                      Version :{' '}
+                      <span className="font-mono text-slate-600 dark:text-zinc-300">
+                        {activeEntry.versionLabel}
+                      </span>
+                    </span>
+                    {track.sourceFilename && (
+                      <span className="font-mono text-[11px] text-slate-500 dark:text-zinc-400">
+                        · {track.sourceFilename}
+                      </span>
+                    )}
+                    {track.googleDriveFileId && (
+                      <a
+                        href={`https://drive.google.com/file/d/${encodeURIComponent(
+                          track.googleDriveFileId
+                        )}/view`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-0.5 text-sky-600 dark:text-sky-400 hover:underline font-medium"
+                      >
+                        · Drive <ExternalLink size={10} />
+                      </a>
+                    )}
+                    {track.durationSec ? <span>· {fmt(track.durationSec)}</span> : null}
+                    {track.modifiedAt || track.addedAt ? (
+                      <span>· {fmtDate(track.modifiedAt || track.addedAt)}</span>
+                    ) : null}
                   </p>
                 </div>
 

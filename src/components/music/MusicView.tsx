@@ -5,6 +5,7 @@ import {
   Calendar,
   CalendarPlus,
   CloudDownload,
+  Copy,
   Disc3,
   FileText,
   FolderKanban,
@@ -1137,19 +1138,58 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                 />
               </div>
 
-              {/* Group vs All Versions Toggle */}
-              <button
-                type="button"
-                onClick={() => setGroupVersions((v) => !v)}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition cursor-pointer shrink-0 ${
-                  groupVersions
-                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-slate-900 dark:border-zinc-100'
-                    : 'border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
-                }`}
-              >
-                {groupVersions ? <GitBranch size={13} /> : <Layers size={13} />}
-                {groupVersions ? 'Versions regroupées' : 'Toutes les versions'}
-              </button>
+              {/* Group vs All Versions Toggle + Copy Drive URLs */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setGroupVersions((v) => !v)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition cursor-pointer shrink-0 ${
+                    groupVersions
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-slate-900 dark:border-zinc-100'
+                      : 'border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {groupVersions ? <GitBranch size={13} /> : <Layers size={13} />}
+                  {groupVersions ? 'Versions regroupées' : 'Toutes les versions'}
+                </button>
+                <button
+                  type="button"
+                  title="Copier le nom exact + lien Google Drive de tous les fichiers affichés"
+                  onClick={async () => {
+                    const lines: string[] = [];
+                    const seen = new Set<string>();
+                    for (const g of filteredLibraryGroups) {
+                      const tracksInGroup = [
+                        ...g.versions.map((v) => v.track),
+                        ...(g.prodTracks || []).map((p) => p.track),
+                      ];
+                      for (const t of tracksInGroup) {
+                        if (seen.has(t.id)) continue;
+                        seen.add(t.id);
+                        const exactName = t.sourceFilename || t.title;
+                        const url = t.googleDriveFileId
+                          ? `https://drive.google.com/file/d/${t.googleDriveFileId}/view`
+                          : '(local)';
+                        lines.push(`${exactName} — ${url}`);
+                      }
+                    }
+                    if (lines.length === 0) {
+                      notify('Aucun fichier à copier');
+                      return;
+                    }
+                    try {
+                      await navigator.clipboard.writeText(lines.join('\n'));
+                      notify(`${lines.length} fichiers (noms exacts + URLs Drive) copiés ✓`);
+                    } catch {
+                      window.prompt('Noms exacts & URLs Drive :', lines.join('\n'));
+                    }
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+                >
+                  <Copy size={13} />
+                  <span className="hidden sm:inline">Copier liens Drive</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
