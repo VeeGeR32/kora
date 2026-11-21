@@ -57,12 +57,13 @@ interface AppContextValue {
 
   // Firebase Cloud Sync
   cloudUser: User | null;
+  authReady: boolean;
   cloudConfigured: boolean;
   cloudSyncing: boolean;
   lastCloudSyncAt: number | null;
   connectGoogleCloud: () => Promise<void>;
   connectEmailCloud: (email: string, password: string) => Promise<void>;
-  registerEmailCloud: (email: string, password: string) => Promise<void>;
+  registerEmailCloud: (email: string, password: string, displayName?: string) => Promise<void>;
   forceSaveCloud: () => Promise<void>;
   disconnectGoogleCloud: () => Promise<void>;
   saveAndOptionallySyncMedia: (mediaId: string, blob: Blob, name: string) => Promise<{ mediaId: string; cloudUrl?: string }>;
@@ -243,6 +244,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(loadInitialState);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [cloudUser, setCloudUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<number | null>(null);
 
@@ -273,10 +275,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!cloudConfigured) {
       setCloudUser(null);
+      setAuthReady(true);
       return;
     }
     return listenAuthState(resolvedFbConfig, (user) => {
       setCloudUser(user);
+      setAuthReady(true);
     });
   }, [cloudConfigured, resolvedFbConfig?.apiKey, resolvedFbConfig?.projectId]);
 
@@ -360,13 +364,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const registerEmailCloud = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, displayName?: string) => {
       if (!resolvedFbConfig) {
         notify('Configure d’abord ton projet Firebase');
         return;
       }
       try {
         const user = await signUpWithEmail(resolvedFbConfig, email, password);
+        if (displayName?.trim()) {
+          touch((prev) => ({
+            ...prev,
+            preferences: { ...prev.preferences, name: displayName.trim() },
+          }));
+        }
         notify(`Compte créé (${user.email})`);
       } catch (err) {
         notify(`Erreur inscription : ${(err as Error).message}`);
@@ -1232,6 +1242,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         dismissToast,
         notify,
         cloudUser,
+        authReady,
         cloudConfigured,
         cloudSyncing,
         lastCloudSyncAt,

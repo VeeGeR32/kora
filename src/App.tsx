@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { AIDomain, ActiveTab, CalendarOccurrence } from './types';
-import { AppProvider } from './context/AppContext';
+import { AppProvider, useApp } from './context/AppContext';
 import { AudioPlayerProvider } from './context/AudioPlayerContext';
 import { AIProvider, useAI } from './context/AIContext';
+import { AuthGate } from './components/AuthGate';
+import { KoraLogo } from './components/ui/KoraLogo';
 import { Layout } from './components/Layout';
 import { TodayView } from './components/TodayView';
 import { PlanningView } from './components/PlanningView';
@@ -26,6 +28,7 @@ function tabToDomain(tab: ActiveTab): AIDomain {
 }
 
 function KoraApp() {
+  const { cloudConfigured, cloudUser, authReady } = useApp();
   const { openAI, requestAIConfirmation } = useAI();
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('today');
@@ -77,6 +80,20 @@ function KoraApp() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [openQuickAdd, openAI, activeTab, quickAddOpen, settingsOpen]);
+
+  // Require Login / Sign-up on launch when Firebase DB is pre-loaded
+  if (cloudConfigured && !authReady) {
+    return (
+      <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-3 bg-[var(--bg)]">
+        <KoraLogo size={42} />
+        <span className="text-xs text-slate-400 animate-pulse">Chargement de ton espace Kora…</span>
+      </div>
+    );
+  }
+
+  if (cloudConfigured && !cloudUser) {
+    return <AuthGate />;
+  }
 
   return (
     <Layout

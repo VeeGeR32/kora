@@ -247,39 +247,79 @@ function buildContextSummary(state: AppState): string {
 }
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.0-flash', 'gemini-2.5-flash'];
 
-/** Strips spaces/quotes and extracts a valid 39-char Google AI Studio key if duplicated or wrapped */
+/** Cleans accidental whitespace/quotes while supporting BOTH legacy AIza... and new AQ.... keys */
 export function sanitizeGeminiApiKey(raw: string): string {
-  const cleaned = raw.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
-  if (/^AIza[0-9A-Za-z_-]{35}$/.test(cleaned)) return cleaned;
-  const match = cleaned.match(/AIza[0-9A-Za-z_-]{35}/);
-  return match ? match[0] : cleaned;
+  return raw.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+}
+
+async function generateWithAutoRouting(
+  apiKey: string,
+  params: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>
+) {
+  const cleanKey = sanitizeGeminiApiKey(apiKey);
+  const attempts: { vertexai: boolean; model: string }[] = [];
+
+  if (cleanKey.startsWith('AQ.')) {
+    // New AQ. keys can belong to Vertex Express Mode OR Gemini Developer API
+    for (const model of FALLBACK_MODELS) {
+      attempts.push({ vertexai: false, model });
+      attempts.push({ vertexai: true, model });
+    }
+  } else {
+    for (const model of FALLBACK_MODELS) {
+      attempts.push({ vertexai: false, model });
+    }
+  }
+
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    try {
+      const ai = attempt.vertexai
+        ? new GoogleGenAI({ vertexai: true, apiKey: cleanKey })
+        : new GoogleGenAI({ apiKey: cleanKey });
+      const res = await ai.models.generateContent({
+        model: attempt.model,
+        ...params,
+      });
+      return { res, model: attempt.model, vertexai: attempt.vertexai };
+    } catch (err) {
+      lastError = err;
+      const msg = String((err as Error)?.message || err);
+      const isRetryable =
+        msg.includes('API_KEY_INVALID') ||
+        msg.includes('NOT_FOUND') ||
+        msg.includes('404') ||
+        msg.includes('UNAUTHENTICATED') ||
+        msg.includes('not available');
+      if (!isRetryable) throw err;
+    }
+  }
+  throw lastError || new Error('Impossible de joindre Gemini');
 }
 
 export async function testGeminiApiKey(apiKey: string): Promise<{ ok: boolean; message: string }> {
-  const rawClean = apiKey.trim();
-  if (!rawClean) return { ok: false, message: 'Clé API vide' };
-  const clean = sanitizeGeminiApiKey(rawClean);
-  if (!clean.startsWith('AIza') || clean.length !== 39) {
-    return {
-      ok: false,
-      message: `Format suspect (${rawClean.length} car.) : une clé Google AI Studio commence par "AIza" et fait 39 caractères. Vérifie que tu ne l'as pas collée deux fois.`,
-    };
-  }
+  const clean = sanitizeGeminiApiKey(apiKey);
+  if (!clean) return { ok: false, message: 'Clé API vide' };
   try {
-    const ai = new GoogleGenAI({ apiKey: clean });
-    const res = await ai.models.generateContent({
-      model: DEFAULT_GEMINI_MODEL,
+    const { res, model, vertexai } = await generateWithAutoRouting(clean, {
       contents: 'Réponds simplement OK.',
     });
-    if (res.text) return { ok: true, message: `Clé Gemini valide ✓ (${DEFAULT_GEMINI_MODEL})` };
+    if (res.text) {
+      return {
+        ok: true,
+        message: `Clé Gemini valide ✓ (${model}${vertexai ? ' · Express' : ''})`,
+      };
+    }
     return { ok: false, message: 'Réponse vide de Gemini' };
   } catch (err) {
     const rawMsg = (err as Error).message || 'Erreur Gemini';
     if (rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')) {
       return {
         ok: false,
-        message: 'Clé rejetée par Google (API_KEY_INVALID). Vérifie la clé copiée dans aistudio.google.com/apikey.',
+        message:
+          'Clé rejetée par Google (API_KEY_INVALID). Vérifie que la clé copiée est bien active dans Google AI Studio.',
       };
     }
     return { ok: false, message: rawMsg };
@@ -303,7 +343,6 @@ export async function runKoraAssistant(
     return buildLocalSmartFallback(prompt, state, options.domain);
   }
 
-  const ai = new GoogleGenAI({ apiKey: resolvedKey });
   const systemInstruction = `Tu es Kora AI, l'assistant personnel intégré dans Kora.
 ${DOMAIN_ROLE_HINTS[options.domain]}
 Réponds en français, en Markdown propre et concis (listes, gras, titres courts).
@@ -320,8 +359,7 @@ ${buildContextSummary(state)}`;
     { role: 'user', parts: [{ text: prompt }] },
   ];
 
-  const response = await ai.models.generateContent({
-    model: DEFAULT_GEMINI_MODEL,
+  const { res: response } = await generateWithAutoRouting(resolvedKey, {
     contents,
     config: {
       systemInstruction,

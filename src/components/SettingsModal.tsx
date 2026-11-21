@@ -575,7 +575,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                           setGeminiApiKey(e.target.value);
                           setGeminiStatus(null);
                         }}
-                        placeholder="AIzaSy... (39 caractères · aistudio.google.com/apikey)"
+                        placeholder="AQ.... ou AIza... (aistudio.google.com/apikey)"
                         className={`${inputCls} font-mono flex-1 min-w-0`}
                       />
                       <button
@@ -603,7 +603,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
                     {geminiApiKey.trim() && (
                       <p className="text-[10px] font-mono text-slate-400">
-                        Longueur : {geminiApiKey.trim().length} car. (attendu : 39, commence par AIza)
+                        Format détecté :{' '}
+                        {geminiApiKey.trim().startsWith('AQ.')
+                          ? 'Clé Express / AI Studio (AQ.)'
+                          : geminiApiKey.trim().startsWith('AIza')
+                          ? 'Clé AI Studio (AIza)'
+                          : `${geminiApiKey.trim().length} caractères`}
                       </p>
                     )}
 
