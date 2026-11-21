@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Check,
   ChevronRight,
@@ -74,13 +74,21 @@ export function TrackContextMenu({
   } = useApp();
   const player = useAudioPlayer();
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const [openSection, setOpenSection] = useState<'versions' | 'projects' | 'rename' | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [isMobileViewport, setIsMobileViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 640 : false
+  );
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 12, top: 12 });
 
   useEffect(() => {
     setOpenSection(menu?.initialSection ?? null);
     setRenameDraft(menu?.group.baseTitle || '');
+    if (typeof window !== 'undefined') {
+      setIsMobileViewport(window.innerWidth < 640);
+    }
   }, [menu]);
 
   useEffect(() => {
@@ -88,20 +96,29 @@ export function TrackContextMenu({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    const onResize = () => setIsMobileViewport(window.innerWidth < 640);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
   }, [menu, onClose]);
 
-  const position = useMemo(() => {
-    if (!menu) return { left: 0, top: 0 };
-    const menuW = 256;
-    const menuH = 380;
-    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
-    const left = Math.max(12, Math.min(menu.x, vw - menuW - 12));
-    const top = Math.max(12, Math.min(menu.y, vh - menuH - 12));
-    return { left, top };
-  }, [menu]);
+  // Dynamically measure actual rendered menu size and clamp strictly inside viewport (even when submenus expand!)
+  useLayoutEffect(() => {
+    if (!menu || isMobileViewport) return;
+    const el = menuRef.current;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const pad = 12;
+    const rect = el?.getBoundingClientRect();
+    const w = rect?.width || 256;
+    const h = rect?.height || 420;
+    const left = Math.max(pad, Math.min(menu.x, vw - w - pad));
+    const top = Math.max(pad, Math.min(menu.y, vh - h - pad));
+    setPos({ left, top });
+  }, [menu, openSection, isMobileViewport]);
 
   if (!menu) return null;
 
@@ -150,7 +167,9 @@ export function TrackContextMenu({
 
   return (
     <div
-      className="fixed inset-0 z-[70]"
+      className={`fixed inset-0 z-[70] ${
+        isMobileViewport ? 'bg-slate-950/45 dark:bg-black/65 backdrop-blur-[2px]' : ''
+      }`}
       onClick={onClose}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -158,9 +177,14 @@ export function TrackContextMenu({
       }}
     >
       <div
+        ref={menuRef}
         onClick={(e) => e.stopPropagation()}
-        style={{ left: position.left, top: position.top }}
-        className="fixed w-64 rounded-2xl bg-white/98 dark:bg-[#16161a]/98 backdrop-blur-xl border border-slate-200/90 dark:border-zinc-800 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.35)] dark:shadow-[0_24px_70px_-10px_rgba(0,0,0,0.85)] py-1.5 text-xs overflow-hidden"
+        style={isMobileViewport ? undefined : { left: pos.left, top: pos.top }}
+        className={
+          isMobileViewport
+            ? 'fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] max-h-[80dvh] overflow-y-auto rounded-3xl bg-white/98 dark:bg-[#16161a]/98 backdrop-blur-xl border border-slate-200/90 dark:border-zinc-800 shadow-2xl py-2 text-xs'
+            : 'fixed w-64 max-w-[calc(100vw-24px)] max-h-[calc(100dvh-24px)] overflow-y-auto rounded-2xl bg-white/98 dark:bg-[#16161a]/98 backdrop-blur-xl border border-slate-200/90 dark:border-zinc-800 shadow-[0_20px_60px_-12px_rgba(0,0,0,0.35)] dark:shadow-[0_24px_70px_-10px_rgba(0,0,0,0.85)] py-1.5 text-xs'
+        }
       >
         {/* Header Summary */}
         <div className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 flex items-center gap-2">

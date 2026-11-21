@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Music2,
   Pause,
+  Pencil,
   Play,
   Plus,
   SlidersHorizontal,
@@ -24,6 +25,7 @@ import { CheckCircle } from '../ui/CheckCircle';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import { getProjectTrackIndividualCovers } from '../../lib/trackCover';
+import { groupMusicTracks } from '../../lib/musicVersioning';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 
 interface ProjectAlbumModalProps {
@@ -77,6 +79,7 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
     deleteMusicProjectStep,
     deleteMusicProject,
     updateMusicTrack,
+    renameTrackGroup,
     notify,
   } = useApp();
   const player = useAudioPlayer();
@@ -87,6 +90,8 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [showEditMeta, setShowEditMeta] = useState(false);
   const [openTrackMenuId, setOpenTrackMenuId] = useState<string | null>(null);
+  const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [sharing, setSharing] = useState(false);
 
   const project: MusicProject | null = useMemo(
@@ -569,30 +574,91 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                       </div>
 
                       {menuOpen && (
-                        <div className="mt-2 ml-9 flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => handleMoveTrack(idx, -1)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 disabled:opacity-30 cursor-pointer"
-                          >
-                            <ChevronUp size={12} /> Monter
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx === projectTracks.length - 1}
-                            onClick={() => handleMoveTrack(idx, 1)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 disabled:opacity-30 cursor-pointer"
-                          >
-                            <ChevronDown size={12} /> Descendre
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveTrackFromProject(trk.id)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 cursor-pointer"
-                          >
-                            <X size={12} /> Retirer
-                          </button>
+                        <div className="mt-2 ml-9 space-y-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (renamingTrackId === trk.id) {
+                                  setRenamingTrackId(null);
+                                } else {
+                                  setRenamingTrackId(trk.id);
+                                  setRenameDraft(trk.manualGroupTitle || trk.title);
+                                }
+                              }}
+                              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer transition ${
+                                renamingTrackId === trk.id
+                                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                                  : 'bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-300'
+                              }`}
+                            >
+                              <Pencil size={11} /> Renommer
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => handleMoveTrack(idx, -1)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 disabled:opacity-30 cursor-pointer"
+                            >
+                              <ChevronUp size={12} /> Monter
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === projectTracks.length - 1}
+                              onClick={() => handleMoveTrack(idx, 1)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 disabled:opacity-30 cursor-pointer"
+                            >
+                              <ChevronDown size={12} /> Descendre
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTrackFromProject(trk.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 cursor-pointer"
+                            >
+                              <X size={12} /> Retirer
+                            </button>
+                          </div>
+
+                          {renamingTrackId === trk.id && (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const clean = renameDraft.trim();
+                                if (!clean) return;
+                                const allGroups = groupMusicTracks(state.musicTracks);
+                                const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+                                const ids =
+                                  grp && grp.allTrackIds.length > 0 ? grp.allTrackIds : [trk.id];
+                                renameTrackGroup(ids, clean);
+                                notify(`Morceau renommé en « ${clean} » ✓`);
+                                setRenamingTrackId(null);
+                                setOpenTrackMenuId(null);
+                              }}
+                              className="flex items-center gap-1.5 max-w-sm"
+                            >
+                              <input
+                                autoFocus
+                                type="text"
+                                value={renameDraft}
+                                onChange={(e) => setRenameDraft(e.target.value)}
+                                placeholder="Nouveau nom du morceau…"
+                                className="flex-1 min-w-0 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-xs text-slate-900 dark:text-zinc-100 outline-none focus:border-slate-400"
+                              />
+                              <button
+                                type="submit"
+                                className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-xs font-semibold cursor-pointer shrink-0"
+                              >
+                                OK
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRenamingTrackId(null)}
+                                className="rounded-lg px-2 py-1.5 text-xs text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer shrink-0"
+                              >
+                                <X size={13} />
+                              </button>
+                            </form>
+                          )}
                         </div>
                       )}
                     </div>
