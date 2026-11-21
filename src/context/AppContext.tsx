@@ -68,7 +68,7 @@ interface AppContextValue {
   cloudSyncing: boolean;
   cloudError: string | null;
   lastCloudSyncAt: number | null;
-  connectGoogleCloud: (options?: { forceRedirect?: boolean }) => Promise<void>;
+  connectGoogleCloud: () => Promise<void>;
   connectEmailCloud: (email: string, password: string) => Promise<void>;
   registerEmailCloud: (email: string, password: string, displayName?: string) => Promise<void>;
   forceSaveCloud: (overridePreferences?: Partial<UserPreferences>) => Promise<void>;
@@ -188,10 +188,10 @@ function formatAuthError(err: unknown): string {
   const e = err as { code?: string; message?: string } | null;
   const code = e?.code || '';
   if (code === 'auth/popup-closed-by-user') {
-    return 'Fenêtre Google fermée avant la fin. Essaie la connexion par redirection ci-dessous.';
+    return 'Fenêtre Google fermée avant la fin. Réessaie en cliquant sur Continuer avec Google.';
   }
   if (code === 'auth/popup-blocked') {
-    return 'Popup bloquée par le navigateur. Utilise la connexion par redirection ci-dessous.';
+    return 'Fenêtre Google bloquée par ton navigateur : autorise les popups pour ce site (ou connecte-toi par email).';
   }
   if (code === 'auth/unauthorized-domain') {
     return `Domaine non autorisé (${window.location.hostname}) dans Firebase Auth → Domaines autorisés.`;
@@ -459,29 +459,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const connectGoogleCloud = useCallback(
-    async (options?: { forceRedirect?: boolean }) => {
-      setAuthError(null);
-      if (!resolvedFbConfig) {
-        const msg = 'Configuration Cloud manquante';
-        setAuthError(msg);
-        notify(msg);
-        return;
+  const connectGoogleCloud = useCallback(async () => {
+    setAuthError(null);
+    if (!resolvedFbConfig) {
+      const msg = 'Configuration Cloud manquante';
+      setAuthError(msg);
+      notify(msg);
+      return;
+    }
+    try {
+      const user = await signInWithGoogle(resolvedFbConfig);
+      if (user) {
+        setAuthError(null);
+        notify(`Connecté en tant que ${user.displayName || user.email}`);
       }
-      try {
-        const user = await signInWithGoogle(resolvedFbConfig, options);
-        if (user) {
-          setAuthError(null);
-          notify(`Connecté en tant que ${user.displayName || user.email}`);
-        }
-      } catch (err) {
-        const msg = formatAuthError(err);
-        setAuthError(msg);
-        notify(msg);
-      }
-    },
-    [resolvedFbConfig, notify]
-  );
+    } catch (err) {
+      const msg = formatAuthError(err);
+      setAuthError(msg);
+      notify(msg);
+    }
+  }, [resolvedFbConfig, notify]);
 
   const connectEmailCloud = useCallback(
     async (email: string, password: string) => {

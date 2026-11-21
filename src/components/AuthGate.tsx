@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { AlertCircle, ArrowUpRight, Loader2, Lock, Mail, User } from 'lucide-react';
+import { AlertCircle, Loader2, Lock, Mail, User } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { KoraLogo } from './ui/KoraLogo';
 
@@ -23,12 +23,12 @@ export function AuthGate() {
 
   const errorText = localError || authError;
 
-  const handleGoogle = async (forceRedirect = false) => {
+  const handleGoogle = async () => {
     setLocalError(null);
     clearAuthError();
     setBusy(true);
     try {
-      await connectGoogleCloud({ forceRedirect });
+      await connectGoogleCloud();
     } finally {
       setBusy(false);
     }
@@ -120,36 +120,24 @@ export function AuthGate() {
         )}
 
         {/* Google Sign-In */}
-        <div className="space-y-1.5">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void handleGoogle(false)}
-            className="w-full flex items-center justify-center gap-2.5 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-3 text-xs font-semibold hover:opacity-92 active:scale-[0.985] transition cursor-pointer disabled:opacity-50 shadow-xs"
-          >
-            {busy ? (
-              <Loader2 size={15} className="animate-spin" />
-            ) : (
-              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M21.35 11.1h-9.18v2.98h5.27c-.23 1.35-1.52 3.96-5.27 3.96-3.17 0-5.76-2.63-5.76-5.87s2.59-5.87 5.76-5.87c1.81 0 3.02.77 3.71 1.43l2.53-2.44C16.79 3.77 14.69 2.8 12.17 2.8 6.99 2.8 2.8 6.99 2.8 12.17s4.19 9.37 9.37 9.37c5.41 0 9-3.8 9-9.16 0-.62-.07-1.08-.15-1.28z"
-                />
-              </svg>
-            )}
-            Continuer avec Google
-          </button>
-
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void handleGoogle(true)}
-            className="w-full flex items-center justify-center gap-1 py-1 text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300 transition cursor-pointer"
-          >
-            <span>La fenêtre Google ne s’ouvre pas ? Connexion par redirection</span>
-            <ArrowUpRight size={11} />
-          </button>
-        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void handleGoogle()}
+          className="w-full flex items-center justify-center gap-2.5 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-3 text-xs font-semibold hover:opacity-92 active:scale-[0.985] transition cursor-pointer disabled:opacity-50 shadow-xs"
+        >
+          {busy ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M21.35 11.1h-9.18v2.98h5.27c-.23 1.35-1.52 3.96-5.27 3.96-3.17 0-5.76-2.63-5.76-5.87s2.59-5.87 5.76-5.87c1.81 0 3.02.77 3.71 1.43l2.53-2.44C16.79 3.77 14.69 2.8 12.17 2.8 6.99 2.8 2.8 6.99 2.8 12.17s4.19 9.37 9.37 9.37c5.41 0 9-3.8 9-9.16 0-.62-.07-1.08-.15-1.28z"
+              />
+            </svg>
+          )}
+          Continuer avec Google
+        </button>
 
         <div className="relative flex items-center justify-center">
           <span className="border-t border-slate-200/80 dark:border-zinc-800 w-full" />

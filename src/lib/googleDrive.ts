@@ -46,9 +46,8 @@ export async function listGoogleDriveAudioFiles(
   searchQuery = ''
 ): Promise<DriveAudioFile[]> {
   const cleanSearch = searchQuery.trim().replace(/'/g, "\\'");
-  const audioClause =
-    "(mimeType contains 'audio/' or name contains '.mp3' or name contains '.wav' or name contains '.m4a' or name contains '.ogg' or name contains '.flac')";
-  const qParts = [audioClause, 'trashed = false'];
+  const mp3Clause = "(mimeType = 'audio/mpeg' or mimeType = 'audio/mp3' or name contains '.mp3')";
+  const qParts = [mp3Clause, 'trashed = false'];
   if (cleanSearch) {
     qParts.push(`name contains '${cleanSearch}'`);
   }
@@ -83,13 +82,18 @@ export async function listGoogleDriveAudioFiles(
     files?: { id: string; name: string; mimeType?: string; size?: string; modifiedTime?: string }[];
   };
 
-  return (data.files || []).map((f) => ({
-    id: f.id,
-    name: f.name,
-    mimeType: f.mimeType || 'audio/mpeg',
-    sizeBytes: Number(f.size) || 0,
-    modifiedTime: f.modifiedTime || '',
-  }));
+  return (data.files || [])
+    .filter((f) => {
+      const lower = (f.name || '').toLowerCase();
+      return lower.endsWith('.mp3') || f.mimeType === 'audio/mpeg' || f.mimeType === 'audio/mp3';
+    })
+    .map((f) => ({
+      id: f.id,
+      name: f.name,
+      mimeType: f.mimeType || 'audio/mpeg',
+      sizeBytes: Number(f.size) || 0,
+      modifiedTime: f.modifiedTime || '',
+    }));
 }
 
 export async function downloadGoogleDriveAudioBlob(

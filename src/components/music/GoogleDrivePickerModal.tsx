@@ -174,9 +174,9 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                   <HardDrive size={15} />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold">Google Drive · Audio</h2>
+                  <h2 className="text-sm font-semibold">Google Drive · MP3</h2>
                   <p className="text-[11px] text-slate-400">
-                    Importer tes MP3, WAV & M4A directement dans ta bibliothèque
+                    Importer uniquement tes fichiers MP3 dans ta bibliothèque
                   </p>
                 </div>
               </div>
@@ -259,7 +259,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                     </div>
                   ) : files.length === 0 ? (
                     <p className="py-8 text-center text-xs text-slate-400">
-                      Aucun fichier audio (.mp3, .wav, .m4a) trouvé.
+                      Aucun fichier MP3 trouvé sur ton Google Drive.
                     </p>
                   ) : (
                     <div className="space-y-1.5 max-h-[42vh] overflow-y-auto pr-0.5">
