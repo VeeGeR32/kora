@@ -1,0 +1,18 @@
+{
+  "name": "Kora — Études, Gym, Studio & IA",
+  "short_name": "Kora",
+  "description": "Ton espace personnel minimaliste : emploi du temps, études, gym façon Hevy, studio musique & assistant IA.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/kora-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
