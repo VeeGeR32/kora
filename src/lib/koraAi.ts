@@ -264,36 +264,20 @@ async function generateWithAutoRouting(
   params: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>
 ) {
   const cleanKey = sanitizeGeminiApiKey(apiKey);
-  const attempts: { vertexai: boolean; model: string }[] = [];
-
-  if (cleanKey.startsWith('AQ.')) {
-    // New AQ. keys: try Express Mode first, then Developer API, across fallback models
-    for (const model of FALLBACK_MODELS) {
-      attempts.push({ vertexai: true, model });
-      attempts.push({ vertexai: false, model });
-    }
-  } else {
-    for (const model of FALLBACK_MODELS) {
-      attempts.push({ vertexai: false, model });
-    }
-  }
+  const ai = new GoogleGenAI({ apiKey: cleanKey });
 
   let lastError: unknown = null;
-  for (const attempt of attempts) {
+  for (const model of FALLBACK_MODELS) {
     try {
-      const ai = attempt.vertexai
-        ? new GoogleGenAI({ vertexai: true, apiKey: cleanKey })
-        : new GoogleGenAI({ apiKey: cleanKey });
       const res = await ai.models.generateContent({
-        model: attempt.model,
+        model,
         ...params,
       });
-      return { res, model: attempt.model, vertexai: attempt.vertexai };
+      return { res, model, vertexai: false };
     } catch (err) {
       lastError = err;
       const msg = String((err as Error)?.message || err);
       const isRetryable =
-        msg.includes('API_KEY_INVALID') ||
         msg.includes('NOT_FOUND') ||
         msg.includes('404') ||
         msg.includes('503') ||
@@ -301,7 +285,6 @@ async function generateWithAutoRouting(
         msg.includes('high demand') ||
         msg.includes('429') ||
         msg.includes('RESOURCE_EXHAUSTED') ||
-        msg.includes('UNAUTHENTICATED') ||
         msg.includes('not available');
       if (!isRetryable) throw err;
     }
