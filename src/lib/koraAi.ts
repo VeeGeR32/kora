@@ -84,6 +84,14 @@ export type KoraAIAction =
       };
     };
 
+export interface AIImageAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  dataUrl: string;
+  base64: string;
+}
+
 export interface KoraAIResponse {
   text: string;
   actions: KoraAIAction[];
@@ -359,6 +367,7 @@ export async function runKoraAssistant(
     apiKey?: string;
     domain: AIDomain;
     history?: { role: 'user' | 'assistant'; text: string }[];
+    images?: AIImageAttachment[];
   }
 ): Promise<KoraAIResponse> {
   const resolvedRaw =
@@ -372,17 +381,33 @@ export async function runKoraAssistant(
   const systemInstruction = `Tu es Kora AI, l'assistant personnel intégré dans Kora.
 ${DOMAIN_ROLE_HINTS[options.domain]}
 Réponds en français, en Markdown propre et concis (listes, gras, titres courts).
+Si l'utilisateur joint une ou plusieurs images (capture d'emploi du temps, devoir, photo de repas, exercice, texte...), analyse-les précisément et propose directement les actions Kora pertinentes.
 Dès que l'utilisateur demande une modification concrète (planifier, créer un programme gym, réviser un DS, logger un repas, organiser des devoirs/tâches), APPELLE les outils (function calls) en évitant les chevauchements avec son Planning.
 
 CONTEXTE UTILISATEUR :
 ${buildContextSummary(state)}`;
+
+  const userParts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+  if (options.images && options.images.length > 0) {
+    for (const img of options.images) {
+      userParts.push({
+        inlineData: {
+          mimeType: img.mimeType,
+          data: img.base64,
+        },
+      });
+    }
+  }
+  userParts.push({
+    text: prompt.trim() || 'Analyse cette image et aide-moi en fonction de mon contexte Kora.',
+  });
 
   const contents = [
     ...(options.history || []).slice(-8).map((m) => ({
       role: m.role === 'user' ? 'user' : 'model',
       parts: [{ text: m.text }],
     })),
-    { role: 'user', parts: [{ text: prompt }] },
+    { role: 'user', parts: userParts },
   ];
 
   const { res: response } = await generateWithAutoRouting(resolvedKey, {
@@ -619,7 +644,7 @@ function buildLocalSmartFallback(
   }
 
   return {
-    text: `**Mode local actif** — ajoute ta clé API Gemini (gratuite sur [Google AI Studio](https://aistudio.google.com/apikey)) dans **Paramètres → APIs & Services** pour discuter librement et laisser Kora AI piloter ton app.\n\nEn attendant, essaie un raccourci ci-dessous ou change de domaine (**Cours**, **Sport**, **Music**).`,
+    text: `**Mode local actif** — ajoute ta clé API Gemini (gratuite sur [Google AI Studio](https://aistudio.google.com/apikey)) via l’icône **⚙** en haut de Kora AI pour discuter librement, analyser des images et piloter ton app.`,
     actions: [],
   };
 }

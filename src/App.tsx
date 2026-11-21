@@ -153,10 +153,7 @@ function KoraApp() {
       />
 
       {/* Non-blocking Floating Kora AI Overlay */}
-      <AIAssistantDrawer
-        onOpenSettings={() => setSettingsOpen(true)}
-        onNavigate={setActiveTab}
-      />
+      <AIAssistantDrawer onNavigate={setActiveTab} />
 
       <FocusModal open={focusOpen} onClose={() => setFocusOpen(false)} />
 

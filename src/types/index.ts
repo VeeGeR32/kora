@@ -250,6 +250,7 @@ export interface MusicTrack {
   coverMediaId?: string; // IndexedDB cover image blob key
   cloudAudioUrl?: string;
   cloudCoverUrl?: string;
+  googleDriveFileId?: string; // Google Drive file ID for cross-device MP3 sync
   durationSec?: number;
   bpm?: number;
   musicalKey?: string;

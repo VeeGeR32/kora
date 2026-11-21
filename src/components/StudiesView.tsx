@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Award,
@@ -7,13 +7,18 @@ import {
   Check,
   Clock,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileImage,
   FileText,
   FolderOpen,
+  KeyRound,
   Link2,
   MapPin,
   Plus,
   RefreshCw,
+  Save,
+  Server,
   Sparkles,
   Trash2,
   Upload,
@@ -56,6 +61,7 @@ export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
     deleteCourseDoc,
     addManyEvents,
     addHomework,
+    updatePreferences,
     saveAndOptionallySyncMedia,
     notify,
   } = useApp();
@@ -87,8 +93,12 @@ export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
   const docInputRef = useRef<HTMLInputElement>(null);
   const icsInputRef = useRef<HTMLInputElement>(null);
 
-  // Pronote bridge state
+  // Pronote bridge state (URL + Token + Health Test all integrated directly inside Cours → Pronote)
   const [bridgeUrl, setBridgeUrl] = useState(state.preferences.pronoteBridgeUrl || 'http://127.0.0.1:4789');
+  const [bridgeToken, setBridgeToken] = useState(state.preferences.pronoteBridgeToken || '');
+  const [showBridgeToken, setShowBridgeToken] = useState(false);
+  const [testingBridge, setTestingBridge] = useState(false);
+  const [bridgeStatus, setBridgeStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [pronoteMode, setPronoteMode] = useState<'qr' | 'creds'>('qr');
   const [qrJson, setQrJson] = useState('');
   const [qrPin, setQrPin] = useState('');
@@ -96,6 +106,11 @@ export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
   const [pnUser, setPnUser] = useState('');
   const [pnPass, setPnPass] = useState('');
   const [syncingPronote, setSyncingPronote] = useState(false);
+
+  useEffect(() => {
+    setBridgeUrl(state.preferences.pronoteBridgeUrl || 'http://127.0.0.1:4789');
+    setBridgeToken(state.preferences.pronoteBridgeToken || '');
+  }, [state.preferences.pronoteBridgeUrl, state.preferences.pronoteBridgeToken]);
 
   const subjects = useMemo(() => {
     const set = new Set<string>();
@@ -200,8 +215,58 @@ export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
     });
   };
 
+  const normalizeBridgeUrl = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/\/$/, '');
+    return (/^(127\.0\.0\.1|localhost)/i.test(trimmed) ? `http://${trimmed}` : `https://${trimmed}`).replace(
+      /\/$/,
+      ''
+    );
+  };
+
+  const handleSaveBridgeConfig = () => {
+    const normalized = normalizeBridgeUrl(bridgeUrl);
+    if (normalized) setBridgeUrl(normalized);
+    updatePreferences({
+      pronoteBridgeUrl: normalized || undefined,
+      pronoteBridgeToken: bridgeToken.trim() || undefined,
+    });
+    notify('Configuration serveur Pronote enregistrée ✓');
+  };
+
+  const handleTestPronoteBridge = async () => {
+    const targetUrl = normalizeBridgeUrl(bridgeUrl);
+    if (!targetUrl) return;
+    setBridgeUrl(targetUrl);
+    setTestingBridge(true);
+    setBridgeStatus(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (bridgeToken.trim()) headers['X-Kora-Token'] = bridgeToken.trim();
+      const res = await fetch(`${targetUrl}/health`, { headers });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setBridgeStatus({ ok: true, text: `Bridge connecté ✓ (uptime ${data.uptimeSec ?? 0}s)` });
+    } catch (err) {
+      setBridgeStatus({ ok: false, text: `Inaccessible : ${(err as Error).message}` });
+    } finally {
+      setTestingBridge(false);
+    }
+  };
+
   const handleSyncPronoteBridge = async (e: React.FormEvent) => {
     e.preventDefault();
+    const targetUrl = normalizeBridgeUrl(bridgeUrl);
+    if (!targetUrl) {
+      notify('Indique l’URL de ton bridge Pronote');
+      return;
+    }
+    setBridgeUrl(targetUrl);
+    updatePreferences({
+      pronoteBridgeUrl: targetUrl,
+      pronoteBridgeToken: bridgeToken.trim() || undefined,
+    });
     setSyncingPronote(true);
     try {
       const payload =
@@ -209,10 +274,10 @@ export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
           ? { qrCode: qrJson, pin: qrPin }
           : { url: pnUrl, username: pnUser, password: pnPass };
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (state.preferences.pronoteBridgeToken?.trim()) {
-        headers['X-Kora-Token'] = state.preferences.pronoteBridgeToken.trim();
+      if (bridgeToken.trim()) {
+        headers['X-Kora-Token'] = bridgeToken.trim();
       }
-      const res = await fetch(`${bridgeUrl.replace(/\/$/, '')}/sync`, {
+      const res = await fetch(`${targetUrl}/sync`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -1207,13 +1272,73 @@ export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
               Lance dans ton terminal : <code className="font-mono bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">npm i -D pawnote && node server/pronote-bridge.mjs</code>
             </p>
 
-            <input
-              type="url"
-              value={bridgeUrl}
-              onChange={(e) => setBridgeUrl(e.target.value)}
-              placeholder="http://127.0.0.1:4789"
-              className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 font-mono text-xs"
-            />
+            <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/50 p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-slate-700 dark:text-zinc-200 flex items-center gap-1.5">
+                  <Server size={12} className="text-indigo-500" /> Serveur Bridge (Local / Tailscale)
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={testingBridge || !bridgeUrl.trim()}
+                    onClick={() => void handleTestPronoteBridge()}
+                    className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline disabled:opacity-40 cursor-pointer"
+                  >
+                    {testingBridge ? 'Test…' : 'Tester /health'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveBridgeConfig}
+                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2 py-1 text-[10px] font-semibold cursor-pointer"
+                  >
+                    <Save size={10} /> Sauver
+                  </button>
+                </div>
+              </div>
+
+              <input
+                type="url"
+                value={bridgeUrl}
+                onChange={(e) => {
+                  setBridgeUrl(e.target.value);
+                  setBridgeStatus(null);
+                }}
+                placeholder="https://pc-tv.mon-tailnet.ts.net ou http://127.0.0.1:4789"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 font-mono text-xs"
+              />
+
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1 min-w-0">
+                  <KeyRound size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type={showBridgeToken ? 'text' : 'password'}
+                    value={bridgeToken}
+                    onChange={(e) => setBridgeToken(e.target.value)}
+                    placeholder="Token secret X-Kora-Token (recommandé sur Tailscale)"
+                    className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 pl-8 pr-3 py-2 font-mono text-xs"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowBridgeToken((v) => !v)}
+                  className="h-8 w-8 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex items-center justify-center text-slate-500 cursor-pointer shrink-0"
+                >
+                  {showBridgeToken ? <EyeOff size={13} /> : <Eye size={13} />}
+                </button>
+              </div>
+
+              {bridgeStatus && (
+                <p
+                  className={`text-[11px] font-medium ${
+                    bridgeStatus.ok
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-rose-600 dark:text-rose-400'
+                  }`}
+                >
+                  {bridgeStatus.text}
+                </p>
+              )}
+            </div>
 
             <div className="flex gap-1.5">
               <button

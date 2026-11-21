@@ -3,27 +3,32 @@ export function KoraLogo({ size = 32 }: { size?: number }) {
     <div
       style={{ width: size, height: size }}
       className="rounded-[10px] bg-slate-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shadow-xs shrink-0 select-none"
+      aria-label="Kora"
     >
       <svg
         viewBox="0 0 32 32"
-        width={Math.round(size * 0.62)}
-        height={Math.round(size * 0.62)}
+        width={Math.round(size * 0.66)}
+        height={Math.round(size * 0.66)}
         fill="none"
       >
+        {/* Minimalist Eclipse / Orbital Ring */}
         <path
-          d="M8.5 5.5V26.5"
+          d="M23.8 11.4A9.2 9.2 0 1 0 21.6 23.2"
           stroke="currentColor"
-          strokeWidth="3.1"
+          strokeWidth="2.6"
           strokeLinecap="round"
         />
         <path
-          d="M23.5 6L11.5 16.5L24 26.5"
+          d="M25.2 16a9.2 9.2 0 0 1-1.3 4.7"
           stroke="currentColor"
-          strokeWidth="3.1"
+          strokeWidth="2.6"
           strokeLinecap="round"
-          strokeLinejoin="round"
+          strokeOpacity="0.4"
         />
-        <circle cx="24" cy="6.2" r="2" className="fill-violet-400 dark:fill-violet-600" />
+        {/* Subtle Focal Core */}
+        <circle cx="16" cy="16" r="2.7" fill="currentColor" />
+        {/* Orbital Accent Satellite */}
+        <circle cx="24.2" cy="9.4" r="2.1" className="fill-violet-400 dark:fill-violet-600" />
       </svg>
     </div>
   );

@@ -1,12 +1,17 @@
 import { initializeApp, getApps, deleteApp, type FirebaseApp } from 'firebase/app';
 import {
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
   getAuth,
+  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
+  setPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
+  updateProfile,
   type Auth,
   type User,
 } from 'firebase/auth';
@@ -114,12 +119,90 @@ export function initFirebaseClient(config?: FirebaseUserConfig | null): Firebase
   }
 }
 
-export async function signInWithGoogle(config?: FirebaseUserConfig | null): Promise<User | null> {
+function isStandalonePWA(): boolean {
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  return (
+    nav.standalone === true ||
+    window.matchMedia?.('(display-mode: standalone)')?.matches === true
+  );
+}
+
+export async function signInWithGoogle(
+  config?: FirebaseUserConfig | null,
+  options?: { forceRedirect?: boolean }
+): Promise<User | null> {
+  const bundle = initFirebaseClient(config);
+  if (!bundle) throw new Error('Configuration Firebase manquante');
+  try {
+    await setPersistence(bundle.auth, browserLocalPersistence);
+  } catch {
+    // Ignore storage persistence fallback
+  }
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+
+  // On iOS/mobile standalone PWA or when explicitly requested, use redirect directly
+  if (options?.forceRedirect || isStandalonePWA()) {
+    await signInWithRedirect(bundle.auth, provider);
+    return null;
+  }
+
+  try {
+    const res = await signInWithPopup(bundle.auth, provider);
+    return res.user;
+  } catch (err) {
+    const code = (err as { code?: string })?.code || '';
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/operation-not-supported-in-this-environment' ||
+      code === 'auth/web-storage-unsupported' ||
+      code === 'auth/internal-error'
+    ) {
+      await signInWithRedirect(bundle.auth, provider);
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function completeGoogleRedirectIfPending(
+  config?: FirebaseUserConfig | null
+): Promise<User | null> {
+  const bundle = initFirebaseClient(config);
+  if (!bundle) return null;
+  const res = await getRedirectResult(bundle.auth);
+  return res?.user || null;
+}
+
+/** Requests a read-only Google Drive OAuth access token via Google Sign-In popup */
+export async function requestGoogleDriveAccessToken(
+  config?: FirebaseUserConfig | null
+): Promise<string> {
   const bundle = initFirebaseClient(config);
   if (!bundle) throw new Error('Configuration Firebase manquante');
   const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+  provider.setCustomParameters({ prompt: 'consent' });
   const res = await signInWithPopup(bundle.auth, provider);
-  return res.user;
+  const credential = GoogleAuthProvider.credentialFromResult(res);
+  if (!credential?.accessToken) {
+    throw new Error('Aucun token Google Drive retourné par Google. Réessaie en autorisant l’accès Drive.');
+  }
+  return credential.accessToken;
+}
+
+export async function updateFirebaseDisplayName(
+  config: FirebaseUserConfig | null | undefined,
+  displayName: string
+): Promise<void> {
+  const bundle = initFirebaseClient(config);
+  if (!bundle?.auth.currentUser) return;
+  try {
+    await updateProfile(bundle.auth.currentUser, { displayName });
+  } catch {
+    // Non-blocking
+  }
 }
 
 export async function signInWithEmail(

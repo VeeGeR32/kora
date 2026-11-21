@@ -1,13 +1,20 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { AIDomain, ActiveTab } from '../types';
 import { useApp } from './AppContext';
-import { runKoraAssistant, type KoraAIAction } from '../lib/koraAi';
+import { runKoraAssistant, type AIImageAttachment, type KoraAIAction } from '../lib/koraAi';
 import { uid } from '../utils/dates';
+
+export interface AIMessageImage {
+  id: string;
+  name: string;
+  dataUrl: string;
+}
 
 export interface AIMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  images?: AIMessageImage[];
   actions?: KoraAIAction[];
   applied?: boolean;
   createdAt: number;
@@ -55,7 +62,7 @@ interface AIContextValue {
   requestAIConfirmation: (prompt: string, domain?: AIDomain) => void;
   cancelConfirmation: () => void;
   confirmAndSend: (editedPrompt?: string) => Promise<void>;
-  sendDirectMessage: (prompt: string) => Promise<void>;
+  sendDirectMessage: (prompt: string, images?: AIImageAttachment[]) => Promise<void>;
 
   /** Live Preview actions directly visible on Kora UI */
   applyDraftAction: (draftId: string) => void;
@@ -148,9 +155,24 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+      // Strip heavy base64 dataUrls beyond the 4 most recent messages to avoid localStorage quota issues
+      const compact = conversations.map((c) => ({
+        ...c,
+        messages: c.messages.map((m, idx) =>
+          m.images && idx < c.messages.length - 4 ? { ...m, images: undefined } : m
+        ),
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(compact));
     } catch {
-      // ignore
+      try {
+        const stripped = conversations.map((c) => ({
+          ...c,
+          messages: c.messages.map((m) => (m.images ? { ...m, images: undefined } : m)),
+        }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stripped));
+      } catch {
+        // ignore
+      }
     }
   }, [conversations]);
 
@@ -262,9 +284,10 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
   );
 
   const sendDirectMessage = useCallback(
-    async (rawPrompt: string) => {
+    async (rawPrompt: string, images?: AIImageAttachment[]) => {
       const prompt = rawPrompt.trim();
-      if (!prompt || loading) return;
+      const hasImages = Boolean(images && images.length > 0);
+      if ((!prompt && !hasImages) || loading) return;
 
       const convId = activeConversation.id;
       const domain = activeConversation.domain;
@@ -272,12 +295,17 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
         id: uid('msg'),
         role: 'user',
         text: prompt,
+        images: hasImages
+          ? images!.map((img) => ({ id: img.id, name: img.name, dataUrl: img.dataUrl }))
+          : undefined,
         createdAt: Date.now(),
       };
 
       const historySnapshot = activeConversation.messages
         .filter((m) => m.id !== activeConversation.messages[0]?.id)
-        .map((m) => ({ role: m.role, text: m.text }));
+        .map((m) => ({ role: m.role, text: m.text || '[Image jointe]' }));
+
+      const fallbackTitle = prompt || `Image (${images?.[0]?.name || 'photo'})`;
 
       setConversations((prev) =>
         prev.map((c) => {
@@ -285,7 +313,9 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
           const isDefaultTitle = c.title === 'Nouvelle conversation';
           return {
             ...c,
-            title: isDefaultTitle ? prompt.slice(0, 34) + (prompt.length > 34 ? '…' : '') : c.title,
+            title: isDefaultTitle
+              ? fallbackTitle.slice(0, 34) + (fallbackTitle.length > 34 ? '…' : '')
+              : c.title,
             messages: [...c.messages, userMsg],
             updatedAt: Date.now(),
           };
@@ -298,6 +328,7 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
           apiKey: state.preferences.geminiApiKey,
           domain,
           history: historySnapshot,
+          images,
         });
         const assistantMsgId = uid('msg');
         const assistantMsg: AIMessage = {
@@ -331,7 +362,7 @@ export function AIProvider({ children }: { children: React.ReactNode }) {
         const errMsg: AIMessage = {
           id: uid('msg'),
           role: 'assistant',
-          text: `**Erreur Gemini** : ${(err as Error).message}\n\nVérifie ta clé API dans **Paramètres → APIs & Services**.`,
+          text: `**Erreur Gemini** : ${(err as Error).message}\n\nVérifie ta clé API en cliquant sur **⚙** en haut de Kora AI.`,
           createdAt: Date.now(),
         };
         setConversations((prev) =>

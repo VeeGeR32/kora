@@ -7,6 +7,7 @@ import {
   FileAudio,
   FileText,
   FolderKanban,
+  HardDrive,
   ImagePlus,
   Music2,
   Pause,
@@ -25,6 +26,7 @@ import { formatShortDateFR, todayISO, uid } from '../../utils/dates';
 import { TRACK_STATUS_META } from '../../utils/theme';
 import { CheckCircle } from '../ui/CheckCircle';
 import { LyricsStudio } from './LyricsStudio';
+import { GoogleDrivePickerModal } from './GoogleDrivePickerModal';
 import type { QuickAddContext } from '../QuickAddModal';
 
 interface MusicViewProps {
@@ -155,6 +157,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const [newProjTitle, setNewProjTitle] = useState('');
   const [newProjKind, setNewProjKind] = useState<ProjectKind>('ep');
   const [newProjDate, setNewProjDate] = useState('');
+  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
 
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -611,34 +614,54 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       {/* ================= TAB 2: BIBLIOTHÈQUE MP3 & MARQUEURS ================= */}
       {subTab === 'library' && (
         <div className="space-y-4">
-          {/* Drag & Drop MP3 Zone */}
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              void handleUploadAudioFiles(e.dataTransfer.files);
-            }}
-            onClick={() => audioInputRef.current?.click()}
-            className="tempo-card rounded-3xl border-dashed border-2 border-slate-200 dark:border-zinc-800 p-6 text-center cursor-pointer hover:border-fuchsia-400 dark:hover:border-fuchsia-600 transition"
-          >
-            <input
-              ref={audioInputRef}
-              type="file"
-              accept="audio/*,.mp3,.wav,.m4a"
-              multiple
-              onChange={(e) => void handleUploadAudioFiles(e.target.files)}
-              className="hidden"
-            />
-            <div className="mx-auto h-10 w-10 rounded-2xl bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center mb-2.5">
-              <Upload size={18} />
+          {/* Import Audio: Local Drag & Drop + Google Drive */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                void handleUploadAudioFiles(e.dataTransfer.files);
+              }}
+              onClick={() => audioInputRef.current?.click()}
+              className="tempo-card rounded-3xl border-dashed border-2 border-slate-200 dark:border-zinc-800 p-5 text-center cursor-pointer hover:border-fuchsia-400 dark:hover:border-fuchsia-600 transition"
+            >
+              <input
+                ref={audioInputRef}
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a"
+                multiple
+                onChange={(e) => void handleUploadAudioFiles(e.target.files)}
+                className="hidden"
+              />
+              <div className="mx-auto h-9 w-9 rounded-2xl bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center mb-2">
+                <Upload size={16} />
+              </div>
+              <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                Importer des MP3 / WAV / M4A
+              </p>
+              <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">
+                Glisse tes fichiers locaux ou clique ici
+              </p>
             </div>
-            <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-              Importer des MP3 / WAV / M4A
-            </p>
-            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-              Glisse tes fichiers ici ou clique · Stockés dans IndexedDB (+ Cloud Firebase si connecté)
-            </p>
+
+            <button
+              type="button"
+              onClick={() => setDrivePickerOpen(true)}
+              className="tempo-card rounded-3xl border border-slate-200/80 dark:border-zinc-800 p-5 text-center cursor-pointer hover:border-slate-400 dark:hover:border-zinc-600 transition"
+            >
+              <div className="mx-auto h-9 w-9 rounded-2xl bg-slate-900/8 dark:bg-zinc-100/10 text-slate-800 dark:text-zinc-100 flex items-center justify-center mb-2">
+                <HardDrive size={16} />
+              </div>
+              <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                Importer depuis Google Drive
+              </p>
+              <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">
+                Parcourir tes MP3 Drive & synchroniser multi-appareils
+              </p>
+            </button>
           </div>
+
+          <GoogleDrivePickerModal open={drivePickerOpen} onClose={() => setDrivePickerOpen(false)} />
 
           {/* Tracks List */}
           <div className="space-y-3">

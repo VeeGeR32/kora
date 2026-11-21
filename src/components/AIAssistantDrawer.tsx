@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  ArrowRight,
   Check,
   ChevronDown,
   ChevronUp,
   Eye,
+  EyeOff,
+  ImagePlus,
+  KeyRound,
   Loader2,
   Mic,
   MicOff,
@@ -19,14 +23,19 @@ import {
 import type { AIDomain, ActiveTab } from '../types';
 import { useApp } from '../context/AppContext';
 import { useAI } from '../context/AIContext';
+import {
+  sanitizeGeminiApiKey,
+  testGeminiApiKey,
+  type AIImageAttachment,
+} from '../lib/koraAi';
+import { uid } from '../utils/dates';
 import { MarkdownView } from './ui/MarkdownView';
 
 interface AIAssistantDrawerProps {
-  onOpenSettings: () => void;
   onNavigate: (tab: ActiveTab) => void;
 }
 
-const DOMAIN_TABS: { id: AIDomain; label: string }[] = [
+const DOMAIN_OPTIONS: { id: AIDomain; label: string }[] = [
   { id: 'general', label: 'Général' },
   { id: 'cours', label: 'Cours' },
   { id: 'sport', label: 'Sport' },
@@ -35,20 +44,20 @@ const DOMAIN_TABS: { id: AIDomain; label: string }[] = [
 
 const SUGGESTIONS_BY_DOMAIN: Record<AIDomain, string[]> = {
   general: [
-    'Organise ma journée en plaçant mes devoirs et révisions dans les créneaux libres',
-    'Fais un résumé de ce qui est prioritaire aujourd’hui',
+    'Organise ma journée en plaçant mes devoirs dans mes créneaux libres',
+    'Résume mes priorités aujourd’hui',
   ],
   cours: [
-    'Crée un plan de révision pour mon prochain DS dans le Planning',
-    'Planifie des créneaux pour tous mes devoirs à faire',
+    'Crée un plan de révision pour mon prochain DS',
+    'Planifie des créneaux pour mes devoirs à rendre',
   ],
   sport: [
-    'Crée une routine gym adaptée à mon objectif et planifie-la',
-    'Estime et log un repas : 200g poulet, 120g riz basmati et 1 banane',
+    'Crée une routine gym adaptée à mon objectif',
+    'Estime les macros de mon repas (ou envoie une photo)',
   ],
   music: [
-    'Planifie une session d’écriture Music ce soir dans mon Planning',
-    'Propose une checklist pour finir mon EP Minuit',
+    'Planifie une session d’écriture ce soir dans mon Planning',
+    'Propose une checklist pour avancer sur mon projet',
   ],
 };
 
@@ -63,8 +72,40 @@ interface SpeechRecognitionLike {
   stop: () => void;
 }
 
-export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDrawerProps) {
-  const { state, notify } = useApp();
+async function prepareImageAttachment(file: File): Promise<AIImageAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 1280;
+        const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const mimeType = 'image/jpeg';
+        const dataUrl = canvas.toDataURL(mimeType, 0.85);
+        const base64 = dataUrl.split(',')[1] || '';
+        resolve({
+          id: uid('img'),
+          name: file.name || 'image.jpg',
+          mimeType,
+          dataUrl,
+          base64,
+        });
+      };
+      img.onerror = reject;
+      img.src = String(reader.result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export function AIAssistantDrawer({ onNavigate }: AIAssistantDrawerProps) {
+  const { state, updatePreferences, notify } = useApp();
   const {
     isOpen,
     isMinimized,
@@ -91,11 +132,29 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
   } = useAI();
 
   const [input, setInput] = useState('');
+  const [attachments, setAttachments] = useState<AIImageAttachment[]>([]);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [confirmDraftText, setConfirmDraftText] = useState('');
   const [listening, setListening] = useState(false);
 
+  // Integrated AI Settings panel (Gemini API Key)
+  const [showAiSettings, setShowAiSettings] = useState(false);
+  const [apiKeyDraft, setApiKeyDraft] = useState(state.preferences.geminiApiKey || '');
+  const [showKey, setShowKey] = useState(false);
+  const [testingKey, setTestingKey] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<{ ok: boolean; text: string } | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useEffect(() => {
+    if (showAiSettings) {
+      setApiKeyDraft(state.preferences.geminiApiKey || '');
+      setKeyStatus(null);
+    }
+  }, [showAiSettings, state.preferences.geminiApiKey]);
 
   useEffect(() => {
     if (pendingConfirmation) {
@@ -107,13 +166,52 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [activeConversation?.messages.length, loading, pendingConfirmation]);
 
-  // Stop speech recognition on unmount or close
+  // Auto-resize composer textarea cleanly
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(140, Math.max(42, el.scrollHeight))}px`;
+  }, [input]);
+
   useEffect(() => {
     if (!isOpen && listening) {
       recognitionRef.current?.stop();
       setListening(false);
     }
   }, [isOpen, listening]);
+
+  const addImagesFromFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
+    if (list.length === 0) return;
+    const remainingSlots = Math.max(0, 4 - attachments.length);
+    if (remainingSlots === 0) {
+      notify('Maximum 4 images par message');
+      return;
+    }
+    try {
+      const prepared = await Promise.all(list.slice(0, remainingSlots).map(prepareImageAttachment));
+      setAttachments((prev) => [...prev, ...prepared]);
+    } catch {
+      notify('Impossible de lire cette image');
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const f = items[i].getAsFile();
+        if (f) imageFiles.push(f);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      void addImagesFromFiles(imageFiles);
+    }
+  };
 
   const toggleVoiceInput = () => {
     if (listening) {
@@ -127,7 +225,7 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
       (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
 
     if (!SpeechRec) {
-      notify('Reconnaissance vocale non supportée sur ce navigateur (utilise Chrome / Edge / Safari)');
+      notify('Dictée vocale non supportée sur ce navigateur');
       return;
     }
 
@@ -145,12 +243,8 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
         }
         setInput(baseInput + transcript);
       };
-      rec.onerror = () => {
-        setListening(false);
-      };
-      rec.onend = () => {
-        setListening(false);
-      };
+      rec.onerror = () => setListening(false);
+      rec.onend = () => setListening(false);
 
       recognitionRef.current = rec;
       rec.start();
@@ -161,142 +255,261 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
     }
   };
 
+  const handleSaveApiKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleaned = apiKeyDraft.trim() ? sanitizeGeminiApiKey(apiKeyDraft) : '';
+    setApiKeyDraft(cleaned);
+    updatePreferences({ geminiApiKey: cleaned || undefined });
+    notify(cleaned ? 'Clé API Gemini enregistrée ✓' : 'Clé API Gemini retirée');
+    setShowAiSettings(false);
+  };
+
+  const handleTestApiKey = async () => {
+    setTestingKey(true);
+    setKeyStatus(null);
+    const cleaned = sanitizeGeminiApiKey(apiKeyDraft);
+    if (cleaned !== apiKeyDraft) setApiKeyDraft(cleaned);
+    const res = await testGeminiApiKey(cleaned);
+    setKeyStatus({ ok: res.ok, text: res.message });
+    setTestingKey(false);
+  };
+
   const domainConversations = conversations.filter((c) => c.domain === activeDomain);
   const hasApiKey = Boolean(
     state.preferences.geminiApiKey?.trim() || import.meta.env.VITE_GEMINI_API_KEY
   );
+  const canSend = (Boolean(input.trim()) || attachments.length > 0) && !loading;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || loading) return;
+  const triggerSend = () => {
+    if (!canSend) return;
     if (listening) {
       recognitionRef.current?.stop();
       setListening(false);
     }
     const text = input.trim();
+    const imgs = attachments;
     setInput('');
-    void sendDirectMessage(text);
+    setAttachments([]);
+    if (textareaRef.current) textareaRef.current.style.height = '42px';
+    void sendDirectMessage(text, imgs.length > 0 ? imgs : undefined);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      triggerSend();
+    }
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
-        /* Floating NON-BLOCKING overlay: no backdrop, pointer-events-none wrapper */
-        <div className="pointer-events-none fixed inset-x-3 bottom-[76px] md:inset-x-auto md:bottom-5 md:right-5 z-40 flex justify-end">
+        /* Non-blocking floating AI studio panel */
+        <div className="pointer-events-none fixed inset-x-2.5 bottom-[74px] md:inset-x-auto md:bottom-5 md:right-5 z-40 flex justify-end">
           <motion.section
-            initial={{ opacity: 0, y: 18, scale: 0.97 }}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-            className={`pointer-events-auto w-full md:w-[410px] rounded-3xl bg-white/96 dark:bg-[#121216]/96 backdrop-blur-xl border border-slate-200/90 dark:border-zinc-800 shadow-[0_18px_50px_-12px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden transition-all ${
-              isMinimized ? 'max-h-[60px]' : 'h-[72dvh] max-h-[640px]'
+            exit={{ opacity: 0, y: 14, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 440, damping: 34 }}
+            className={`pointer-events-auto w-full md:w-[440px] rounded-2xl bg-white dark:bg-[#111114] border border-slate-200/90 dark:border-zinc-800 shadow-[0_24px_64px_-16px_rgba(15,23,42,0.26)] dark:shadow-[0_28px_72px_-12px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden transition-all ${
+              isMinimized ? 'max-h-[54px]' : 'h-[76dvh] max-h-[680px]'
             }`}
           >
-            {/* Header */}
-            <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="h-7 w-7 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white flex items-center justify-center shrink-0">
-                  <Sparkles size={14} />
+            {/* Minimal Pro Header */}
+            <div className="px-3.5 h-[52px] border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-7 w-7 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+                  <Sparkles size={13} />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h2 className="text-xs font-semibold">Kora AI</h2>
-                    {draftActions.length > 0 && (
-                      <span className="rounded-full bg-violet-600 text-white px-1.5 py-0.5 font-mono text-[9px] font-semibold">
-                        {draftActions.length} aperçu
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400 truncate">
-                    {hasApiKey ? 'Gemini connecté · Non-bloquant' : 'Mode local · Clé Gemini dans Paramètres'}
-                  </p>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-semibold tracking-tight text-slate-900 dark:text-zinc-100">
+                    Kora AI
+                  </span>
+                  <span
+                    title={hasApiKey ? 'Gemini connecté' : 'Clé API non configurée'}
+                    className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                      hasApiKey ? 'bg-emerald-500' : 'bg-amber-400'
+                    }`}
+                  />
+                  {draftActions.length > 0 && (
+                    <span className="rounded-md bg-violet-500/12 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                      {draftActions.length} aperçu
+                    </span>
+                  )}
                 </div>
               </div>
 
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setMinimized(!isMinimized)}
-                  title={isMinimized ? 'Agrandir' : 'Réduire pour voir l’app'}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                  onClick={() => createConversation(activeDomain)}
+                  title="Nouvelle conversation"
+                  className="h-7 w-7 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/70 flex items-center justify-center transition cursor-pointer"
                 >
-                  {isMinimized ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  <Plus size={14} />
                 </button>
                 <button
                   type="button"
-                  onClick={onOpenSettings}
-                  title="Configurer API Gemini"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                  onClick={() => setShowAiSettings((v) => !v)}
+                  title="Réglages API Gemini"
+                  className={`h-7 w-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
+                    showAiSettings
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      : 'text-slate-400 hover:text-slate-800 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
+                  }`}
                 >
-                  <Settings size={14} />
+                  <Settings size={13.5} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMinimized(!isMinimized)}
+                  title={isMinimized ? 'Agrandir' : 'Réduire'}
+                  className="h-7 w-7 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/70 flex items-center justify-center transition cursor-pointer"
+                >
+                  {isMinimized ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
                 <button
                   type="button"
                   onClick={closeAI}
                   title="Fermer"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                  className="h-7 w-7 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/70 flex items-center justify-center transition cursor-pointer"
                 >
-                  <X size={15} />
+                  <X size={14} />
                 </button>
               </div>
             </div>
 
             {!isMinimized && (
               <>
-                {/* Domain Selector + Multi-Conversation Switcher */}
-                <div className="px-3.5 pt-2.5 pb-2 border-b border-slate-100 dark:border-zinc-800/70 space-y-2 shrink-0 bg-slate-50/50 dark:bg-zinc-900/35">
-                  <div className="grid grid-cols-4 gap-1">
-                    {DOMAIN_TABS.map((d) => {
-                      const active = activeDomain === d.id;
-                      return (
+                {/* Integrated AI Settings Drawer (Gemini API Key) */}
+                <AnimatePresence>
+                  {showAiSettings && (
+                    <motion.form
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      onSubmit={handleSaveApiKey}
+                      className="px-4 py-3.5 border-b border-slate-100 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 space-y-2.5 shrink-0 overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-slate-800 dark:text-zinc-100 flex items-center gap-1.5">
+                          <KeyRound size={12} className="text-violet-500" />
+                          Clé API Gemini
+                        </span>
                         <button
-                          key={d.id}
                           type="button"
-                          onClick={() => setDomain(d.id)}
-                          className={`rounded-xl py-1 text-[11px] font-medium transition cursor-pointer ${
-                            active
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                              : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-200/60 dark:hover:bg-zinc-800'
+                          disabled={testingKey || !apiKeyDraft.trim()}
+                          onClick={() => void handleTestApiKey()}
+                          className="text-[11px] font-medium text-violet-600 dark:text-violet-400 hover:underline disabled:opacity-40 cursor-pointer"
+                        >
+                          {testingKey ? 'Test…' : 'Tester la clé'}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type={showKey ? 'text' : 'password'}
+                          value={apiKeyDraft}
+                          onChange={(e) => {
+                            setApiKeyDraft(e.target.value);
+                            setKeyStatus(null);
+                          }}
+                          placeholder="AQ.... ou AIza... (aistudio.google.com/apikey)"
+                          className="flex-1 min-w-0 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-2 font-mono text-xs text-slate-900 dark:text-zinc-100 outline-none focus:border-slate-400 dark:focus:border-zinc-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowKey((v) => !v)}
+                          className="h-8 w-8 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 flex items-center justify-center text-slate-500 cursor-pointer shrink-0"
+                        >
+                          {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                        {apiKeyDraft && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setApiKeyDraft('');
+                              setKeyStatus(null);
+                            }}
+                            className="h-8 w-8 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 flex items-center justify-center text-slate-400 hover:text-rose-500 cursor-pointer shrink-0"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+
+                      {keyStatus && (
+                        <p
+                          className={`text-[11px] leading-relaxed ${
+                            keyStatus.ok
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
                           }`}
                         >
-                          {d.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                          {keyStatus.text}
+                        </p>
+                      )}
 
-                  {/* Conversation Picker inside active domain */}
-                  <div className="flex items-center gap-1.5">
-                    <select
-                      value={activeConversation?.id || ''}
-                      onChange={(e) => selectConversation(e.target.value)}
-                      className="flex-1 min-w-0 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-200 outline-none truncate cursor-pointer"
-                    >
-                      {domainConversations.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.title} ({Math.max(0, c.messages.length - 1)} msg)
-                        </option>
-                      ))}
-                    </select>
+                      <div className="flex items-center justify-between pt-0.5">
+                        <span className="text-[10px] text-slate-400">
+                          Synchronisée sur ton compte
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowAiSettings(false)}
+                            className="rounded-lg px-2.5 py-1.5 text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                          >
+                            Fermer
+                          </button>
+                          <button
+                            type="submit"
+                            className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-[11px] font-semibold cursor-pointer"
+                          >
+                            Enregistrer
+                          </button>
+                        </div>
+                      </div>
+                    </motion.form>
+                  )}
+                </AnimatePresence>
+
+                {/* Sleek Conversation History Bar */}
+                <div className="px-3.5 py-2 border-b border-slate-100 dark:border-zinc-800/70 flex items-center gap-1.5 shrink-0">
+                  <select
+                    value={activeConversation?.id || ''}
+                    onChange={(e) => selectConversation(e.target.value)}
+                    className="flex-1 min-w-0 bg-transparent text-[11px] font-medium text-slate-600 dark:text-zinc-300 outline-none truncate cursor-pointer"
+                  >
+                    {domainConversations.map((c) => (
+                      <option
+                        key={c.id}
+                        value={c.id}
+                        className="bg-white dark:bg-zinc-900 text-slate-900 dark:text-zinc-100"
+                      >
+                        {c.title} ({Math.max(0, c.messages.length - 1)})
+                      </option>
+                    ))}
+                  </select>
+                  {!hasApiKey && !showAiSettings && (
                     <button
                       type="button"
-                      onClick={() => createConversation(activeDomain)}
-                      title="Nouvelle conversation dans ce domaine"
-                      className="h-7 px-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-violet-400 inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer shrink-0"
+                      onClick={() => setShowAiSettings(true)}
+                      className="rounded-md bg-amber-500/12 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-[10px] font-medium cursor-pointer shrink-0"
                     >
-                      <Plus size={12} /> Conv
+                      Ajouter clé API
                     </button>
-                    {domainConversations.length > 1 && activeConversation && (
-                      <button
-                        type="button"
-                        onClick={() => deleteConversation(activeConversation.id)}
-                        title="Supprimer cette conversation"
-                        className="h-7 w-7 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center cursor-pointer shrink-0"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
+                  )}
+                  {domainConversations.length > 1 && activeConversation && (
+                    <button
+                      type="button"
+                      onClick={() => deleteConversation(activeConversation.id)}
+                      title="Supprimer cette conversation"
+                      className="h-6 w-6 rounded-md text-slate-400 hover:text-rose-500 flex items-center justify-center cursor-pointer shrink-0"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </div>
 
                 {/* Confirmation Card BEFORE Sending App-Triggered AI Action */}
@@ -306,16 +519,16 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="px-3.5 py-3 bg-violet-50/90 dark:bg-violet-950/40 border-b border-violet-200 dark:border-violet-800/70 space-y-2 shrink-0"
+                      className="px-4 py-3 bg-slate-50 dark:bg-zinc-900/80 border-b border-slate-200/80 dark:border-zinc-800 space-y-2 shrink-0"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-violet-800 dark:text-violet-200 flex items-center gap-1.5">
-                          <Sparkles size={12} /> Confirmer l’envoi à Kora AI ?
+                        <span className="text-[11px] font-semibold text-slate-800 dark:text-zinc-100 flex items-center gap-1.5">
+                          <Sparkles size={12} className="text-violet-500" /> Confirmer le prompt
                         </span>
                         <button
                           type="button"
                           onClick={cancelConfirmation}
-                          className="text-violet-500 hover:text-violet-800 cursor-pointer"
+                          className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
                         >
                           <X size={13} />
                         </button>
@@ -324,53 +537,67 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                         rows={3}
                         value={confirmDraftText}
                         onChange={(e) => setConfirmDraftText(e.target.value)}
-                        className="w-full rounded-xl border border-violet-200 dark:border-violet-800 bg-white dark:bg-zinc-900 px-2.5 py-2 text-xs text-slate-800 dark:text-zinc-100 outline-none focus:border-violet-500 resize-none"
+                        className="w-full rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-2 text-xs text-slate-800 dark:text-zinc-100 outline-none focus:border-slate-400 resize-none"
                       />
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
                           onClick={cancelConfirmation}
-                          className="rounded-xl px-3 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                          className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
                         >
                           Annuler
                         </button>
                         <button
                           type="button"
                           onClick={() => void confirmAndSend(confirmDraftText)}
-                          className="rounded-xl bg-violet-600 text-white px-3.5 py-1.5 text-[11px] font-semibold hover:bg-violet-700 inline-flex items-center gap-1 cursor-pointer"
+                          className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
                         >
-                          <Send size={11} /> Confirmer & Envoyer
+                          <Send size={11} /> Envoyer
                         </button>
                       </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
-                {/* Messages Stream */}
-                <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3">
+                {/* Pro Editorial Messages Stream */}
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                   {activeConversation?.messages.map((m) => {
                     const pendingForMsg = draftActions.filter((d) => d.messageId === m.id);
+                    const isUser = m.role === 'user';
                     return (
-                      <div
-                        key={m.id}
-                        className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
-                      >
-                        <div
-                          className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 ${
-                            m.role === 'user'
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 text-xs leading-relaxed whitespace-pre-wrap'
-                              : 'bg-slate-100/90 dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 text-slate-800 dark:text-zinc-200'
-                          }`}
-                        >
-                          {m.role === 'assistant' ? <MarkdownView content={m.text} /> : m.text}
-                        </div>
+                      <div key={m.id} className="space-y-2">
+                        {isUser ? (
+                          <div className="rounded-2xl bg-slate-100/90 dark:bg-zinc-800/80 border border-slate-200/60 dark:border-zinc-700/50 px-3.5 py-2.5 space-y-2">
+                            {m.images && m.images.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {m.images.map((img) => (
+                                  <img
+                                    key={img.id}
+                                    src={img.dataUrl}
+                                    alt={img.name}
+                                    className="h-16 w-16 rounded-xl object-cover border border-slate-200/80 dark:border-zinc-700"
+                                  />
+                                ))}
+                              </div>
+                            )}
+                            {m.text && (
+                              <p className="text-[13px] leading-relaxed text-slate-900 dark:text-zinc-100 whitespace-pre-wrap">
+                                {m.text}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="px-0.5 text-[13px] text-slate-800 dark:text-zinc-200">
+                            <MarkdownView content={m.text} />
+                          </div>
+                        )}
 
                         {/* Live Preview Actions Linked to This Message */}
                         {pendingForMsg.length > 0 && (
-                          <div className="mt-2 w-[94%] rounded-2xl border border-dashed border-violet-400 dark:border-violet-600 bg-violet-50/75 dark:bg-violet-950/30 p-3 space-y-2">
+                          <div className="rounded-2xl border border-dashed border-violet-400/80 dark:border-violet-600/70 bg-violet-50/50 dark:bg-violet-950/25 p-3 space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1">
-                                <Wand2 size={11} /> En aperçu sur l’app ({pendingForMsg.length})
+                              <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300 flex items-center gap-1.5">
+                                <Wand2 size={11} /> Aperçu en direct ({pendingForMsg.length})
                               </span>
                             </div>
 
@@ -378,7 +605,7 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                               {pendingForMsg.map((item) => (
                                 <div
                                   key={item.id}
-                                  className="flex items-center justify-between gap-1.5 rounded-xl bg-white/90 dark:bg-zinc-900/90 border border-violet-200/70 dark:border-violet-900/60 px-2.5 py-1.5"
+                                  className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1.5"
                                 >
                                   <button
                                     type="button"
@@ -393,7 +620,7 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                                     <button
                                       type="button"
                                       onClick={() => applyDraftAction(item.id)}
-                                      title="Appliquer cette modification"
+                                      title="Appliquer"
                                       className="h-6 w-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 cursor-pointer"
                                     >
                                       <Check size={11} />
@@ -415,7 +642,7 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                               <button
                                 type="button"
                                 onClick={applyAllDrafts}
-                                className="flex-1 rounded-xl bg-violet-600 text-white py-1.5 text-[11px] font-semibold hover:bg-violet-700 cursor-pointer"
+                                className="flex-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-1.5 text-[11px] font-semibold cursor-pointer"
                               >
                                 Tout appliquer
                               </button>
@@ -431,8 +658,8 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                         )}
 
                         {m.actions && m.actions.length > 0 && pendingForMsg.length === 0 && m.applied && (
-                          <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 px-1">
-                            <Check size={10} /> Modifications appliquées dans Kora
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <Check size={10} /> Modifications appliquées
                           </span>
                         )}
                       </div>
@@ -440,9 +667,9 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                   })}
 
                   {loading && (
-                    <div className="flex items-center gap-2 text-xs text-slate-400 px-1">
-                      <Loader2 size={14} className="animate-spin text-violet-500" />
-                      Kora AI prépare l’aperçu…
+                    <div className="flex items-center gap-2 text-xs text-slate-400 py-1">
+                      <Loader2 size={14} className="animate-spin text-slate-500 dark:text-zinc-400" />
+                      Réflexion en cours…
                     </div>
                   )}
 
@@ -453,7 +680,7 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                           key={s}
                           type="button"
                           onClick={() => void sendDirectMessage(s)}
-                          className="w-full text-left rounded-xl border border-slate-200/80 dark:border-zinc-800 px-3 py-2 text-[11px] text-slate-600 dark:text-zinc-300 hover:border-violet-400 transition cursor-pointer"
+                          className="w-full text-left rounded-xl border border-slate-200/80 dark:border-zinc-800 px-3 py-2 text-[11px] text-slate-600 dark:text-zinc-400 hover:border-slate-400 dark:hover:border-zinc-600 hover:text-slate-900 dark:hover:text-zinc-100 transition cursor-pointer"
                         >
                           {s}
                         </button>
@@ -463,38 +690,152 @@ export function AIAssistantDrawer({ onOpenSettings, onNavigate }: AIAssistantDra
                   <div ref={bottomRef} />
                 </div>
 
-                {/* Input + Speech-to-Text Micro */}
-                <form
-                  onSubmit={handleSubmit}
-                  className="p-3 border-t border-slate-100 dark:border-zinc-800/80 flex items-center gap-1.5 shrink-0"
-                >
-                  <button
-                    type="button"
-                    onClick={toggleVoiceInput}
-                    title={listening ? 'Arrêter la dictée vocale' : 'Dictée vocale (Speech-to-Text)'}
-                    className={`h-9 w-9 rounded-xl flex items-center justify-center transition cursor-pointer shrink-0 ${
-                      listening
-                        ? 'bg-rose-500 text-white animate-pulse'
-                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                {/* Antigravity-Style Unified Composer (Images + Multi-line Text + Bottom Toolbar) */}
+                <div className="p-3 pt-1 shrink-0">
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDraggingImage(true);
+                    }}
+                    onDragLeave={() => setIsDraggingImage(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDraggingImage(false);
+                      if (e.dataTransfer.files.length > 0) {
+                        void addImagesFromFiles(e.dataTransfer.files);
+                      }
+                    }}
+                    className={`rounded-2xl border transition-all bg-slate-50/70 dark:bg-[#18181d] focus-within:bg-white dark:focus-within:bg-[#1a1a20] ${
+                      isDraggingImage
+                        ? 'border-violet-500 ring-2 ring-violet-500/20'
+                        : 'border-slate-200/90 dark:border-zinc-700/80 focus-within:border-slate-400 dark:focus-within:border-zinc-500'
                     }`}
                   >
-                    {listening ? <MicOff size={15} /> : <Mic size={15} />}
-                  </button>
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder={listening ? 'Écoute en cours… parle maintenant' : 'Écris ou dicte à Kora AI…'}
-                    className="flex-1 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 text-xs outline-none focus:border-violet-500 min-w-0"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!input.trim() || loading}
-                    className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center disabled:opacity-35 cursor-pointer shrink-0"
-                  >
-                    <Send size={14} />
-                  </button>
-                </form>
+                    {/* Queued Image Previews Strip (Top of Composer) */}
+                    {attachments.length > 0 && (
+                      <div className="px-3 pt-2.5 pb-1.5 flex flex-wrap gap-2 border-b border-slate-200/60 dark:border-zinc-800/80">
+                        {attachments.map((img) => (
+                          <div key={img.id} className="relative group">
+                            <img
+                              src={img.dataUrl}
+                              alt={img.name}
+                              className="h-12 w-12 rounded-xl object-cover border border-slate-200 dark:border-zinc-700 shadow-2xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAttachments((prev) => prev.filter((item) => item.id !== img.id))
+                              }
+                              title="Retirer l’image"
+                              className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shadow cursor-pointer"
+                            >
+                              <X size={10} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Multi-line Auto-Growing Textarea */}
+                    <textarea
+                      ref={textareaRef}
+                      rows={1}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      onPaste={handlePaste}
+                      placeholder={
+                        listening
+                          ? 'Écoute en cours… parle maintenant'
+                          : attachments.length > 0
+                          ? 'Ajoute une consigne avec ton image…'
+                          : 'Demande à Kora AI ou colle une image…'
+                      }
+                      className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-[13px] leading-relaxed text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 outline-none max-h-[140px]"
+                    />
+
+                    {/* Bottom Internal Toolbar (Antigravity Style) */}
+                    <div className="px-2.5 pb-2 pt-1 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1 min-w-0">
+                        {/* + Attach Image */}
+                        <button
+                          type="button"
+                          onClick={() => imageInputRef.current?.click()}
+                          title="Joindre une image (ou Ctrl+V)"
+                          className="h-7 w-7 rounded-lg text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/70 dark:hover:bg-zinc-800 flex items-center justify-center transition cursor-pointer shrink-0"
+                        >
+                          {attachments.length > 0 ? <ImagePlus size={14} /> : <Plus size={15} />}
+                        </button>
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={(e) => {
+                            if (e.target.files) void addImagesFromFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+
+                        {/* Compact Domain Pill Selector */}
+                        <div className="relative flex items-center">
+                          <select
+                            value={activeDomain}
+                            onChange={(e) => setDomain(e.target.value as AIDomain)}
+                            aria-label="Domaine IA"
+                            className="appearance-none rounded-lg bg-transparent hover:bg-slate-200/60 dark:hover:bg-zinc-800 pl-2 pr-5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 outline-none cursor-pointer transition"
+                          >
+                            {DOMAIN_OPTIONS.map((d) => (
+                              <option
+                                key={d.id}
+                                value={d.id}
+                                className="bg-white dark:bg-zinc-900 text-slate-900 dark:text-zinc-100"
+                              >
+                                {d.label}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={11}
+                            className="pointer-events-none absolute right-1.5 text-slate-400"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Voice Dictation */}
+                        <button
+                          type="button"
+                          onClick={toggleVoiceInput}
+                          title={listening ? 'Arrêter la dictée' : 'Dictée vocale'}
+                          className={`h-7 w-7 rounded-lg flex items-center justify-center transition cursor-pointer ${
+                            listening
+                              ? 'bg-rose-500 text-white animate-pulse'
+                              : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/70 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          {listening ? <MicOff size={14} /> : <Mic size={14} />}
+                        </button>
+
+                        {/* Circular Primary Send Button */}
+                        <button
+                          type="button"
+                          disabled={!canSend}
+                          onClick={triggerSend}
+                          title="Envoyer (Entrée)"
+                          className="h-7 w-7 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center hover:opacity-90 disabled:opacity-25 transition cursor-pointer"
+                        >
+                          {loading ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <ArrowRight size={14} strokeWidth={2.3} />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </>
             )}
           </motion.section>

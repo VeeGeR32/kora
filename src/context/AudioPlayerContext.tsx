@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { MusicTrack } from '../types';
-import { getMediaObjectUrl } from '../lib/mediaDb';
+import { getMediaObjectUrl, saveMediaBlob } from '../lib/mediaDb';
+import { downloadGoogleDriveAudioBlob, ensureGoogleDriveToken } from '../lib/googleDrive';
+import { useApp } from './AppContext';
 
 interface AudioPlayerContextValue {
   currentTrack: MusicTrack | null;
@@ -22,6 +24,7 @@ interface AudioPlayerContextValue {
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
 
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
+  const { state, notify } = useApp();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -105,6 +108,19 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (!src && track.cloudAudioUrl) {
       src = track.cloudAudioUrl;
     }
+    // Cross-device fallback: fetch audio blob on-demand from Google Drive and cache locally!
+    if (!src && track.googleDriveFileId) {
+      try {
+        notify(`Téléchargement depuis Google Drive (« ${track.title} »)…`);
+        const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
+        const blob = await downloadGoogleDriveAudioBlob(token, track.googleDriveFileId);
+        const cacheKey = track.mediaId || `drive_${track.googleDriveFileId}`;
+        await saveMediaBlob(cacheKey, blob, `${track.title}.mp3`);
+        src = await getMediaObjectUrl(cacheKey);
+      } catch (err) {
+        notify(`Google Drive : ${(err as Error).message}`);
+      }
+    }
 
     setCurrentTrack(track);
     if (!src) {
@@ -131,7 +147,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     } catch {
       setIsPlaying(false);
     }
-  }, [currentTrack?.id]);
+  }, [currentTrack?.id, state.preferences.firebaseConfig, notify]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;

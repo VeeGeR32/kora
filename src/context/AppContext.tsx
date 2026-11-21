@@ -28,6 +28,7 @@ import type {
 import { createEmptyState, createSeedState } from '../data/seed';
 import { uid } from '../utils/dates';
 import {
+  completeGoogleRedirectIfPending,
   fetchCloudStateOnce,
   formatFirebaseSyncError,
   getEnvFirebaseConfig,
@@ -38,6 +39,7 @@ import {
   signOutFirebase,
   signUpWithEmail,
   subscribeCloudState,
+  updateFirebaseDisplayName,
   uploadCloudMedia,
 } from '../lib/firebase';
 import { deleteMediaBlob, saveMediaBlob } from '../lib/mediaDb';
@@ -60,14 +62,16 @@ interface AppContextValue {
   // Firebase Cloud Sync
   cloudUser: User | null;
   authReady: boolean;
+  authError: string | null;
+  clearAuthError: () => void;
   cloudConfigured: boolean;
   cloudSyncing: boolean;
   cloudError: string | null;
   lastCloudSyncAt: number | null;
-  connectGoogleCloud: () => Promise<void>;
+  connectGoogleCloud: (options?: { forceRedirect?: boolean }) => Promise<void>;
   connectEmailCloud: (email: string, password: string) => Promise<void>;
   registerEmailCloud: (email: string, password: string, displayName?: string) => Promise<void>;
-  forceSaveCloud: () => Promise<void>;
+  forceSaveCloud: (overridePreferences?: Partial<UserPreferences>) => Promise<void>;
   disconnectGoogleCloud: () => Promise<void>;
   saveAndOptionallySyncMedia: (mediaId: string, blob: Blob, name: string) => Promise<{ mediaId: string; cloudUrl?: string }>;
 
@@ -180,6 +184,30 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+function formatAuthError(err: unknown): string {
+  const e = err as { code?: string; message?: string } | null;
+  const code = e?.code || '';
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Fenêtre Google fermée avant la fin. Essaie la connexion par redirection ci-dessous.';
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'Popup bloquée par le navigateur. Utilise la connexion par redirection ci-dessous.';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    return `Domaine non autorisé (${window.location.hostname}) dans Firebase Auth → Domaines autorisés.`;
+  }
+  if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+    return 'Email ou mot de passe incorrect.';
+  }
+  if (code === 'auth/email-already-in-use') {
+    return 'Un compte existe déjà avec cet email.';
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'Erreur réseau (vérifie ta connexion ou un bloqueur de pub/cookies tiers).';
+  }
+  return e?.message || 'Erreur de connexion';
+}
+
 function normalizeEvents(events: ScheduleEvent[]): ScheduleEvent[] {
   return events.map((ev) => ({
     ...ev,
@@ -236,10 +264,10 @@ function mergeWithSeed(parsed: Partial<AppState> | null): AppState {
 function loadInitialState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
-    if (!raw) return createSeedState();
+    if (!raw) return { ...createEmptyState(), updatedAt: 0 };
     return mergeWithSeed(JSON.parse(raw) as Partial<AppState>);
   } catch {
-    return createSeedState();
+    return { ...createEmptyState(), updatedAt: 0 };
   }
 }
 
@@ -248,9 +276,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [cloudUser, setCloudUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<number | null>(null);
+
+  const clearAuthError = useCallback(() => setAuthError(null), []);
 
   const toastTimer = useRef<number | null>(null);
   const cloudPushTimer = useRef<number | null>(null);
@@ -274,20 +305,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state]);
 
-  // Dark mode sync
+  // Dark mode + dynamic mobile status-bar theme-color sync
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', state.preferences.theme === 'dark');
+    const isDark = state.preferences.theme === 'dark';
+    document.documentElement.classList.toggle('dark', isDark);
+    const color = isDark ? '#0e0e11' : '#ffffff';
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]:not([media])');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      document.head.appendChild(meta);
+    }
+    meta.content = color;
   }, [state.preferences.theme]);
 
-  // Listen to Firebase Auth state
+  // Listen to Firebase Auth state & resolve any pending Google redirect sign-in
   useEffect(() => {
     if (!cloudConfigured) {
       setCloudUser(null);
       setAuthReady(true);
       return;
     }
+    void completeGoogleRedirectIfPending(resolvedFbConfig).catch((err) => {
+      const code = (err as { code?: string })?.code || '';
+      if (code && code !== 'auth/no-current-user') {
+        setAuthError(formatAuthError(err));
+      }
+    });
     return listenAuthState(resolvedFbConfig, (user) => {
       setCloudUser(user);
+      if (user) setAuthError(null);
       setAuthReady(true);
     });
   }, [cloudConfigured, resolvedFbConfig?.apiKey, resolvedFbConfig?.projectId]);
@@ -412,30 +459,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const connectGoogleCloud = useCallback(async () => {
-    if (!resolvedFbConfig) {
-      notify('Configure d’abord ton projet Firebase dans les Paramètres');
-      return;
-    }
-    try {
-      const user = await signInWithGoogle(resolvedFbConfig);
-      if (user) notify(`Connecté en tant que ${user.displayName || user.email}`);
-    } catch (err) {
-      notify(`Connexion Firebase échouée : ${(err as Error).message}`);
-    }
-  }, [resolvedFbConfig, notify]);
+  const connectGoogleCloud = useCallback(
+    async (options?: { forceRedirect?: boolean }) => {
+      setAuthError(null);
+      if (!resolvedFbConfig) {
+        const msg = 'Configuration Cloud manquante';
+        setAuthError(msg);
+        notify(msg);
+        return;
+      }
+      try {
+        const user = await signInWithGoogle(resolvedFbConfig, options);
+        if (user) {
+          setAuthError(null);
+          notify(`Connecté en tant que ${user.displayName || user.email}`);
+        }
+      } catch (err) {
+        const msg = formatAuthError(err);
+        setAuthError(msg);
+        notify(msg);
+      }
+    },
+    [resolvedFbConfig, notify]
+  );
 
   const connectEmailCloud = useCallback(
     async (email: string, password: string) => {
+      setAuthError(null);
       if (!resolvedFbConfig) {
-        notify('Configure d’abord ton projet Firebase');
+        setAuthError('Configuration Cloud manquante');
         return;
       }
       try {
         const user = await signInWithEmail(resolvedFbConfig, email, password);
+        setAuthError(null);
         notify(`Connecté (${user.email})`);
       } catch (err) {
-        notify(`Erreur connexion : ${(err as Error).message}`);
+        const msg = formatAuthError(err);
+        setAuthError(msg);
+        notify(msg);
       }
     },
     [resolvedFbConfig, notify]
@@ -443,55 +505,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const registerEmailCloud = useCallback(
     async (email: string, password: string, displayName?: string) => {
+      setAuthError(null);
       if (!resolvedFbConfig) {
-        notify('Configure d’abord ton projet Firebase');
+        setAuthError('Configuration Cloud manquante');
         return;
       }
       try {
         const user = await signUpWithEmail(resolvedFbConfig, email, password);
         if (displayName?.trim()) {
+          void updateFirebaseDisplayName(resolvedFbConfig, displayName.trim());
           touch((prev) => ({
             ...prev,
             preferences: { ...prev.preferences, name: displayName.trim() },
           }));
         }
+        setAuthError(null);
         notify(`Compte créé (${user.email})`);
       } catch (err) {
-        notify(`Erreur inscription : ${(err as Error).message}`);
+        const msg = formatAuthError(err);
+        setAuthError(msg);
+        notify(msg);
       }
     },
     [resolvedFbConfig, notify]
   );
 
-  const forceSaveCloud = useCallback(async () => {
-    if (!cloudUser || !resolvedFbConfig) {
-      notify('Connecte-toi d’abord à ton compte Firebase');
-      return;
-    }
-    try {
-      setCloudSyncing(true);
-      const nextTs = Math.max(Date.now(), (latestStateRef.current.updatedAt || 0) + 1);
-      const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, {
-        ...latestStateRef.current,
-        updatedAt: nextTs,
-      });
-      lastPushedUpdatedAtRef.current = ts;
-      setLastCloudSyncAt(Date.now());
-      setCloudError(null);
-      notify('Données sauvegardées dans Firebase ✓');
-    } catch (err) {
-      const friendly = formatFirebaseSyncError(err);
-      setCloudError(friendly);
-      notify(`Erreur sauvegarde : ${friendly}`);
-    } finally {
-      setCloudSyncing(false);
-    }
-  }, [cloudUser, resolvedFbConfig, notify]);
+  const forceSaveCloud = useCallback(
+    async (overridePreferences?: Partial<UserPreferences>) => {
+      if (!cloudUser || !resolvedFbConfig) {
+        notify('Connecte-toi d’abord à ton compte');
+        return;
+      }
+      try {
+        setCloudSyncing(true);
+        const nextTs = Math.max(Date.now(), (latestStateRef.current.updatedAt || 0) + 1);
+        const nextState: AppState = overridePreferences
+          ? {
+              ...latestStateRef.current,
+              preferences: {
+                ...latestStateRef.current.preferences,
+                ...overridePreferences,
+                nutritionGoals: overridePreferences.nutritionGoals
+                  ? {
+                      ...latestStateRef.current.preferences.nutritionGoals,
+                      ...overridePreferences.nutritionGoals,
+                    }
+                  : latestStateRef.current.preferences.nutritionGoals,
+              },
+              updatedAt: nextTs,
+            }
+          : {
+              ...latestStateRef.current,
+              updatedAt: nextTs,
+            };
+
+        if (overridePreferences) {
+          ignoreNextPushRef.current = true;
+          latestStateRef.current = nextState;
+          setState(nextState);
+          if (typeof overridePreferences.name === 'string' && overridePreferences.name.trim()) {
+            void updateFirebaseDisplayName(resolvedFbConfig, overridePreferences.name.trim());
+          }
+        }
+
+        const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, nextState);
+        lastPushedUpdatedAtRef.current = ts;
+        setLastCloudSyncAt(Date.now());
+        setCloudError(null);
+        notify('Sauvegardé ✓');
+      } catch (err) {
+        const friendly = formatFirebaseSyncError(err);
+        setCloudError(friendly);
+        notify(`Erreur sauvegarde : ${friendly}`);
+      } finally {
+        setCloudSyncing(false);
+      }
+    },
+    [cloudUser, resolvedFbConfig, notify]
+  );
 
   const disconnectGoogleCloud = useCallback(async () => {
     await signOutFirebase(resolvedFbConfig);
     setLastCloudSyncAt(null);
-    notify('Déconnecté du Cloud Firebase');
+    notify('Déconnecté');
   }, [resolvedFbConfig, notify]);
 
   const saveAndOptionallySyncMedia = useCallback(
@@ -1340,6 +1436,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         notify,
         cloudUser,
         authReady,
+        authError,
+        clearAuthError,
         cloudConfigured,
         cloudSyncing,
         cloudError,

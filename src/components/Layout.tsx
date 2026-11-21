@@ -66,21 +66,13 @@ export function Layout({
       {/* Desktop Minimalist Sidebar */}
       <aside className="hidden md:flex md:flex-col md:w-60 shrink-0 border-r border-slate-200/70 dark:border-zinc-800/80 bg-white/80 dark:bg-[#0e0e11]/92 backdrop-blur-md sticky top-0 h-screen px-4 py-5 justify-between">
         <div className="space-y-5">
-          {/* Brand: Kora */}
+          {/* Brand Icon Only (Minimalist) */}
           <div className="flex items-center justify-between px-1.5">
-            <div className="flex items-center gap-2.5">
-              <KoraLogo size={32} />
-              <div>
-                <span className="text-base font-bold tracking-tight text-slate-900 dark:text-zinc-50 block leading-none">
-                  Kora
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium">Life OS</span>
-              </div>
-            </div>
+            <KoraLogo size={32} />
             <button
               type="button"
               onClick={onOpenSettings}
-              title={cloudUser ? `Sync Cloud (${cloudUser.email})` : 'Mode local (configurer Cloud)'}
+              title={cloudUser ? `Synchronisé (${cloudUser.email})` : 'Compte & Profil'}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
             >
               {cloudUser ? (
@@ -234,52 +226,51 @@ export function Layout({
         </div>
       </aside>
 
-      {/* Mobile Ultra-Clean Top Bar */}
-      <header className="md:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-2.5 bg-white/88 dark:bg-[#0e0e11]/88 backdrop-blur-lg border-b border-slate-200/70 dark:border-zinc-800/80">
-        <div className="flex items-center gap-2">
+      {/* Mobile Fixed Safe-Area Top Bar (Crisp & Always Visible in PWA) */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-40 pt-[env(safe-area-inset-top)] bg-white/96 dark:bg-[#0e0e11]/96 backdrop-blur-md border-b border-slate-200/80 dark:border-zinc-800/90 shadow-[0_1px_10px_rgba(15,23,42,0.04)] dark:shadow-[0_1px_12px_rgba(0,0,0,0.4)]">
+        <div className="h-13 px-4 flex items-center justify-between">
           <KoraLogo size={28} />
-          <span className="text-sm font-bold tracking-tight">Kora</span>
-        </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={onOpenAI}
-            aria-label="Ouvrir Kora AI"
-            className="inline-flex items-center gap-1 rounded-xl bg-violet-600/12 text-violet-700 dark:text-violet-300 px-2.5 py-1.5 text-xs font-semibold"
-          >
-            <Sparkles size={13} /> IA
-          </button>
-          <button
-            type="button"
-            onClick={toggleTheme}
-            aria-label="Thème"
-            className="rounded-xl p-2 text-slate-500 dark:text-zinc-400"
-          >
-            {state.preferences.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            aria-label="Préférences"
-            className="rounded-xl p-2 text-slate-500 dark:text-zinc-400"
-          >
-            <Settings size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={onOpenQuickAdd}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950"
-            aria-label="Nouveau"
-          >
-            <Plus size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onOpenAI}
+              aria-label="Ouvrir Kora AI"
+              className="inline-flex items-center gap-1 rounded-xl bg-slate-900/8 dark:bg-zinc-100/10 text-slate-900 dark:text-zinc-100 px-2.5 py-1.5 text-xs font-semibold"
+            >
+              <Sparkles size={13} className="text-violet-600 dark:text-violet-400" /> IA
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label="Thème"
+              className="rounded-xl p-2 text-slate-600 dark:text-zinc-300"
+            >
+              {state.preferences.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              aria-label="Profil & Paramètres"
+              className="rounded-xl p-2 text-slate-600 dark:text-zinc-300"
+            >
+              <Settings size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenQuickAdd}
+              className="inline-flex items-center justify-center h-8 w-8 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950"
+              aria-label="Nouveau"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main
-        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-5 max-w-6xl w-full mx-auto ${
+        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.25rem+env(safe-area-inset-top))] md:pt-5 max-w-6xl w-full mx-auto ${
           currentTrack ? 'pb-40 md:pb-24' : 'pb-24 md:pb-10'
         }`}
       >
@@ -290,7 +281,7 @@ export function Layout({
       <MiniAudioPlayer />
 
       {/* Mobile Floating 5-Tab Bottom Bar */}
-      <nav className="md:hidden fixed bottom-2.5 left-2.5 right-2.5 z-30 rounded-2xl bg-white/92 dark:bg-[#141418]/94 backdrop-blur-xl border border-slate-200/80 dark:border-zinc-800 shadow-lg px-1 py-1.5 flex items-center justify-around">
+      <nav className="md:hidden fixed bottom-[max(0.625rem,env(safe-area-inset-bottom))] left-2.5 right-2.5 z-30 rounded-2xl bg-white/95 dark:bg-[#141418]/96 backdrop-blur-xl border border-slate-200/80 dark:border-zinc-800 shadow-lg px-1 py-1.5 flex items-center justify-around">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.id;
