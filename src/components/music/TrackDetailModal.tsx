@@ -88,7 +88,7 @@ export function TrackDetailModal({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [todoInput, setTodoInput] = useState('');
   const [markerLabel, setMarkerLabel] = useState('');
-  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
   const [songTitleDraft, setSongTitleDraft] = useState('');
 
   useEffect(() => {
@@ -121,27 +121,18 @@ export function TrackDetailModal({
 
   useEffect(() => {
     let alive = true;
-    if (!effectiveCover) {
-      setCoverUrl(null);
-      return;
-    }
-    if (effectiveCover.coverDataUrl) {
-      setCoverUrl(effectiveCover.coverDataUrl);
-    } else if (effectiveCover.coverMediaId) {
-      getMediaObjectUrl(effectiveCover.coverMediaId).then((u) => alive && setCoverUrl(u));
-    } else if (effectiveCover.cloudCoverUrl) {
-      setCoverUrl(effectiveCover.cloudCoverUrl);
+    if (effectiveCover && !effectiveCover.coverDataUrl && effectiveCover.coverMediaId) {
+      getMediaObjectUrl(effectiveCover.coverMediaId).then((u) => alive && setBlobCoverUrl(u));
     } else {
-      setCoverUrl(null);
+      setBlobCoverUrl(null);
     }
     return () => {
       alive = false;
     };
-  }, [
-    effectiveCover?.coverDataUrl,
-    effectiveCover?.coverMediaId,
-    effectiveCover?.cloudCoverUrl,
-  ]);
+  }, [effectiveCover?.coverDataUrl, effectiveCover?.coverMediaId]);
+
+  const coverUrl =
+    effectiveCover?.coverDataUrl || blobCoverUrl || effectiveCover?.cloudCoverUrl || null;
 
   const waveformBars = useMemo(() => {
     const id = track?.id || 'kora';
@@ -179,11 +170,7 @@ export function TrackDetailModal({
     try {
       const dataUrl = await compressCoverImage(file, 360);
       setTrackGroupCover(allGroupTrackIds, { coverDataUrl: dataUrl });
-      notify(
-        effectiveCover?.inheritedFromProject
-          ? 'Pochette du son enregistrée (affichée dès que le projet n’a pas sa propre pochette) ✓'
-          : 'Pochette du son mise à jour ✓'
-      );
+      notify('Pochette du son mise à jour ✓');
     } catch {
       notify('Impossible de lire cette image');
     }

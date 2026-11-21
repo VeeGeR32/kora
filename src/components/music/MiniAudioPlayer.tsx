@@ -19,6 +19,7 @@ import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { triggerHapticTick } from '../../lib/haptics';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import { groupMusicTracks, parseTrackVersion } from '../../lib/musicVersioning';
+import { findLinkedProjectForTrack, resolveEffectiveTrackCover } from '../../lib/trackCover';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
   { id: 'pink', label: 'Untitled Pink', css: 'from-pink-300 via-fuchsia-400 to-fuchsia-600' },
@@ -71,7 +72,7 @@ export function MiniAudioPlayer() {
     closePlayer,
   } = useAudioPlayer();
 
-  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
   const [showQueue, setShowQueue] = useState(false);
   const [scrubbing, setScrubbing] = useState(false);
 
@@ -94,47 +95,54 @@ export function MiniAudioPlayer() {
     lastTickBar: number;
   } | null>(null);
 
+  const currentGroup = useMemo(() => {
+    if (!currentTrack) return null;
+    const allGroups = groupMusicTracks(state.musicTracks);
+    return allGroups.find((g) => g.allTrackIds.includes(currentTrack.id)) || null;
+  }, [currentTrack?.id, state.musicTracks]);
+
+  const siblingTracks = useMemo(
+    () => (currentGroup ? currentGroup.versions.map((v) => v.track) : undefined),
+    [currentGroup]
+  );
+
   const linkedProject = useMemo(
     () =>
       currentTrack
-        ? state.musicProjects.find(
-            (p) => p.id === currentTrack.linkedProjectId || p.trackIds.includes(currentTrack.id)
-          ) || null
+        ? findLinkedProjectForTrack(currentTrack, state.musicProjects, siblingTracks)
         : null,
-    [currentTrack, state.musicProjects]
+    [currentTrack, state.musicProjects, siblingTracks]
+  );
+
+  const effectiveCover = useMemo(
+    () =>
+      currentTrack
+        ? resolveEffectiveTrackCover(
+            currentTrack,
+            state.musicProjects,
+            currentGroup?.groupKey,
+            siblingTracks
+          )
+        : null,
+    [currentTrack, state.musicProjects, currentGroup?.groupKey, siblingTracks]
   );
 
   useEffect(() => {
     let active = true;
-    // Rule: If the linked project has a cover, it applies to all tracks in the project;
-    // otherwise each track keeps its own individual cover!
-    if (linkedProject?.coverDataUrl) {
-      setCoverUrl(linkedProject.coverDataUrl);
-    } else if (linkedProject?.coverMediaId) {
-      getMediaObjectUrl(linkedProject.coverMediaId).then((url) => {
-        if (active) setCoverUrl(url);
+    if (effectiveCover && !effectiveCover.coverDataUrl && effectiveCover.coverMediaId) {
+      getMediaObjectUrl(effectiveCover.coverMediaId).then((url) => {
+        if (active) setBlobCoverUrl(url);
       });
-    } else if (currentTrack?.coverDataUrl) {
-      setCoverUrl(currentTrack.coverDataUrl);
-    } else if (currentTrack?.coverMediaId) {
-      getMediaObjectUrl(currentTrack.coverMediaId).then((url) => {
-        if (active) setCoverUrl(url);
-      });
-    } else if (currentTrack?.cloudCoverUrl) {
-      setCoverUrl(currentTrack.cloudCoverUrl);
     } else {
-      setCoverUrl(null);
+      setBlobCoverUrl(null);
     }
     return () => {
       active = false;
     };
-  }, [
-    linkedProject?.coverDataUrl,
-    linkedProject?.coverMediaId,
-    currentTrack?.coverDataUrl,
-    currentTrack?.coverMediaId,
-    currentTrack?.cloudCoverUrl,
-  ]);
+  }, [effectiveCover?.coverDataUrl, effectiveCover?.coverMediaId]);
+
+  const coverUrl =
+    effectiveCover?.coverDataUrl || blobCoverUrl || effectiveCover?.cloudCoverUrl || null;
 
   // Deterministic waveform bars (memoized once per track)
   const bars = useMemo(() => {

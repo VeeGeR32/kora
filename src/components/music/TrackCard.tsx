@@ -70,7 +70,7 @@ export function TrackCard({
     group.versions[0];
 
   const track = activeEntry.track;
-  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
 
   const effectiveCover = useMemo(
     () =>
@@ -85,23 +85,17 @@ export function TrackCard({
 
   useEffect(() => {
     let alive = true;
-    if (effectiveCover.coverDataUrl) {
-      setCoverUrl(effectiveCover.coverDataUrl);
-    } else if (effectiveCover.coverMediaId) {
-      getMediaObjectUrl(effectiveCover.coverMediaId).then((u) => alive && setCoverUrl(u));
-    } else if (effectiveCover.cloudCoverUrl) {
-      setCoverUrl(effectiveCover.cloudCoverUrl);
+    if (!effectiveCover.coverDataUrl && effectiveCover.coverMediaId) {
+      getMediaObjectUrl(effectiveCover.coverMediaId).then((u) => alive && setBlobCoverUrl(u));
     } else {
-      setCoverUrl(null);
+      setBlobCoverUrl(null);
     }
     return () => {
       alive = false;
     };
-  }, [
-    effectiveCover.coverDataUrl,
-    effectiveCover.coverMediaId,
-    effectiveCover.cloudCoverUrl,
-  ]);
+  }, [effectiveCover.coverDataUrl, effectiveCover.coverMediaId]);
+
+  const coverUrl = effectiveCover.coverDataUrl || blobCoverUrl || effectiveCover.cloudCoverUrl || null;
 
   const gradCls = getGradientClass(effectiveCover.gradientId);
   const todos = track.todos || [];
