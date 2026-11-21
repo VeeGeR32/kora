@@ -173,6 +173,25 @@ export async function requestGoogleDriveAccessToken(
   return credential.accessToken;
 }
 
+/** Requests a read-only Google Calendar OAuth access token via Google Sign-In popup */
+export async function requestGoogleCalendarAccessToken(
+  config?: FirebaseUserConfig | null
+): Promise<string> {
+  const bundle = initFirebaseClient(config);
+  if (!bundle) throw new Error('Configuration Firebase manquante');
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+  provider.setCustomParameters({ prompt: 'consent' });
+  const res = await signInWithPopup(bundle.auth, provider, browserPopupRedirectResolver);
+  const credential = GoogleAuthProvider.credentialFromResult(res);
+  if (!credential?.accessToken) {
+    throw new Error(
+      'Aucun token Google Agenda retourné par Google. Réessaie en autorisant l’accès Agenda.'
+    );
+  }
+  return credential.accessToken;
+}
+
 export async function updateFirebaseDisplayName(
   config: FirebaseUserConfig | null | undefined,
   displayName: string
@@ -298,6 +317,17 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
       storageBucket: strOr(p.firebaseConfig.storageBucket, '', 256),
       messagingSenderId: strOr(p.firebaseConfig.messagingSenderId, '', 256),
       appId: strOr(p.firebaseConfig.appId, '', 256),
+    };
+  }
+  if (p.notifications && typeof p.notifications === 'object') {
+    cleanPreferences.notifications = {
+      enabled: Boolean(p.notifications.enabled),
+      eventsBeforeMin: numOr(p.notifications.eventsBeforeMin, 15, 0, 120),
+      homeworkAndExams: Boolean(p.notifications.homeworkAndExams),
+      timers: Boolean(p.notifications.timers),
+      hydrationAndMacros: Boolean(p.notifications.hydrationAndMacros),
+      dailyBriefing: Boolean(p.notifications.dailyBriefing),
+      morningHour: strOr(p.notifications.morningHour, '07:45', 10),
     };
   }
 

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Disc3, Pause, Play, RotateCcw, Timer, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
+import { sendKoraNotification } from '../lib/notifications';
 import { todayISO } from '../utils/dates';
 import { ProgressRing } from './ui/ProgressRing';
 
@@ -36,6 +37,13 @@ export function FocusModal({ open, onClose }: FocusModalProps) {
             linkedTrackId: trackId || undefined,
             completedAt: new Date().toISOString(),
           });
+          if (state.preferences.notifications?.enabled && state.preferences.notifications?.timers) {
+            void sendKoraNotification({
+              title: 'Session Focus terminée ✓',
+              body: `${presetMin} min sur « ${label.trim() || 'Session Focus'} » validées.`,
+              tag: 'kora-focus-done',
+            });
+          }
           return 0;
         }
         return s - 1;

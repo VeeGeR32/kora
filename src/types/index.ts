@@ -47,6 +47,7 @@ export interface ScheduleEvent {
   linkedWorkoutId?: string;
   linkedProjectId?: string;
   linkedTrackId?: string;
+  googleCalendarEventId?: string;
 }
 
 export interface HomeworkItem {
@@ -334,6 +335,16 @@ export interface FirebaseUserConfig {
   appId: string;
 }
 
+export interface NotificationSettings {
+  enabled: boolean;
+  eventsBeforeMin: number; // 0 = off, default 15
+  homeworkAndExams: boolean;
+  timers: boolean;
+  hydrationAndMacros: boolean;
+  dailyBriefing: boolean;
+  morningHour: string; // HH:mm e.g. "07:45"
+}
+
 export interface UserPreferences {
   name: string;
   bio?: string;
@@ -346,6 +357,7 @@ export interface UserPreferences {
   pronoteBridgeUrl?: string;
   pronoteBridgeToken?: string;
   firebaseConfig?: FirebaseUserConfig;
+  notifications?: NotificationSettings;
 }
 
 export interface AppState {

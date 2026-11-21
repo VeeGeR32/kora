@@ -43,6 +43,7 @@ import {
   uploadCloudMedia,
 } from '../lib/firebase';
 import { deleteMediaBlob, saveMediaBlob } from '../lib/mediaDb';
+import { evaluateScheduledNotifications } from '../lib/notifications';
 
 const STORAGE_KEY = 'kora_app_state_v2';
 const LEGACY_KEY = 'tempo_app_state_v1';
@@ -78,6 +79,7 @@ interface AppContextValue {
   // Events
   addEvent: (event: Omit<ScheduleEvent, 'id'>) => void;
   addManyEvents: (events: Omit<ScheduleEvent, 'id'>[]) => void;
+  syncGoogleCalendarEvents: (events: Omit<ScheduleEvent, 'id'>[]) => { added: number; updated: number };
   updateEvent: (id: string, patch: Partial<ScheduleEvent>) => void;
   deleteEvent: (id: string) => void;
 
@@ -318,6 +320,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     meta.content = color;
   }, [state.preferences.theme]);
+
+  // Smart iPhone / PWA Notification Scheduler (runs every 30s when enabled)
+  useEffect(() => {
+    if (!state.preferences.notifications?.enabled) return;
+    void evaluateScheduledNotifications(latestStateRef.current);
+    const timer = window.setInterval(() => {
+      void evaluateScheduledNotifications(latestStateRef.current);
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [state.preferences.notifications?.enabled]);
 
   // Listen to Firebase Auth state & resolve any pending Google redirect sign-in
   useEffect(() => {
@@ -621,6 +633,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         events: [...prev.events, ...events.map((e) => ({ ...e, id: uid('ev') }))],
       }));
       notify(`${events.length} créneaux importés dans le planning`);
+    },
+    [notify]
+  );
+
+  const syncGoogleCalendarEvents = useCallback(
+    (incoming: Omit<ScheduleEvent, 'id'>[]) => {
+      let added = 0;
+      let updated = 0;
+      touch((prev) => {
+        const byGCalId = new Map<string, ScheduleEvent>();
+        for (const ev of prev.events) {
+          if (ev.googleCalendarEventId) byGCalId.set(ev.googleCalendarEventId, ev);
+        }
+
+        const updatedIds = new Set<string>();
+        const nextEvents = prev.events.map((ev) => {
+          if (!ev.googleCalendarEventId) return ev;
+          const match = incoming.find((inc) => inc.googleCalendarEventId === ev.googleCalendarEventId);
+          if (!match) return ev;
+          updatedIds.add(ev.googleCalendarEventId);
+          updated++;
+          return { ...ev, ...match, id: ev.id };
+        });
+
+        for (const inc of incoming) {
+          if (inc.googleCalendarEventId && updatedIds.has(inc.googleCalendarEventId)) continue;
+          added++;
+          nextEvents.push({ ...inc, id: uid('ev') });
+        }
+
+        return { ...prev, events: nextEvents };
+      });
+      notify(
+        `Google Agenda synchronisé (${added} ajouté${added > 1 ? 's' : ''}${updated ? ` · ${updated} mis à jour` : ''}) ✓`
+      );
+      return { added, updated };
     },
     [notify]
   );
@@ -1447,6 +1495,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         saveAndOptionallySyncMedia,
         addEvent,
         addManyEvents,
+        syncGoogleCalendarEvents,
         updateEvent,
         deleteEvent,
         addHomework,

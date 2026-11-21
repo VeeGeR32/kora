@@ -15,6 +15,7 @@ import {
 import type { SetType, WorkoutExercise, WorkoutSession } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
+import { sendKoraNotification } from '../../lib/notifications';
 import { EXERCISE_LIBRARY } from '../../data/exercises';
 import { todayISO, uid } from '../../utils/dates';
 
@@ -95,6 +96,13 @@ export function LiveWorkoutModal({ sessionDraft, onClose, onFinish }: LiveWorkou
         if (s <= 1) {
           setRestActive(false);
           playBeep();
+          if (state.preferences.notifications?.enabled && state.preferences.notifications?.timers) {
+            void sendKoraNotification({
+              title: 'Repos terminé · Go série suivante !',
+              body: 'Ton chrono de repos gym est à 0:00.',
+              tag: 'kora-gym-rest',
+            });
+          }
           return 0;
         }
         return s - 1;

@@ -8,12 +8,14 @@ import {
   List,
   MapPin,
   Plus,
+  RefreshCw,
   Repeat,
   Sparkles,
 } from 'lucide-react';
 import type { CalendarOccurrence, EventType } from '../types';
 import { useApp } from '../context/AppContext';
 import { useAI } from '../context/AIContext';
+import { GoogleCalendarModal } from './GoogleCalendarModal';
 import {
   addDays,
   formatLongDateFR,
@@ -105,6 +107,7 @@ export function PlanningView({ onOpenQuickAdd, onSelectOccurrence }: PlanningVie
     typeof window !== 'undefined' && window.innerWidth < 640 ? 'day' : 'week'
   );
   const [filter, setFilter] = useState<EventType | 'all'>('all');
+  const [gcalOpen, setGcalOpen] = useState(false);
 
   useEffect(() => {
     const onResize = () => {
@@ -177,6 +180,16 @@ export function PlanningView({ onOpenQuickAdd, onSelectOccurrence }: PlanningVie
         </div>
 
         <div className="flex items-center flex-wrap gap-2">
+          {/* Google Calendar Sync Button */}
+          <button
+            type="button"
+            onClick={() => setGcalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:border-slate-400 dark:hover:border-zinc-600 transition cursor-pointer"
+          >
+            <RefreshCw size={12} className="text-indigo-500" />
+            Google Agenda
+          </button>
+
           {/* Date Navigator */}
           <div className="inline-flex items-center rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-0.5">
             <button
@@ -500,6 +513,8 @@ export function PlanningView({ onOpenQuickAdd, onSelectOccurrence }: PlanningVie
           })}
         </div>
       )}
+
+      <GoogleCalendarModal open={gcalOpen} onClose={() => setGcalOpen(false)} />
     </div>
   );
 }
