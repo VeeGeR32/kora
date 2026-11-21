@@ -298,6 +298,8 @@ export interface MusicProject {
   title: string;
   kind: ProjectKind;
   coverMediaId?: string;
+  coverDataUrl?: string;
+  coverGradient?: string;
   targetReleaseDate?: string;
   status: 'en-cours' | 'mix' | 'pret' | 'sorti';
   steps: MusicProjectStep[];

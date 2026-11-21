@@ -271,7 +271,7 @@ export function Layout({
       {/* Main Content */}
       <main
         className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.75rem+env(safe-area-inset-top))] md:pt-5 max-w-6xl w-full mx-auto ${
-          currentTrack ? 'pb-40 md:pb-24' : 'pb-24 md:pb-10'
+          currentTrack ? 'pb-44 md:pb-28' : 'pb-24 md:pb-10'
         }`}
       >
         {children}

@@ -9,7 +9,6 @@ import {
   FolderKanban,
   HardDrive,
   ImagePlus,
-  Music2,
   Pause,
   Play,
   Plus,
@@ -22,11 +21,12 @@ import type { MusicTrack, ProjectKind, TrackStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
-import { formatShortDateFR, todayISO, uid } from '../../utils/dates';
+import { todayISO, uid } from '../../utils/dates';
 import { TRACK_STATUS_META } from '../../utils/theme';
-import { CheckCircle } from '../ui/CheckCircle';
 import { LyricsStudio } from './LyricsStudio';
 import { GoogleDrivePickerModal } from './GoogleDrivePickerModal';
+import { ProjectAlbumModal } from './ProjectAlbumModal';
+import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import type { QuickAddContext } from '../QuickAddModal';
 
 interface MusicViewProps {
@@ -136,10 +136,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     deleteTrackMarker,
     deleteMusicTrack,
     addMusicProject,
-    toggleMusicProjectStep,
-    addMusicProjectStep,
-    deleteMusicProjectStep,
-    deleteMusicProject,
     addLyricsDoc,
     saveAndOptionallySyncMedia,
     notify,
@@ -150,7 +146,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const [selectedLyricsId, setSelectedLyricsId] = useState<string | null>(null);
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [markerLabel, setMarkerLabel] = useState('');
-  const [stepInputs, setStepInputs] = useState<Record<string, string>>({});
 
   // New project quick modal inline
   const [showNewProj, setShowNewProj] = useState(false);
@@ -158,6 +153,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const [newProjKind, setNewProjKind] = useState<ProjectKind>('ep');
   const [newProjDate, setNewProjDate] = useState('');
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
 
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -242,9 +238,11 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const handleCreateProject = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjTitle.trim()) return;
-    addMusicProject({
+    const grad = PROJECT_GRADIENTS[state.musicProjects.length % PROJECT_GRADIENTS.length].id;
+    const newId = addMusicProject({
       title: newProjTitle.trim(),
       kind: newProjKind,
+      coverGradient: grad,
       targetReleaseDate: newProjDate || undefined,
       status: 'en-cours',
       trackIds: [],
@@ -258,6 +256,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     setNewProjTitle('');
     setNewProjDate('');
     setShowNewProj(false);
+    setOpenProjectId(newId);
   };
 
   const statusCounts = useMemo(() => {
@@ -484,140 +483,109 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               </form>
             )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {state.musicProjects.map((proj) => {
-                const done = proj.steps.filter((s) => s.done).length;
-                const total = proj.steps.length;
-                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                const linkedTracks = state.musicTracks.filter(
-                  (t) => t.linkedProjectId === proj.id || proj.trackIds.includes(t.id)
-                );
+            {/* [untitled]-Style Album / EP Visual Grid */}
+            {state.musicProjects.length === 0 ? (
+              <div className="tempo-card rounded-3xl p-8 text-center space-y-2">
+                <p className="text-xs text-slate-400">
+                  Crée ton premier projet (Single, EP, Album) pour regrouper tes sons, sa pochette et ta TODO.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowNewProj(true)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold cursor-pointer"
+                >
+                  <Plus size={13} /> Créer un projet
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
+                {state.musicProjects.map((proj) => {
+                  const done = proj.steps.filter((s) => s.done).length;
+                  const total = proj.steps.length;
+                  const linkedTracks = state.musicTracks.filter(
+                    (t) => t.linkedProjectId === proj.id || proj.trackIds.includes(t.id)
+                  );
+                  const isPlayingProj =
+                    player.isPlaying &&
+                    linkedTracks.some((t) => t.id === player.currentTrack?.id);
+                  const gradCls = getGradientClass(proj.coverGradient);
 
-                return (
-                  <div key={proj.id} className="tempo-card rounded-3xl p-5 space-y-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="rounded-full bg-fuchsia-500/12 text-fuchsia-700 dark:text-fuchsia-300 px-2.5 py-0.5 text-[10px] font-semibold uppercase">
-                            {proj.kind}
-                          </span>
-                          {proj.targetReleaseDate && (
-                            <span className="font-mono text-[11px] text-slate-400">
-                              Sortie visée : {formatShortDateFR(proj.targetReleaseDate)}
+                  return (
+                    <div
+                      key={proj.id}
+                      onClick={() => setOpenProjectId(proj.id)}
+                      className="group cursor-pointer space-y-2.5"
+                    >
+                      {/* Large Rounded Square Cover + Floating Play Button */}
+                      <div className="relative aspect-square w-full rounded-[26px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015] group-active:scale-[0.985]">
+                        {proj.coverDataUrl ? (
+                          <img
+                            src={proj.coverDataUrl}
+                            alt={proj.title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className={`h-full w-full bg-gradient-to-br ${gradCls}`} />
+                        )}
+
+                        {/* Top-left subtle kind pill */}
+                        <span className="absolute top-2.5 left-2.5 rounded-full bg-black/35 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
+                          {proj.kind}
+                        </span>
+
+                        {/* Floating Bottom-Right Play Button ([untitled] signature!) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (linkedTracks.length === 0) {
+                              setOpenProjectId(proj.id);
+                              return;
+                            }
+                            if (isPlayingProj) {
+                              player.togglePlay();
+                            } else {
+                              void player.playTrack(linkedTracks[0], 0, linkedTracks);
+                            }
+                          }}
+                          aria-label={`Lire ${proj.title}`}
+                          className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-slate-950/80 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg backdrop-blur-xs cursor-pointer"
+                        >
+                          {isPlayingProj ? (
+                            <Pause size={16} fill="currentColor" />
+                          ) : (
+                            <Play size={16} fill="currentColor" className="ml-0.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Title & Compact Meta Row */}
+                      <div className="px-0.5 space-y-0.5">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                            {proj.title}
+                          </h3>
+                          {total > 0 && (
+                            <span className="font-mono text-[10px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 shrink-0">
+                              {done}/{total}
                             </span>
                           )}
                         </div>
-                        <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100 mt-1.5">
-                          {proj.title}
-                        </h3>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => deleteMusicProject(proj.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-
-                    {/* Progress */}
-                    <div>
-                      <div className="flex justify-between text-[11px] text-slate-500 mb-1">
-                        <span>Avancement</span>
-                        <span className="font-mono font-semibold text-fuchsia-600 dark:text-fuchsia-400">
-                          {done}/{total} ({pct}%)
-                        </span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-                        <div
-                          className="h-full bg-fuchsia-600 rounded-full transition-all duration-300"
-                          style={{ width: `${pct}%` }}
-                        />
+                        <p className="text-xs text-slate-400 dark:text-zinc-500 truncate">
+                          {state.preferences.name || 'Moi'} · {linkedTracks.length} son
+                          {linkedTracks.length > 1 ? 's' : ''}
+                        </p>
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
 
-                    {/* Linked tracks pills */}
-                    {linkedTracks.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {linkedTracks.map((t) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => void player.playTrack(t)}
-                            className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-200 hover:bg-fuchsia-500/15 cursor-pointer"
-                          >
-                            <Music2 size={11} className="text-fuchsia-500" />
-                            {t.title}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Steps Checklist */}
-                    <div className="space-y-1.5">
-                      {proj.steps.map((step) => (
-                        <div
-                          key={step.id}
-                          className="group flex items-center gap-2.5 rounded-lg py-1 px-1 hover:bg-slate-50 dark:hover:bg-zinc-900/60"
-                        >
-                          <CheckCircle
-                            checked={step.done}
-                            onToggle={() => toggleMusicProjectStep(proj.id, step.id)}
-                            accent="violet"
-                            size="sm"
-                          />
-                          <span
-                            className={`flex-1 text-xs ${
-                              step.done
-                                ? 'line-through text-slate-400'
-                                : 'text-slate-700 dark:text-zinc-200'
-                            }`}
-                          >
-                            {step.label}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => deleteMusicProjectStep(proj.id, step.id)}
-                            className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-500 cursor-pointer"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const val = (stepInputs[proj.id] || '').trim();
-                        if (!val) return;
-                        addMusicProjectStep(proj.id, val);
-                        setStepInputs((prev) => ({ ...prev, [proj.id]: '' }));
-                      }}
-                      className="flex gap-1.5"
-                    >
-                      <input
-                        type="text"
-                        value={stepInputs[proj.id] || ''}
-                        onChange={(e) =>
-                          setStepInputs((prev) => ({ ...prev, [proj.id]: e.target.value }))
-                        }
-                        placeholder="+ Ajouter une étape / objectif…"
-                        className="flex-1 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-1.5 text-xs outline-none focus:border-fuchsia-400"
-                      />
-                      {(stepInputs[proj.id] || '').trim() && (
-                        <button
-                          type="submit"
-                          className="rounded-xl bg-fuchsia-600 text-white px-3 py-1.5 text-xs font-semibold cursor-pointer"
-                        >
-                          OK
-                        </button>
-                      )}
-                    </form>
-                  </div>
-                );
-              })}
-            </div>
+            <ProjectAlbumModal
+              projectId={openProjectId}
+              onClose={() => setOpenProjectId(null)}
+            />
           </section>
         </div>
       )}
