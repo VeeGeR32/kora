@@ -59,6 +59,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const {
     state,
     lastCloudSyncAt,
+    autoSyncingDrive,
     addMusicTrack,
     syncMusicTracksBatch,
     updateMusicTrack,
@@ -292,7 +293,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         };
       });
 
-      const { added, updated, removed } = syncMusicTracksBatch(payload, excludedFileIds);
+      const { added, updated, removed } = syncMusicTracksBatch(payload, excludedFileIds, true);
       const uniqueProjects = new Set(
         allFiles.map((f) => parseTrackVersion({ title: f.name, sourceFilename: f.name }).groupKey)
       ).size;
@@ -569,18 +570,25 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate flex items-center gap-1.5">
                   <span>Google Drive · Synchronisation automatique</span>
-                  {permanentDriveReady && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-semibold">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      Permanent
+                  {autoSyncingDrive ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-2 py-0.5 text-[10px] font-semibold">
+                      <Loader2 size={10} className="animate-spin" />
+                      Mise à jour…
                     </span>
+                  ) : (
+                    permanentDriveReady && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-semibold">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Auto-sync actif
+                      </span>
+                    )
                   )}
                 </p>
                 <p className="text-[11px] text-slate-400 truncate">
                   {permanentDriveReady
-                    ? 'Accès permanent actif sur tous tes appareils · zéro reconnexion Google'
+                    ? 'Tes nouveaux MP3 Drive apparaissent automatiquement à chaque chargement'
                     : permanentDriveEmail
-                    ? 'Partage ton dossier MP3 1 seule fois pour ne plus jamais te reconnecter'
+                    ? 'Partage ton dossier MP3 1 seule fois pour activer l’auto-sync sur tous tes appareils'
                     : 'Charge tous tes MP3 et regroupe tes versions (ex. Project 306 → v3.2)'}
                 </p>
               </div>

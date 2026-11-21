@@ -29,7 +29,12 @@ import type {
   WorkoutRoutine,
   WorkoutSession,
 } from '../types';
-import { isExcludedProdName } from '../lib/googleDrive';
+import {
+  fetchPermanentDriveSession,
+  isExcludedProdName,
+  listAllGoogleDriveAudioFilesWithExclusions,
+} from '../lib/googleDrive';
+import { getDeterministicGradientId, parseTrackVersion } from '../lib/musicVersioning';
 import { createEmptyState, createSeedState } from '../data/seed';
 import { uid } from '../utils/dates';
 import {
@@ -151,10 +156,12 @@ interface AppContextValue {
   deleteWeight: (id: string) => void;
 
   // Music Studio & LexCore
+  autoSyncingDrive: boolean;
   addMusicTrack: (track: Omit<MusicTrack, 'id'>) => string;
   syncMusicTracksBatch: (
     incoming: Omit<MusicTrack, 'id'>[],
-    excludedDriveIds?: string[]
+    excludedDriveIds?: string[],
+    pruneMissingDriveIds?: boolean
   ) => { added: number; updated: number; removed: number };
   updateMusicTrack: (id: string, patch: Partial<MusicTrack>) => void;
   renameTrackGroup: (trackIds: string[], newTitle: string) => void;
@@ -322,6 +329,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<number | null>(null);
   const [workoutModalOpen, setWorkoutModalOpen] = useState(false);
+  const [autoSyncingDrive, setAutoSyncingDrive] = useState(false);
+
+  const lastDriveAutoSyncAtRef = useRef<number>(0);
+  const driveSyncInFlightRef = useRef<boolean>(false);
 
   const clearAuthError = useCallback(() => setAuthError(null), []);
 
@@ -1213,15 +1224,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const syncMusicTracksBatch = useCallback(
-    (incoming: Omit<MusicTrack, 'id'>[], excludedDriveIds?: string[]) => {
+    (
+      incoming: Omit<MusicTrack, 'id'>[],
+      excludedDriveIds?: string[],
+      pruneMissingDriveIds = false
+    ) => {
       const excludedSet = new Set(excludedDriveIds || []);
-      const currentTracks = latestStateRef.current.musicTracks;
-      const isExcludedExisting = (t: MusicTrack) =>
-        (t.googleDriveFileId && excludedSet.has(t.googleDriveFileId)) ||
-        (Boolean(t.googleDriveFileId) &&
-          (isExcludedProdName(t.sourceFilename || '') || isExcludedProdName(t.title || '')));
+      const incomingDriveIdSet = new Set(
+        incoming.map((it) => it.googleDriveFileId).filter((id): id is string => Boolean(id))
+      );
+      const shouldPruneMissing = pruneMissingDriveIds && incomingDriveIdSet.size > 0;
 
-      const keptTracks = currentTracks.filter((t) => !isExcludedExisting(t));
+      const isRemovedExisting = (t: MusicTrack) => {
+        if (!t.googleDriveFileId) return false;
+        if (excludedSet.has(t.googleDriveFileId)) return true;
+        if (isExcludedProdName(t.sourceFilename || '') || isExcludedProdName(t.title || '')) {
+          return true;
+        }
+        if (shouldPruneMissing && !incomingDriveIdSet.has(t.googleDriveFileId)) {
+          return true;
+        }
+        return false;
+      };
+
+      const currentTracks = latestStateRef.current.musicTracks;
+      const keptTracks = currentTracks.filter((t) => !isRemovedExisting(t));
       const removed = currentTracks.length - keptTracks.length;
 
       const byDriveId = new Map<string, number>();
@@ -1244,8 +1271,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
               (item.modifiedAt && existing.modifiedAt !== item.modifiedAt);
             if (needsMetaUpdate) {
+              const oldAutoTitle = (existing.sourceFilename || '')
+                .replace(/\.[^/.]+$/, '')
+                .replace(/[_-]+/g, ' ')
+                .trim();
+              const shouldUpdateTitle =
+                Boolean(item.sourceFilename && existing.sourceFilename !== item.sourceFilename) &&
+                (!existing.sourceFilename || existing.title === oldAutoTitle);
               nextTracks[idx] = {
                 ...existing,
+                ...(shouldUpdateTitle ? { title: item.title } : {}),
                 sourceFilename: item.sourceFilename || existing.sourceFilename,
                 modifiedAt: item.modifiedAt || existing.modifiedAt,
               };
@@ -1260,7 +1295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (added > 0 || updated > 0 || removed > 0) {
         touch((prev) => {
-          const merged = prev.musicTracks.filter((t) => !isExcludedExisting(t));
+          const merged = prev.musicTracks.filter((t) => !isRemovedExisting(t));
           const prevMap = new Map<string, number>();
           merged.forEach((t, i) => {
             if (t.googleDriveFileId) prevMap.set(t.googleDriveFileId, i);
@@ -1273,8 +1308,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const i = prevMap.get(driveId)!;
               if (i >= 0) {
                 const ex = merged[i];
+                const oldAutoTitle = (ex.sourceFilename || '')
+                  .replace(/\.[^/.]+$/, '')
+                  .replace(/[_-]+/g, ' ')
+                  .trim();
+                const shouldUpdateTitle =
+                  Boolean(item.sourceFilename && ex.sourceFilename !== item.sourceFilename) &&
+                  (!ex.sourceFilename || ex.title === oldAutoTitle);
                 merged[i] = {
                   ...ex,
+                  ...(shouldUpdateTitle ? { title: item.title } : {}),
                   sourceFilename: item.sourceFilename || ex.sourceFilename,
                   modifiedAt: item.modifiedAt || ex.modifiedAt,
                 };
@@ -1292,6 +1335,78 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     []
   );
+
+  // Automatic silent Google Drive MP3 sync on every page load / refresh (after cloud hydration)
+  // and whenever returning to the app after >= 2 min! Never opens any popup.
+  useEffect(() => {
+    if (!cloudUser || !lastCloudSyncAt) return;
+
+    const runSilentDriveSync = async (force = false) => {
+      if (driveSyncInFlightRef.current) return;
+      const now = Date.now();
+      if (!force && now - lastDriveAutoSyncAtRef.current < 120_000) return;
+
+      driveSyncInFlightRef.current = true;
+      setAutoSyncingDrive(true);
+      try {
+        const perm = await fetchPermanentDriveSession(resolvedFbConfig);
+        if (!perm.configured || !perm.hasSharedFiles || !perm.accessToken) return;
+
+        const { files, excludedFileIds } = await listAllGoogleDriveAudioFilesWithExclusions(
+          perm.accessToken,
+          ''
+        );
+        lastDriveAutoSyncAtRef.current = Date.now();
+        if (files.length === 0) return;
+
+        const artist = latestStateRef.current.preferences.name || 'Moi';
+        const nowIso = new Date().toISOString();
+        const payload = files.map((f) => {
+          const cleanTitle = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+          const parsed = parseTrackVersion({ title: cleanTitle, sourceFilename: f.name });
+          return {
+            title: cleanTitle || f.name,
+            artist,
+            googleDriveFileId: f.id,
+            sourceFilename: f.name,
+            modifiedAt: f.modifiedTime || nowIso,
+            coverGradient: getDeterministicGradientId(parsed.groupKey),
+            status: 'demo' as const,
+            tags: ['Google Drive'],
+            markers: [],
+            addedAt: f.modifiedTime || nowIso,
+          };
+        });
+
+        const { added, removed } = syncMusicTracksBatch(payload, excludedFileIds, true);
+        if (added > 0 || removed > 0) {
+          const parts: string[] = [];
+          if (added > 0) parts.push(`+${added} nouveau${added > 1 ? 'x' : ''} MP3`);
+          if (removed > 0) parts.push(`-${removed} retiré${removed > 1 ? 's' : ''}`);
+          notify(`Drive synchronisé : ${parts.join(' · ')} ✓`);
+        }
+      } catch {
+        // Silent background sync: never disturb user with popup/network error on page load
+      } finally {
+        driveSyncInFlightRef.current = false;
+        setAutoSyncingDrive(false);
+      }
+    };
+
+    // Run once right after initial cloud hydration on every page load / refresh
+    if (lastDriveAutoSyncAtRef.current === 0) {
+      void runSilentDriveSync(true);
+    }
+
+    // Also refresh silently when switching back to the app after >= 2 minutes
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void runSilentDriveSync(false);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [cloudUser?.uid, Boolean(lastCloudSyncAt), syncMusicTracksBatch, notify]);
 
   const updateMusicTrack = useCallback((id: string, patch: Partial<MusicTrack>) => {
     touch((prev) => ({
@@ -1907,6 +2022,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addWater,
         addWeight,
         deleteWeight,
+        autoSyncingDrive,
         addMusicTrack,
         syncMusicTracksBatch,
         updateMusicTrack,
