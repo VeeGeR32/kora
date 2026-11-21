@@ -10,7 +10,7 @@ rules_version = '2';
 // Document ID: {userId} (must match Firebase Auth request.auth.uid)
 // Access: Strictly owner-only read/write (contains user PII such as email).
 // Fields:
-//   - uid: string (optional, immutable if set, must equal userId / request.auth.uid)
+//   - uid: string (optional, immutable if present, must equal userId / request.auth.uid)
 //   - email: string | null (optional, valid email format, max 254 chars)
 //   - displayName: string | null (optional, max 100 chars)
 //   - name: string | null (optional, max 100 chars)
@@ -25,8 +25,8 @@ rules_version = '2';
 // Document ID: 'main' (enforced single-snapshot document per user)
 // Access: Strictly owner-only read/write (request.auth.uid == userId).
 // Fields:
-//   - uid: string (optional, immutable if set, must equal userId / request.auth.uid)
-//   - schemaVersion: int (optional, 1..100)
+//   - uid: string (optional, immutable if present, must equal userId / request.auth.uid)
+//   - schemaVersion: number (optional, 1..100)
 //   - events: list<map> (optional, max 1000 items) - calendar & schedule events
 //   - homework: list<map> (optional, max 1000 items) - academic homework items
 //   - exams: list<map> (optional, max 500 items) - exams & revision topics
@@ -41,18 +41,18 @@ rules_version = '2';
 //   - meals: list<map> (optional, max 2000 items) - logged meals
 //   - mealPresets: list<map> (optional, max 200 items) - saved nutrition favorites
 //   - weights: list<map> (optional, max 1500 items) - weight log entries
-//   - waterMlByDate: map (optional, max 1500 keys) - daily hydration totals keyed by YYYY-MM-DD
+//   - waterMlByDate: map | null (optional, max 1500 keys) - daily hydration totals keyed by YYYY-MM-DD
 //   - musicTracks: list<map> (optional, max 500 items) - music track metadata
 //   - lyricsDocs: list<map> (optional, max 500 items) - lyrics documents
 //   - lyricsFolders: list<map | string> (optional, max 200 items) - lyrics folder organization
 //   - musicProjects: list<map> (optional, max 200 items) - music projects/releases
 //   - tasks: list<map> (optional, max 1500 items) - personal tasks
 //   - focusSessions: list<map> (optional, max 2000 items) - focus/pomodoro sessions
-//   - energyCheckins: map | list<map> (optional, max 1500 entries) - daily energy check-ins
-//   - preferences: map (optional, validated UserPreferences including bio,
+//   - energyCheckins: map | list<map> | null (optional, max 1500 entries) - daily energy check-ins
+//   - preferences: map | null (optional, validated UserPreferences including bio,
 //     avatarColor, avatarUrl, geminiApiKey, pronoteBridgeUrl, pronoteBridgeToken,
 //     and firebaseConfig)
-//   - updatedAt: timestamp | ISO-8601 string | int epoch ms (required; recent if timestamp modified)
+//   - updatedAt: timestamp | ISO-8601 string | number epoch ms (required; recent if timestamp modified)
 //
 // Companion Cloud Storage note (storage.rules):
 //   Kora uploads user media to `users/{userId}/media/{mediaId}` (audio tracks,
@@ -86,14 +86,13 @@ service cloud.firestore {
         request.resource.data.uid == request.auth.uid;
     }
 
-    // Ensure uid field (if previously set) cannot be removed or modified on update
+    // Ensure uid field (if provided on update) cannot be tampered with or reassigned
     function uidNotModified() {
-      return (!('uid' in resource.data) &&
-              (!('uid' in request.resource.data) ||
-               request.resource.data.uid == request.auth.uid)) ||
-             (('uid' in resource.data) &&
-              ('uid' in request.resource.data) &&
-              request.resource.data.uid == resource.data.uid);
+      return !('uid' in request.resource.data) ||
+        ((!('uid' in resource.data) && request.resource.data.uid == request.auth.uid) ||
+         ('uid' in resource.data &&
+          resource.data.uid is string &&
+          request.resource.data.uid == resource.data.uid));
     }
 
     // Validate required fields exist on the resulting document
@@ -106,20 +105,24 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly(fields);
     }
 
-    // Validate HTTP(S) URL format
+    // Validate HTTP(S) URL format using O(1) prefix slices (avoids RE2 limits)
     function isValidUrl(url) {
       return url is string &&
         url.size() <= 2048 &&
-        (url.matches("^https://.*") || url.matches("^http://.*"));
+        ((url.size() >= 8 && url[0:8] == 'https://') ||
+         (url.size() >= 7 && url[0:7] == 'http://'));
     }
 
-    // Validate avatar URL (empty string, http/https URL, or resized raster data:image URL)
+    // Validate avatar URL (empty string, http/https URL, or resized raster data:image/ URL)
+    // Uses O(1) prefix slices instead of regex over multi-KB base64 payloads, blocking SVG/HTML XSS
     function isValidAvatarUrl(url) {
       return url is string &&
         (url == '' ||
          isValidUrl(url) ||
-         (url.size() <= 120000 &&
-          url.matches("^data:image/(png|jpeg|jpg|webp|gif|avif);base64,.*")));
+         (url.size() <= 200000 &&
+          url.size() >= 22 &&
+          url[0:11] == 'data:image/' &&
+          url[0:15] != 'data:image/svg+'));
     }
 
     // Validate email format and RFC max length
@@ -148,16 +151,26 @@ service cloud.firestore {
       return val is timestamp || isValidDateString(val);
     }
 
-    // Validate state snapshot timestamp (Firestore timestamp, ISO 8601 string, or 2020..2100 epoch ms)
+    // Validate state snapshot timestamp (Firestore timestamp, ISO 8601 string, or 2020..2100 epoch ms number)
     function isValidStateTimestamp(val) {
       return val is timestamp ||
         isValidDateString(val) ||
-        (val is int && val >= 1577836800000 && val <= 4102444800000);
+        (val is number && val >= 1577836800000 && val <= 4102444800000);
     }
 
     // If a timestamp field is a Firestore timestamp, ensure it is recent
     function isFreshIfTimestamp(val) {
       return !(val is timestamp) || isRecent(val);
+    }
+
+    // On update, if a timestamp field is a Firestore timestamp and changed, ensure it is recent
+    function isFreshIfTimestampModified(field) {
+      return !(field in request.resource.data) ||
+        !(request.resource.data[field] is timestamp) ||
+        (field in resource.data &&
+         resource.data[field] is timestamp &&
+         request.resource.data[field] == resource.data[field]) ||
+        isRecent(request.resource.data[field]);
     }
 
     // Validate optional list of structured entity maps with size cap (DoS protection)
@@ -178,9 +191,10 @@ service cloud.firestore {
           (data.lyricsFolders[0] is string && data.lyricsFolders[0].size() <= 100)));
     }
 
-    // Validate optional energyCheckins (Record<string, EnergyCheckin> map or list<map>)
+    // Validate optional energyCheckins (Record<string, EnergyCheckin> map, list<map>, or null)
     function isValidEnergyCheckins(data) {
       return !('energyCheckins' in data) ||
+        data.energyCheckins == null ||
         (data.energyCheckins is map && data.energyCheckins.size() <= 1500) ||
         (data.energyCheckins is list &&
          data.energyCheckins.size() <= 1500 &&
@@ -201,20 +215,26 @@ service cloud.firestore {
            'studyPlanSummary'
          ]) &&
          (!('program' in data.academicProfile) ||
+          data.academicProfile.program == null ||
           (data.academicProfile.program is string && data.academicProfile.program.size() <= 200)) &&
          (!('level' in data.academicProfile) ||
+          data.academicProfile.level == null ||
           (data.academicProfile.level is string && data.academicProfile.level.size() <= 100)) &&
          (!('school' in data.academicProfile) ||
+          data.academicProfile.school == null ||
           (data.academicProfile.school is string && data.academicProfile.school.size() <= 200)) &&
          (!('careerGoal' in data.academicProfile) ||
+          data.academicProfile.careerGoal == null ||
           (data.academicProfile.careerGoal is string && data.academicProfile.careerGoal.size() <= 300)) &&
          (!('targetSkills' in data.academicProfile) ||
+          data.academicProfile.targetSkills == null ||
           (data.academicProfile.targetSkills is list &&
            data.academicProfile.targetSkills.size() <= 50 &&
            (data.academicProfile.targetSkills.size() == 0 ||
             (data.academicProfile.targetSkills[0] is string &&
              data.academicProfile.targetSkills[0].size() <= 100)))) &&
          (!('studyPlanSummary' in data.academicProfile) ||
+          data.academicProfile.studyPlanSummary == null ||
           (data.academicProfile.studyPlanSummary is string &&
            data.academicProfile.studyPlanSummary.size() <= 4000)));
     }
@@ -233,8 +253,10 @@ service cloud.firestore {
            'notes'
          ]) &&
          (!('goal' in data.fitnessProfile) ||
+          data.fitnessProfile.goal == null ||
           (data.fitnessProfile.goal is string &&
            data.fitnessProfile.goal in [
+             '',
              'prise-de-masse',
              'seche',
              'force',
@@ -242,19 +264,22 @@ service cloud.firestore {
              'endurance'
            ])) &&
          (!('level' in data.fitnessProfile) ||
+          data.fitnessProfile.level == null ||
           (data.fitnessProfile.level is string &&
-           data.fitnessProfile.level in ['debutant', 'intermediaire', 'avance'])) &&
+           data.fitnessProfile.level in ['', 'debutant', 'intermediaire', 'avance'])) &&
          (!('daysPerWeek' in data.fitnessProfile) ||
+          data.fitnessProfile.daysPerWeek == null ||
           (data.fitnessProfile.daysPerWeek is number &&
            data.fitnessProfile.daysPerWeek >= 0 &&
            data.fitnessProfile.daysPerWeek <= 14)) &&
          (!('equipment' in data.fitnessProfile) ||
+          data.fitnessProfile.equipment == null ||
           (data.fitnessProfile.equipment is string && data.fitnessProfile.equipment.size() <= 500)) &&
          (!('heightCm' in data.fitnessProfile) ||
           data.fitnessProfile.heightCm == null ||
           (data.fitnessProfile.heightCm is number &&
-           data.fitnessProfile.heightCm >= 80 &&
-           data.fitnessProfile.heightCm <= 260)) &&
+           (data.fitnessProfile.heightCm == 0 ||
+            (data.fitnessProfile.heightCm >= 50 && data.fitnessProfile.heightCm <= 300)))) &&
          (!('notes' in data.fitnessProfile) ||
           data.fitnessProfile.notes == null ||
           (data.fitnessProfile.notes is string && data.fitnessProfile.notes.size() <= 2000)));
@@ -264,11 +289,16 @@ service cloud.firestore {
     function isValidNutritionGoals(ng) {
       return ng is map &&
         ng.keys().hasOnly(['calories', 'protein', 'carbs', 'fat', 'waterMl']) &&
-        (!('calories' in ng) || (ng.calories is number && ng.calories >= 0 && ng.calories <= 20000)) &&
-        (!('protein' in ng) || (ng.protein is number && ng.protein >= 0 && ng.protein <= 1000)) &&
-        (!('carbs' in ng) || (ng.carbs is number && ng.carbs >= 0 && ng.carbs <= 2000)) &&
-        (!('fat' in ng) || (ng.fat is number && ng.fat >= 0 && ng.fat <= 1000)) &&
-        (!('waterMl' in ng) || (ng.waterMl is number && ng.waterMl >= 0 && ng.waterMl <= 20000));
+        (!('calories' in ng) || ng.calories == null ||
+         (ng.calories is number && ng.calories >= 0 && ng.calories <= 50000)) &&
+        (!('protein' in ng) || ng.protein == null ||
+         (ng.protein is number && ng.protein >= 0 && ng.protein <= 50000)) &&
+        (!('carbs' in ng) || ng.carbs == null ||
+         (ng.carbs is number && ng.carbs >= 0 && ng.carbs <= 50000)) &&
+        (!('fat' in ng) || ng.fat == null ||
+         (ng.fat is number && ng.fat >= 0 && ng.fat <= 50000)) &&
+        (!('waterMl' in ng) || ng.waterMl == null ||
+         (ng.waterMl is number && ng.waterMl >= 0 && ng.waterMl <= 50000));
     }
 
     // Validate optional FirebaseUserConfig map stored inside preferences
@@ -283,19 +313,26 @@ service cloud.firestore {
           'appId',
           'measurementId'
         ]) &&
-        (!('apiKey' in cfg) || (cfg.apiKey is string && cfg.apiKey.size() <= 256)) &&
-        (!('authDomain' in cfg) || (cfg.authDomain is string && cfg.authDomain.size() <= 256)) &&
-        (!('projectId' in cfg) || (cfg.projectId is string && cfg.projectId.size() <= 256)) &&
-        (!('storageBucket' in cfg) || (cfg.storageBucket is string && cfg.storageBucket.size() <= 256)) &&
-        (!('messagingSenderId' in cfg) ||
+        (!('apiKey' in cfg) || cfg.apiKey == null ||
+         (cfg.apiKey is string && cfg.apiKey.size() <= 256)) &&
+        (!('authDomain' in cfg) || cfg.authDomain == null ||
+         (cfg.authDomain is string && cfg.authDomain.size() <= 256)) &&
+        (!('projectId' in cfg) || cfg.projectId == null ||
+         (cfg.projectId is string && cfg.projectId.size() <= 256)) &&
+        (!('storageBucket' in cfg) || cfg.storageBucket == null ||
+         (cfg.storageBucket is string && cfg.storageBucket.size() <= 256)) &&
+        (!('messagingSenderId' in cfg) || cfg.messagingSenderId == null ||
          (cfg.messagingSenderId is string && cfg.messagingSenderId.size() <= 256)) &&
-        (!('appId' in cfg) || (cfg.appId is string && cfg.appId.size() <= 256)) &&
-        (!('measurementId' in cfg) || (cfg.measurementId is string && cfg.measurementId.size() <= 256));
+        (!('appId' in cfg) || cfg.appId == null ||
+         (cfg.appId is string && cfg.appId.size() <= 256)) &&
+        (!('measurementId' in cfg) || cfg.measurementId == null ||
+         (cfg.measurementId is string && cfg.measurementId.size() <= 256));
     }
 
     // Validate optional preferences map and its allowed fields
     function isValidPreferences(data) {
       return !('preferences' in data) ||
+        data.preferences == null ||
         (data.preferences is map &&
          data.preferences.keys().hasOnly([
            'name',
@@ -311,6 +348,7 @@ service cloud.firestore {
            'firebaseConfig'
          ]) &&
          (!('name' in data.preferences) ||
+          data.preferences.name == null ||
           (data.preferences.name is string && data.preferences.name.size() <= 100)) &&
          (!('bio' in data.preferences) ||
           data.preferences.bio == null ||
@@ -322,13 +360,15 @@ service cloud.firestore {
           data.preferences.avatarUrl == null ||
           isValidAvatarUrl(data.preferences.avatarUrl)) &&
          (!('theme' in data.preferences) ||
+          data.preferences.theme == null ||
           (data.preferences.theme is string && data.preferences.theme in ['light', 'dark', 'system'])) &&
          (!('weightGoalKg' in data.preferences) ||
           data.preferences.weightGoalKg == null ||
           (data.preferences.weightGoalKg is number &&
-           data.preferences.weightGoalKg >= 20 &&
-           data.preferences.weightGoalKg <= 400)) &&
+           data.preferences.weightGoalKg >= 0 &&
+           data.preferences.weightGoalKg <= 500)) &&
          (!('nutritionGoals' in data.preferences) ||
+          data.preferences.nutritionGoals == null ||
           isValidNutritionGoals(data.preferences.nutritionGoals)) &&
          (!('geminiApiKey' in data.preferences) ||
           data.preferences.geminiApiKey == null ||
@@ -336,8 +376,8 @@ service cloud.firestore {
            data.preferences.geminiApiKey.size() <= 256)) &&
          (!('pronoteBridgeUrl' in data.preferences) ||
           data.preferences.pronoteBridgeUrl == null ||
-          data.preferences.pronoteBridgeUrl == '' ||
-          isValidUrl(data.preferences.pronoteBridgeUrl)) &&
+          (data.preferences.pronoteBridgeUrl is string &&
+           data.preferences.pronoteBridgeUrl.size() <= 2048)) &&
          (!('pronoteBridgeToken' in data.preferences) ||
           data.preferences.pronoteBridgeToken == null ||
           (data.preferences.pronoteBridgeToken is string &&
@@ -384,8 +424,10 @@ service cloud.firestore {
          data.photoURL == '' ||
          isValidUrl(data.photoURL)) &&
         (!('theme' in data) ||
+         data.theme == null ||
          (data.theme is string && data.theme in ['light', 'dark', 'system'])) &&
         (!('locale' in data) ||
+         data.locale == null ||
          (data.locale is string && data.locale.size() >= 2 && data.locale.size() <= 10)) &&
         (!('createdAt' in data) || isValidTimestampOrIsoDate(data.createdAt)) &&
         (!('updatedAt' in data) || isValidTimestampOrIsoDate(data.updatedAt)) &&
@@ -425,7 +467,7 @@ service cloud.firestore {
         hasRequiredFields(['updatedAt']) &&
         (!('uid' in data) || (data.uid is string && data.uid == userId)) &&
         (!('schemaVersion' in data) ||
-         (data.schemaVersion is int && data.schemaVersion >= 1 && data.schemaVersion <= 100)) &&
+         (data.schemaVersion is number && data.schemaVersion >= 1 && data.schemaVersion <= 100)) &&
         isValidOptionalMapList(data, 'events', 1000) &&
         isValidOptionalMapList(data, 'homework', 1000) &&
         isValidOptionalMapList(data, 'exams', 500) &&
@@ -443,6 +485,7 @@ service cloud.firestore {
         isValidOptionalMapList(data, 'mealPresets', 200) &&
         isValidOptionalMapList(data, 'weights', 1500) &&
         (!('waterMlByDate' in data) ||
+         data.waterMlByDate == null ||
          (data.waterMlByDate is map && data.waterMlByDate.size() <= 1500)) &&
         isValidOptionalMapList(data, 'musicTracks', 500) &&
         isValidOptionalMapList(data, 'lyricsDocs', 500) &&
@@ -480,14 +523,15 @@ service cloud.firestore {
            isFreshIfTimestamp(request.resource.data.createdAt))) ||
          (('createdAt' in resource.data) &&
           ('createdAt' in request.resource.data) &&
-          request.resource.data.createdAt == resource.data.createdAt)) &&
+          ((resource.data.createdAt is timestamp &&
+            request.resource.data.createdAt is timestamp &&
+            request.resource.data.createdAt == resource.data.createdAt) ||
+           (resource.data.createdAt is string &&
+            request.resource.data.createdAt is string &&
+            request.resource.data.createdAt == resource.data.createdAt)))) &&
         isValidUserProfile(request.resource.data, userId) &&
-        (!('updatedAt' in request.resource.data) ||
-         ('updatedAt' in resource.data && request.resource.data.updatedAt == resource.data.updatedAt) ||
-         isFreshIfTimestamp(request.resource.data.updatedAt)) &&
-        (!('lastLoginAt' in request.resource.data) ||
-         ('lastLoginAt' in resource.data && request.resource.data.lastLoginAt == resource.data.lastLoginAt) ||
-         isFreshIfTimestamp(request.resource.data.lastLoginAt));
+        isFreshIfTimestampModified('updatedAt') &&
+        isFreshIfTimestampModified('lastLoginAt');
 
       allow delete: if isOwner(userId);
 
@@ -505,9 +549,7 @@ service cloud.firestore {
           isValidAppStateDocId(docId) &&
           uidNotModified() &&
           isValidAppState(request.resource.data, userId) &&
-          (('updatedAt' in resource.data &&
-            request.resource.data.updatedAt == resource.data.updatedAt) ||
-           isFreshIfTimestamp(request.resource.data.updatedAt));
+          isFreshIfTimestampModified('updatedAt');
 
         allow delete: if isOwner(userId) && isValidAppStateDocId(docId);
       }

@@ -162,9 +162,138 @@ export function listenAuthState(
   return onAuthStateChanged(bundle.auth, cb);
 }
 
-/** Deeply removes all `undefined` values because Firestore rejects `undefined` fields */
-function sanitizeForFirestore<T>(data: T): T {
-  return JSON.parse(JSON.stringify(data)) as T;
+/**
+ * Strictly sanitizes AppState before writing to Firestore:
+ * - Strips all `undefined` and `NaN` values
+ * - Whitelists nested keys (preferences, nutritionGoals, academicProfile, fitnessProfile, firebaseConfig)
+ *   so no legacy/unknown localStorage field can ever trigger Firestore `hasOnly` rejection
+ * - Normalizes URLs, clamps numbers, and guarantees a valid integer `updatedAt`
+ */
+function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
+  const raw = JSON.parse(JSON.stringify(state)) as AppState;
+  const numOr = (v: unknown, fallback: number, min: number, max: number): number => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
+    return Math.min(max, Math.max(min, v));
+  };
+  const strOr = (v: unknown, fallback: string, maxLen: number): string => {
+    if (typeof v !== 'string') return fallback;
+    return v.slice(0, maxLen);
+  };
+  const optStr = (v: unknown, maxLen: number): string | undefined => {
+    if (typeof v !== 'string') return undefined;
+    const trimmed = v.slice(0, maxLen);
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
+
+  const p = raw.preferences || ({} as AppState['preferences']);
+  const ng = p.nutritionGoals || ({} as AppState['preferences']['nutritionGoals']);
+
+  let cleanPronoteUrl = optStr(p.pronoteBridgeUrl?.trim(), 2048);
+  if (cleanPronoteUrl && !/^https?:\/\//i.test(cleanPronoteUrl)) {
+    cleanPronoteUrl = /^(127\.0\.0\.1|localhost)/i.test(cleanPronoteUrl)
+      ? `http://${cleanPronoteUrl}`
+      : `https://${cleanPronoteUrl}`;
+  }
+
+  let cleanAvatarUrl = optStr(p.avatarUrl, 118000);
+  if (
+    cleanAvatarUrl &&
+    !/^https?:\/\//i.test(cleanAvatarUrl) &&
+    !/^data:image\/(png|jpeg|jpg|webp|gif|avif);base64,/i.test(cleanAvatarUrl)
+  ) {
+    cleanAvatarUrl = undefined;
+  }
+
+  const cleanPreferences: Record<string, unknown> = {
+    name: strOr(p.name, '', 100),
+    theme: p.theme === 'dark' ? 'dark' : 'light',
+    weightGoalKg: numOr(p.weightGoalKg, 72, 20, 400),
+    nutritionGoals: {
+      calories: numOr(ng.calories, 2450, 0, 20000),
+      protein: numOr(ng.protein, 165, 0, 1000),
+      carbs: numOr(ng.carbs, 270, 0, 2000),
+      fat: numOr(ng.fat, 75, 0, 1000),
+      waterMl: numOr(ng.waterMl, 2500, 0, 20000),
+    },
+  };
+  const cleanBio = optStr(p.bio, 160);
+  if (cleanBio) cleanPreferences.bio = cleanBio;
+  const cleanAvatarColor = optStr(p.avatarColor, 40);
+  if (cleanAvatarColor) cleanPreferences.avatarColor = cleanAvatarColor;
+  if (cleanAvatarUrl) cleanPreferences.avatarUrl = cleanAvatarUrl;
+  const cleanGemini = optStr(p.geminiApiKey?.trim(), 256);
+  if (cleanGemini) cleanPreferences.geminiApiKey = cleanGemini;
+  if (cleanPronoteUrl) cleanPreferences.pronoteBridgeUrl = cleanPronoteUrl;
+  const cleanPronoteToken = optStr(p.pronoteBridgeToken?.trim(), 256);
+  if (cleanPronoteToken) cleanPreferences.pronoteBridgeToken = cleanPronoteToken;
+  if (p.firebaseConfig && typeof p.firebaseConfig === 'object' && p.firebaseConfig.apiKey && p.firebaseConfig.projectId) {
+    cleanPreferences.firebaseConfig = {
+      apiKey: strOr(p.firebaseConfig.apiKey, '', 256),
+      authDomain: strOr(p.firebaseConfig.authDomain, '', 256),
+      projectId: strOr(p.firebaseConfig.projectId, '', 256),
+      storageBucket: strOr(p.firebaseConfig.storageBucket, '', 256),
+      messagingSenderId: strOr(p.firebaseConfig.messagingSenderId, '', 256),
+      appId: strOr(p.firebaseConfig.appId, '', 256),
+    };
+  }
+
+  const ap = raw.academicProfile || ({} as AppState['academicProfile']);
+  const cleanAcademicProfile = {
+    program: strOr(ap.program, '', 200),
+    level: strOr(ap.level, '', 100),
+    school: strOr(ap.school, '', 200),
+    careerGoal: strOr(ap.careerGoal, '', 300),
+    targetSkills: Array.isArray(ap.targetSkills)
+      ? ap.targetSkills.filter((s): s is string => typeof s === 'string').slice(0, 50).map((s) => s.slice(0, 100))
+      : [],
+    studyPlanSummary: strOr(ap.studyPlanSummary, '', 4000),
+  };
+
+  const fp = raw.fitnessProfile || ({} as AppState['fitnessProfile']);
+  const validGoals = ['prise-de-masse', 'seche', 'force', 'recomposition', 'endurance'] as const;
+  const validLevels = ['debutant', 'intermediaire', 'avance'] as const;
+  const cleanFitnessProfile: Record<string, unknown> = {
+    goal: (validGoals as readonly string[]).includes(fp.goal) ? fp.goal : 'recomposition',
+    level: (validLevels as readonly string[]).includes(fp.level) ? fp.level : 'intermediaire',
+    daysPerWeek: numOr(fp.daysPerWeek, 4, 0, 14),
+    equipment: strOr(fp.equipment, '', 500),
+  };
+  if (typeof fp.heightCm === 'number' && Number.isFinite(fp.heightCm) && fp.heightCm >= 80 && fp.heightCm <= 260) {
+    cleanFitnessProfile.heightCm = fp.heightCm;
+  }
+  const cleanFpNotes = optStr(fp.notes, 2000);
+  if (cleanFpNotes) cleanFitnessProfile.notes = cleanFpNotes;
+
+  const ts =
+    typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) && raw.updatedAt >= 1577836800000
+      ? Math.floor(raw.updatedAt)
+      : Date.now();
+
+  return {
+    events: Array.isArray(raw.events) ? raw.events.slice(0, 1000) : [],
+    homework: Array.isArray(raw.homework) ? raw.homework.slice(0, 1000) : [],
+    exams: Array.isArray(raw.exams) ? raw.exams.slice(0, 500) : [],
+    academicProfile: cleanAcademicProfile,
+    subjects: Array.isArray(raw.subjects) ? raw.subjects.slice(0, 200) : [],
+    grades: Array.isArray(raw.grades) ? raw.grades.slice(0, 1000) : [],
+    courseDocs: Array.isArray(raw.courseDocs) ? raw.courseDocs.slice(0, 500) : [],
+    tasks: Array.isArray(raw.tasks) ? raw.tasks.slice(0, 1500) : [],
+    workouts: Array.isArray(raw.workouts) ? raw.workouts.slice(0, 1000) : [],
+    workoutRoutines: Array.isArray(raw.workoutRoutines) ? raw.workoutRoutines.slice(0, 200) : [],
+    fitnessProfile: cleanFitnessProfile,
+    meals: Array.isArray(raw.meals) ? raw.meals.slice(0, 2000) : [],
+    mealPresets: Array.isArray(raw.mealPresets) ? raw.mealPresets.slice(0, 200) : [],
+    weights: Array.isArray(raw.weights) ? raw.weights.slice(0, 1500) : [],
+    waterMlByDate: raw.waterMlByDate && typeof raw.waterMlByDate === 'object' ? raw.waterMlByDate : {},
+    musicTracks: Array.isArray(raw.musicTracks) ? raw.musicTracks.slice(0, 500) : [],
+    lyricsFolders: Array.isArray(raw.lyricsFolders) ? raw.lyricsFolders.slice(0, 200) : [],
+    lyricsDocs: Array.isArray(raw.lyricsDocs) ? raw.lyricsDocs.slice(0, 500) : [],
+    musicProjects: Array.isArray(raw.musicProjects) ? raw.musicProjects.slice(0, 200) : [],
+    energyCheckins: raw.energyCheckins && typeof raw.energyCheckins === 'object' ? raw.energyCheckins : {},
+    focusSessions: Array.isArray(raw.focusSessions) ? raw.focusSessions.slice(0, 2000) : [],
+    preferences: cleanPreferences,
+    updatedAt: ts,
+  };
 }
 
 export function formatFirebaseSyncError(err: unknown): string {
@@ -172,7 +301,9 @@ export function formatFirebaseSyncError(err: unknown): string {
   const code = e?.code || '';
   const msg = e?.message || String(err || 'Erreur inconnue');
   if (code === 'permission-denied' || /permission|insufficient/i.test(msg)) {
-    return 'Accès Firestore refusé (permission-denied) : publie les dernières règles firestore.rules dans Firebase Console → Firestore Database → Règles.';
+    const project = activeBundle?.app.options.projectId || 'inconnu';
+    const uid = activeBundle?.auth.currentUser?.uid || 'non-connecté';
+    return `Accès Firestore refusé (permission-denied · projet=${project} · uid=${uid.slice(0, 6)}…). Vérifie que les dernières firestore.rules sont publiées dans Firebase Console → Firestore Database → Règles.`;
   }
   if (code === 'unavailable' || /offline|network/i.test(msg)) {
     return 'Hors ligne : les modifications seront synchronisées dès le retour du réseau.';
@@ -200,13 +331,9 @@ export async function pushStateToCloud(
   const bundle = initFirebaseClient(config);
   if (!bundle) return state.updatedAt || Date.now();
   const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
-  const ts = state.updatedAt && state.updatedAt >= 1577836800000 ? state.updatedAt : Date.now();
-  const cleanPayload = sanitizeForFirestore({
-    ...state,
-    updatedAt: ts,
-  });
+  const cleanPayload = sanitizeStateForFirestore(state);
   await setDoc(refDoc, cleanPayload);
-  return ts;
+  return cleanPayload.updatedAt as number;
 }
 
 export function subscribeCloudState(
