@@ -151,6 +151,13 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
     }
   }, [activeDocId]);
 
+  // Register full-screen overlay so MiniAudioPlayer docks cleanly at the bottom on mobile
+  const { registerFullscreenOverlay } = player;
+  useEffect(() => {
+    if (!activeDoc) return;
+    return registerFullscreenOverlay();
+  }, [Boolean(activeDoc), registerFullscreenOverlay]);
+
   // Escape key closes full-screen editor cleanly
   useEffect(() => {
     if (!activeDoc) return;
@@ -691,7 +698,7 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
       {activeDoc && (
         <div
           className={`fixed inset-0 z-40 bg-white dark:bg-[#0c0c0f] flex flex-col overflow-hidden ${
-            player.currentTrack ? 'pb-24 sm:pb-28' : ''
+            player.currentTrack ? 'pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:pb-24' : ''
           }`}
         >
           {/* Minimalist Safe-Area Header */}

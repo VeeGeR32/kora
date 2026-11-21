@@ -1156,7 +1156,14 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       {subTab === 'lyrics' && <LyricsStudio initialDocId={selectedLyricsId} />}
 
       {/* ================= MODALS & RIGHT-CLICK CONTEXT MENU ================= */}
-      <ProjectAlbumModal projectId={openProjectId} onClose={() => setOpenProjectId(null)} />
+      <ProjectAlbumModal
+        projectId={openProjectId}
+        onClose={() => setOpenProjectId(null)}
+        onOpenTrackDetails={(trackId) => {
+          const grp = trackGroups.find((g) => g.allTrackIds.includes(trackId));
+          if (grp) setDetailTarget({ groupKey: grp.groupKey, trackId });
+        }}
+      />
 
       <TrackDetailModal
         group={detailGroup}

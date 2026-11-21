@@ -280,8 +280,8 @@ export function Layout({
       {/* Persistent Global Mini Audio Player */}
       <MiniAudioPlayer />
 
-      {/* Mobile Floating 5-Tab Bottom Bar */}
-      <nav className="md:hidden fixed bottom-[max(0.625rem,env(safe-area-inset-bottom))] left-2.5 right-2.5 z-30 rounded-2xl bg-white/95 dark:bg-[#141418]/96 backdrop-blur-xl border border-slate-200/80 dark:border-zinc-800 shadow-lg px-1 py-1.5 flex items-center justify-around">
+      {/* Mobile Docked 5-Tab Bottom Bar (glued cleanly to bottom edge with safe-area padding) */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-[#0e0e11]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-zinc-800/90 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = activeTab === item.id;

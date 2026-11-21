@@ -1,5 +1,47 @@
-import type { MusicProject, MusicTrack } from '../types';
+import type { LyricsDoc, MusicProject, MusicTrack } from '../types';
 import { getDeterministicGradientId } from './musicVersioning';
+
+export const LYRICS_STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
+  1: {
+    label: 'Brouillon',
+    dot: 'bg-slate-400 dark:bg-zinc-500',
+    badge: 'bg-slate-100 dark:bg-zinc-800/90 text-slate-600 dark:text-zinc-300',
+  },
+  2: {
+    label: 'En cours',
+    dot: 'bg-amber-500',
+    badge: 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
+  },
+  3: {
+    label: 'Terminé',
+    dot: 'bg-emerald-500',
+    badge: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
+  },
+};
+
+/**
+ * Finds the active LyricsDoc attached to a song (checks both track.linkedLyricsId
+ * and doc.linkedTrackId across all versions of the song).
+ */
+export function findLinkedLyricsForTrack(
+  track: MusicTrack,
+  lyricsDocs: LyricsDoc[],
+  siblingTrackIds?: string[],
+  siblingTracks?: MusicTrack[]
+): LyricsDoc | null {
+  const activeDocs = lyricsDocs.filter((d) => !d.deletedAt);
+  if (activeDocs.length === 0) return null;
+
+  const idSet = new Set<string>([track.id, ...(siblingTrackIds || [])]);
+  const directLyricsId =
+    track.linkedLyricsId || siblingTracks?.find((s) => Boolean(s.linkedLyricsId))?.linkedLyricsId;
+  if (directLyricsId) {
+    const found = activeDocs.find((d) => d.id === directLyricsId);
+    if (found) return found;
+  }
+
+  return activeDocs.find((d) => d.linkedTrackId && idSet.has(d.linkedTrackId)) || null;
+}
 
 /** Compresses any uploaded cover image cleanly for instant cross-device Firestore sync */
 export async function compressCoverImage(file: File, maxSize = 360): Promise<string> {

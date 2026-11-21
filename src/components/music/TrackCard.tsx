@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   Disc3,
+  FileText,
   GitBranch,
   ListChecks,
   MoreHorizontal,
@@ -14,7 +15,11 @@ import type { MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import type { TrackGroup } from '../../lib/musicVersioning';
-import { resolveEffectiveTrackCover } from '../../lib/trackCover';
+import {
+  findLinkedLyricsForTrack,
+  LYRICS_STATUS_META,
+  resolveEffectiveTrackCover,
+} from '../../lib/trackCover';
 import { TRACK_STATUS_META } from '../../utils/theme';
 import { getGradientClass } from './MiniAudioPlayer';
 
@@ -96,6 +101,18 @@ export function TrackCard({
   }, [effectiveCover.coverDataUrl, effectiveCover.coverMediaId]);
 
   const coverUrl = effectiveCover.coverDataUrl || blobCoverUrl || effectiveCover.cloudCoverUrl || null;
+
+  const linkedLyrics = useMemo(
+    () =>
+      findLinkedLyricsForTrack(
+        track,
+        state.lyricsDocs,
+        group.allTrackIds,
+        group.versions.map((v) => v.track)
+      ),
+    [track, state.lyricsDocs, group.allTrackIds, group.versions]
+  );
+  const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
 
   const gradCls = getGradientClass(effectiveCover.gradientId);
   const todos = track.todos || [];
@@ -242,6 +259,16 @@ export function TrackCard({
             >
               {TRACK_STATUS_META[track.status].label}
             </span>
+
+            {lyricsMeta && (
+              <span
+                title={`Texte lié : ${linkedLyrics?.title || ''} (${lyricsMeta.label})`}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${lyricsMeta.badge}`}
+              >
+                <FileText size={9} className="shrink-0 opacity-80" />
+                <span>{lyricsMeta.label}</span>
+              </span>
+            )}
 
             {group.prodTrack && group.prodTrack.id !== track.id && onPlayProd && (
               <button

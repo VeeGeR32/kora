@@ -26,7 +26,12 @@ import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
-import { compressCoverImage, resolveEffectiveTrackCover } from '../../lib/trackCover';
+import {
+  compressCoverImage,
+  findLinkedLyricsForTrack,
+  LYRICS_STATUS_META,
+  resolveEffectiveTrackCover,
+} from '../../lib/trackCover';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { getDeterministicGradientId } from '../../lib/musicVersioning';
 import { TRACK_STATUS_META } from '../../utils/theme';
@@ -145,6 +150,27 @@ export function TrackDetailModal({
     });
   }, [track?.id]);
 
+  const { registerFullscreenOverlay } = player;
+  const isDetailOpen = Boolean(group && activeEntry && track);
+  useEffect(() => {
+    if (!isDetailOpen) return;
+    return registerFullscreenOverlay();
+  }, [isDetailOpen, registerFullscreenOverlay]);
+
+  const linkedLyrics = useMemo(
+    () =>
+      track && group
+        ? findLinkedLyricsForTrack(
+            track,
+            state.lyricsDocs,
+            group.allTrackIds,
+            group.versions.map((v) => v.track)
+          )
+        : null,
+    [track, group, state.lyricsDocs]
+  );
+  const linkedLyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+
   if (!group || !activeEntry || !track) return null;
 
   const isCurrent = player.currentTrack?.id === track.id;
@@ -200,13 +226,13 @@ export function TrackDetailModal({
 
   return (
     <AnimatePresence>
-      {/* Full-Screen Editorial Song Page (sits cleanly at z-40 below MiniAudioPlayer z-50!) */}
+      {/* Full-Screen Editorial Song Page (sits cleanly at z-[45] above ProjectAlbumModal z-40 and below MiniAudioPlayer z-50!) */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 16 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
-        className="fixed inset-0 z-40 bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
+        className="fixed inset-0 z-[45] bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
       >
         {/* Minimalist Top Bar (safe-area aware on iPhone PWA!) */}
         <header className="shrink-0 pt-[calc(env(safe-area-inset-top)+10px)] pb-3 px-4 sm:px-6 border-b border-slate-100 dark:border-zinc-900 bg-white dark:bg-[#0c0c0f]">
@@ -447,7 +473,17 @@ export function TrackDetailModal({
                     className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
                   >
                     <FileText size={13} className="text-fuchsia-500" />
-                    {track.linkedLyricsId ? 'Ouvrir le texte' : '+ Texte'}
+                    {linkedLyricsMeta ? (
+                      <>
+                        <span>Texte</span>
+                        <span className={`h-1.5 w-1.5 rounded-full ${linkedLyricsMeta.dot}`} />
+                        <span className="opacity-75">{linkedLyricsMeta.label}</span>
+                      </>
+                    ) : track.linkedLyricsId ? (
+                      'Ouvrir le texte'
+                    ) : (
+                      '+ Texte'
+                    )}
                   </button>
 
                   <button

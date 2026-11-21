@@ -1,10 +1,12 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Camera,
   ChevronDown,
   ChevronLeft,
+  ChevronRight,
   ChevronUp,
+  FileText,
   Link2,
   ListChecks,
   Loader2,
@@ -24,13 +26,18 @@ import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { CheckCircle } from '../ui/CheckCircle';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
-import { getProjectTrackIndividualCovers } from '../../lib/trackCover';
+import {
+  findLinkedLyricsForTrack,
+  getProjectTrackIndividualCovers,
+  LYRICS_STATUS_META,
+} from '../../lib/trackCover';
 import { groupMusicTracks } from '../../lib/musicVersioning';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 
 interface ProjectAlbumModalProps {
   projectId: string | null;
   onClose: () => void;
+  onOpenTrackDetails?: (trackId: string) => void;
 }
 
 function fmtTotalDuration(sec: number): string {
@@ -70,7 +77,7 @@ async function resizeProjectCover(file: File, maxSize = 520): Promise<string> {
   });
 }
 
-export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps) {
+export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: ProjectAlbumModalProps) {
   const {
     state,
     updateMusicProject,
@@ -97,6 +104,17 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
   const project: MusicProject | null = useMemo(
     () => (projectId ? state.musicProjects.find((p) => p.id === projectId) || null : null),
     [projectId, state.musicProjects]
+  );
+
+  const { registerFullscreenOverlay } = player;
+  useEffect(() => {
+    if (!project) return;
+    return registerFullscreenOverlay();
+  }, [Boolean(project), registerFullscreenOverlay]);
+
+  const allGroups = useMemo(
+    () => groupMusicTracks(state.musicTracks),
+    [state.musicTracks]
   );
 
   const projectTracks = useMemo(() => {
@@ -511,6 +529,14 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                   const isCur = player.currentTrack?.id === trk.id;
                   const playing = isCur && player.isPlaying;
                   const menuOpen = openTrackMenuId === trk.id;
+                  const trkGroup = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+                  const linkedLyrics = findLinkedLyricsForTrack(
+                    trk,
+                    state.lyricsDocs,
+                    trkGroup?.allTrackIds,
+                    trkGroup?.versions.map((v) => v.track)
+                  );
+                  const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
                   return (
                     <div key={trk.id} className="py-3">
                       <div className="flex items-center justify-between gap-3">
@@ -557,25 +583,61 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                             >
                               {trk.manualGroupTitle || trk.title}
                             </p>
-                            <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-                              {fmtAddedDate(trk.modifiedAt || trk.addedAt) || trk.artist}
-                              {trk.bpm ? ` · ${trk.bpm} BPM` : ''}
-                            </p>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                              <p className="text-xs text-slate-400 dark:text-zinc-500">
+                                {fmtAddedDate(trk.modifiedAt || trk.addedAt) || trk.artist}
+                                {trk.bpm ? ` · ${trk.bpm} BPM` : ''}
+                              </p>
+                              {lyricsMeta && (
+                                <span
+                                  title={`Texte lié : ${linkedLyrics?.title || ''} (${lyricsMeta.label})`}
+                                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${lyricsMeta.badge}`}
+                                >
+                                  <FileText size={9} className="shrink-0 opacity-80" />
+                                  <span>{lyricsMeta.label}</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => setOpenTrackMenuId(menuOpen ? null : trk.id)}
-                          className="p-2 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-900 cursor-pointer shrink-0"
-                        >
-                          <MoreHorizontal size={16} />
-                        </button>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          {onOpenTrackDetails && (
+                            <button
+                              type="button"
+                              onClick={() => onOpenTrackDetails(trk.id)}
+                              title="Ouvrir la page du son"
+                              aria-label="Ouvrir la page du son"
+                              className="p-2 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-900 cursor-pointer"
+                            >
+                              <ChevronRight size={16} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setOpenTrackMenuId(menuOpen ? null : trk.id)}
+                            className="p-2 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-900 cursor-pointer"
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+                        </div>
                       </div>
 
                       {menuOpen && (
                         <div className="mt-2 ml-9 space-y-2">
                           <div className="flex flex-wrap items-center gap-1.5">
+                            {onOpenTrackDetails && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenTrackMenuId(null);
+                                  onOpenTrackDetails(trk.id);
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
+                              >
+                                Page du son
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => {

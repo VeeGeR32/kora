@@ -49,6 +49,8 @@ interface AudioPlayerContextValue {
   setAbLoop: (ab: { start: number | null; end: number | null }) => void;
   closePlayer: () => void;
   syncTrackMetadata: (track: MusicTrack) => void;
+  hasFullscreenOverlay: boolean;
+  registerFullscreenOverlay: () => () => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -65,10 +67,19 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
   const [shuffle, setShuffle] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [overlayCount, setOverlayCount] = useState(0);
   const [abLoop, setAbLoop] = useState<{ start: number | null; end: number | null }>({
     start: null,
     end: null,
   });
+
+  const registerFullscreenOverlay = useCallback(() => {
+    setOverlayCount((c) => c + 1);
+    return () => {
+      setOverlayCount((c) => Math.max(0, c - 1));
+    };
+  }, []);
+  const hasFullscreenOverlay = overlayCount > 0;
 
   const loop = repeatMode !== 'off';
   const setLoop = useCallback((v: boolean) => {
@@ -579,6 +590,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       setAbLoop,
       closePlayer,
       syncTrackMetadata,
+      hasFullscreenOverlay,
+      registerFullscreenOverlay,
     }),
     [
       currentTrack,
@@ -608,6 +621,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       setExpandedSynced,
       closePlayer,
       syncTrackMetadata,
+      hasFullscreenOverlay,
+      registerFullscreenOverlay,
     ]
   );
 
