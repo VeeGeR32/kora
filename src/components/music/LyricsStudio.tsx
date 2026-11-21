@@ -29,6 +29,7 @@ import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { YoutubeBeatPlayer } from './YoutubeBeatPlayer';
 import { LexCoreInspirationWidget, MetronomeWidget } from './LexCoreTools';
 import { LexCoreImportModal } from './LexCoreImportModal';
+import { groupMusicTracks } from '../../lib/musicVersioning';
 
 interface LyricsStudioProps {
   initialDocId?: string | null;
@@ -113,9 +114,31 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
     [state.lyricsDocs, activeDocId]
   );
 
+  const trackGroups = useMemo(
+    () => groupMusicTracks(state.musicTracks),
+    [state.musicTracks]
+  );
+
+  const prodByTrackId = useMemo(() => {
+    const map = new Map<string, (typeof state.musicTracks)[number]>();
+    for (const g of trackGroups) {
+      if (g.prodTrack) {
+        for (const id of g.allTrackIds) {
+          if (id !== g.prodTrack.id) map.set(id, g.prodTrack);
+        }
+      }
+    }
+    return map;
+  }, [trackGroups]);
+
   const linkedTrack = useMemo(
     () => state.musicTracks.find((t) => t.id === activeDoc?.linkedTrackId) || null,
     [state.musicTracks, activeDoc?.linkedTrackId]
+  );
+
+  const linkedProdTrack = useMemo(
+    () => (linkedTrack ? prodByTrackId.get(linkedTrack.id) || null : null),
+    [linkedTrack, prodByTrackId]
   );
 
   useEffect(() => {
@@ -546,8 +569,12 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
             const st = STATUS_META[doc.status || 1];
             const folderName = doc.folderId ? folderMap.get(doc.folderId) : undefined;
             const docTrack = doc.linkedTrackId ? trackMap.get(doc.linkedTrackId) : undefined;
+            const docProdTrack = docTrack ? prodByTrackId.get(docTrack.id) : undefined;
             const isDocTrackPlaying = Boolean(
               docTrack && player.currentTrack?.id === docTrack.id && player.isPlaying
+            );
+            const isDocProdPlaying = Boolean(
+              docProdTrack && player.currentTrack?.id === docProdTrack.id && player.isPlaying
             );
             const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
 
@@ -615,11 +642,34 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
                           if (player.currentTrack?.id === docTrack.id) player.togglePlay();
                           else void player.playTrack(docTrack);
                         }}
-                        className="inline-flex items-center gap-1 rounded-full bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 px-2 py-0.5 text-[10px] font-semibold hover:bg-fuchsia-500/20 transition cursor-pointer truncate max-w-[125px]"
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition cursor-pointer truncate max-w-[115px] ${
+                          isDocTrackPlaying
+                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                        }`}
                         title={`Écouter ${docTrack.title}`}
                       >
                         {isDocTrackPlaying ? <Pause size={9} fill="currentColor" /> : <Play size={9} fill="currentColor" />}
-                        <span className="truncate">{docTrack.title}</span>
+                        <span className="truncate">{docTrack.manualGroupTitle || docTrack.title}</span>
+                      </button>
+                    )}
+                    {docProdTrack && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (player.currentTrack?.id === docProdTrack.id) player.togglePlay();
+                          else void player.playTrack(docProdTrack);
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition cursor-pointer shrink-0 ${
+                          isDocProdPlaying
+                            ? 'bg-emerald-500 text-white'
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                        }`}
+                        title={`Écouter la prod (${docProdTrack.title})`}
+                      >
+                        {isDocProdPlaying ? <Pause size={8} fill="currentColor" /> : <Play size={8} fill="currentColor" />}
+                        <span>Prod</span>
                       </button>
                     )}
                     {!folderName && !docTrack && (
@@ -860,125 +910,148 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
             </div>
           </div>
 
-          {/* Collapsible Sleek Beat / Instru Footer */}
+          {/* Minimalist Integrated Beat / Instru Dock */}
           {beatBarOpen && (
-            <div className="shrink-0 border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/80 dark:bg-zinc-900/60 backdrop-blur-md">
-              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 space-y-2.5">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="inline-flex items-center rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setBeatMode('mp3')}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
-                        beatMode === 'mp3'
-                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      Son Kora
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setBeatMode('youtube')}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
-                        beatMode === 'youtube'
-                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      Prod YouTube
-                    </button>
-                  </div>
-
-                  {beatMode === 'mp3' && (
-                    <select
-                      value={activeDoc.linkedTrackId || ''}
-                      onChange={(e) =>
-                        updateLyricsDoc(activeDoc.id, { linkedTrackId: e.target.value || undefined })
-                      }
-                      className="rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2.5 py-1 text-[11px] text-slate-600 dark:text-zinc-300 outline-none cursor-pointer max-w-[220px]"
-                    >
-                      <option value="">Associer un son…</option>
-                      {state.musicTracks.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.title}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-
+            <div className="shrink-0 px-4 sm:px-6 pb-3 pt-1">
+              <div className="max-w-2xl mx-auto rounded-2xl border border-slate-200/80 dark:border-zinc-800/90 bg-slate-50/90 dark:bg-zinc-900/80 backdrop-blur-md px-3 py-2 space-y-2">
                 {beatMode === 'youtube' ? (
-                  <YoutubeBeatPlayer
-                    url={activeDoc.mediaUrl || ''}
-                    loop={activeDoc.loop}
-                    markers={activeDoc.markers}
-                    onUpdate={(patch) => updateLyricsDoc(activeDoc.id, patch)}
-                  />
-                ) : linkedTrack ? (
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
+                        Prod YouTube
+                      </span>
                       <button
                         type="button"
-                        onClick={() =>
-                          player.currentTrack?.id === linkedTrack.id
-                            ? player.togglePlay()
-                            : void player.playTrack(linkedTrack)
-                        }
-                        className="h-9 w-9 rounded-full bg-fuchsia-600 text-white flex items-center justify-center shrink-0 hover:bg-fuchsia-700 transition cursor-pointer"
+                        onClick={() => setBeatMode('mp3')}
+                        className="text-[11px] font-medium text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 transition cursor-pointer"
+                      >
+                        ← Son Kora
+                      </button>
+                    </div>
+                    <YoutubeBeatPlayer
+                      url={activeDoc.mediaUrl || ''}
+                      loop={activeDoc.loop}
+                      markers={activeDoc.markers}
+                      onUpdate={(patch) => updateLyricsDoc(activeDoc.id, patch)}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      {/* Monochrome Play / Pause for linked song */}
+                      <button
+                        type="button"
+                        disabled={!linkedTrack}
+                        onClick={() => {
+                          if (!linkedTrack) return;
+                          if (player.currentTrack?.id === linkedTrack.id) player.togglePlay();
+                          else void player.playTrack(linkedTrack);
+                        }}
+                        className="h-8 w-8 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0 hover:opacity-90 disabled:opacity-25 transition cursor-pointer"
+                        title={linkedTrack ? `Lire ${linkedTrack.manualGroupTitle || linkedTrack.title}` : 'Associer un son'}
                       >
                         {isPlayingLinked ? (
-                          <Pause size={15} fill="currentColor" />
+                          <Pause size={13} fill="currentColor" />
                         ) : (
-                          <Play size={15} fill="currentColor" className="ml-0.5" />
+                          <Play size={13} fill="currentColor" className="ml-0.5" />
                         )}
                       </button>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                          {linkedTrack.title}
-                        </p>
-                        <p className="text-[11px] text-slate-400">
-                          {linkedTrack.bpm ? `${linkedTrack.bpm} BPM · ` : ''}
-                          Lecture synchronisée avec le lecteur
-                        </p>
+
+                      {/* Clean Inline Track Selector */}
+                      <div className="flex-1 min-w-0 flex items-center gap-2">
+                        <select
+                          value={activeDoc.linkedTrackId || ''}
+                          onChange={(e) =>
+                            updateLyricsDoc(activeDoc.id, { linkedTrackId: e.target.value || undefined })
+                          }
+                          className="min-w-0 flex-1 bg-transparent text-xs font-medium text-slate-800 dark:text-zinc-100 outline-none cursor-pointer truncate"
+                        >
+                          <option value="" className="bg-white dark:bg-zinc-900">
+                            Associer un son…
+                          </option>
+                          {state.musicTracks.map((t) => (
+                            <option key={t.id} value={t.id} className="bg-white dark:bg-zinc-900">
+                              {t.manualGroupTitle || t.title}
+                            </option>
+                          ))}
+                        </select>
+                        {linkedTrack?.bpm ? (
+                          <span className="hidden sm:inline font-mono text-[10px] text-slate-400 shrink-0">
+                            {linkedTrack.bpm} BPM
+                          </span>
+                        ) : null}
                       </div>
+
+                      {/* 1-Tap Linked Prod Playback Button (when a *_prod exists for this song!) */}
+                      {linkedProdTrack && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (player.currentTrack?.id === linkedProdTrack.id) player.togglePlay();
+                            else void player.playTrack(linkedProdTrack);
+                          }}
+                          title={`Lire la prod (${linkedProdTrack.title})`}
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer shrink-0 ${
+                            player.currentTrack?.id === linkedProdTrack.id && player.isPlaying
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                          }`}
+                        >
+                          {player.currentTrack?.id === linkedProdTrack.id && player.isPlaying ? (
+                            <Pause size={10} fill="currentColor" />
+                          ) : (
+                            <Play size={10} fill="currentColor" />
+                          )}
+                          <span>Prod</span>
+                        </button>
+                      )}
+
+                      {/* Loop Toggle */}
+                      {linkedTrack && (
+                        <button
+                          type="button"
+                          onClick={() => player.setLoop(!player.loop)}
+                          className={`h-7 w-7 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 ${
+                            player.loop
+                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              : 'text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/60 dark:hover:bg-zinc-800'
+                          }`}
+                          title="Boucle"
+                        >
+                          <Repeat size={12} />
+                        </button>
+                      )}
+
+                      {/* Subtle Switch to YouTube */}
                       <button
                         type="button"
-                        onClick={() => player.setLoop(!player.loop)}
-                        className={`h-8 w-8 rounded-xl flex items-center justify-center cursor-pointer ${
-                          player.loop
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                            : 'bg-white dark:bg-zinc-800 text-slate-500 border border-slate-200/80 dark:border-zinc-700'
-                        }`}
-                        title="Boucle"
+                        onClick={() => setBeatMode('youtube')}
+                        className="rounded-full px-2 py-1 text-[10px] font-medium text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+                        title="Passer sur une prod YouTube"
                       >
-                        <Repeat size={13} />
+                        YouTube
                       </button>
                     </div>
 
-                    {linkedTrack.markers.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                    {linkedTrack && linkedTrack.markers.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-200/60 dark:border-zinc-800/70">
                         {linkedTrack.markers.map((mk) => (
                           <button
                             key={mk.id}
                             type="button"
                             onClick={() => void player.playTrack(linkedTrack, mk.timeSec)}
-                            className="inline-flex items-center gap-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-300 hover:border-fuchsia-400 transition cursor-pointer"
+                            className="inline-flex items-center gap-1 rounded-full bg-white dark:bg-zinc-800/80 border border-slate-200/70 dark:border-zinc-700/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-zinc-300 hover:border-slate-400 transition cursor-pointer"
                           >
-                            <Disc3 size={10} className="text-fuchsia-500" />
+                            <Disc3 size={9} className="opacity-60" />
                             {mk.label}
-                            <span className="font-mono text-[10px] text-slate-400">
+                            <span className="font-mono text-[9px] text-slate-400">
                               {fmt(mk.timeSec)}
                             </span>
                           </button>
                         ))}
                       </div>
                     )}
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-400">
-                    Sélectionne un son ci-dessus ou bascule sur <strong>Prod YouTube</strong> pour écrire sur instru.
-                  </p>
+                  </>
                 )}
               </div>
             </div>
