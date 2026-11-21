@@ -1,5 +1,8 @@
 import crypto from 'node:crypto';
-import webpush from 'web-push';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const webpush = require('web-push');
 
 function base64url(input) {
   return Buffer.from(input)
@@ -7,6 +10,13 @@ function base64url(input) {
     .replace(/=/g, '')
     .replace(/\+/g, '-')
     .replace(/\//g, '_');
+}
+
+function parseServiceAccount(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON vide');
+  if (trimmed.startsWith('{')) return JSON.parse(trimmed);
+  return JSON.parse(Buffer.from(trimmed, 'base64').toString('utf8'));
 }
 
 async function getGoogleAccessTokenFromServiceAccount(sa) {
@@ -113,12 +123,12 @@ export default async function handler(req, res) {
     return res.status(503).json({
       ok: false,
       error:
-        'Variables manquantes sur Vercel (VITE_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, FIREBASE_SERVICE_ACCOUNT_JSON, FIREBASE_PUSH_UID).',
+        'Variables manquantes sur Vercel (VAPID_PRIVATE_KEY, FIREBASE_SERVICE_ACCOUNT_JSON, FIREBASE_PUSH_UID).',
     });
   }
 
   try {
-    const sa = JSON.parse(saRaw);
+    const sa = parseServiceAccount(saRaw);
     const accessToken = await getGoogleAccessTokenFromServiceAccount(sa);
     const docUrl = `https://firestore.googleapis.com/v1/projects/${sa.project_id}/databases/(default)/documents/users/${encodeURIComponent(
       targetUid
@@ -135,20 +145,23 @@ export default async function handler(req, res) {
     const state = fromFirestoreValue({ mapValue: { fields: rawDoc.fields || {} } }) || {};
     const cfg = state.preferences?.notifications;
     if (!cfg?.enabled || !cfg?.pushSubscription?.endpoint) {
-      return res.status(200).json({ ok: true, sent: 0, reason: 'Notifications disabled or no subscription' });
+      return res
+        .status(200)
+        .json({ ok: true, sent: 0, reason: 'Notifications disabled or no subscription' });
     }
 
     const { dateISO: today, nowMin } = parisNowParts();
     const tomorrow = addDaysISO(today, 1);
+    const windowMin = 10; // matches 10-min cloud cron cadence
     const toSend = [];
 
-    // 1. Upcoming events within the next 15..10 min window (assuming 5-min cron cadence)
+    // 1. Upcoming events (e.g. 15..6 min before start)
     if (cfg.eventsBeforeMin > 0 && Array.isArray(state.events)) {
       const targetMin = cfg.eventsBeforeMin;
       for (const ev of state.events) {
         if (ev.completed || ev.date !== today) continue;
         const diff = timeToMinutes(ev.startTime) - nowMin;
-        if (diff > Math.max(0, targetMin - 5) && diff <= targetMin) {
+        if (diff > Math.max(0, targetMin - windowMin) && diff <= targetMin) {
           const where = ev.location ? ` · ${ev.location}` : '';
           toSend.push({
             title: `Dans ${diff} min : ${ev.title}`,
@@ -159,10 +172,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2. Morning briefing (5-min window)
+    // 2. Morning briefing
     if (cfg.dailyBriefing) {
       const morningMin = timeToMinutes(cfg.morningHour || '07:45');
-      if (nowMin >= morningMin && nowMin < morningMin + 5) {
+      if (nowMin >= morningMin && nowMin < morningMin + windowMin) {
         const todayEvents = (state.events || []).filter((e) => e.date === today);
         const hwToday = (state.homework || []).filter((h) => !h.done && h.dueDate <= today).length;
         toSend.push({
@@ -175,8 +188,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3. Homework & Exams at 18:00..18:04
-    if (cfg.homeworkAndExams && nowMin >= 18 * 60 && nowMin < 18 * 60 + 5) {
+    // 3. Homework & Exams at 18:00..18:09
+    if (cfg.homeworkAndExams && nowMin >= 18 * 60 && nowMin < 18 * 60 + windowMin) {
       const examsSoon = (state.exams || []).filter(
         (e) => !e.done && (e.date === today || e.date === tomorrow)
       );
@@ -199,8 +212,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // 4. Hydration nudge at 16:30..16:34
-    if (cfg.hydrationAndMacros && nowMin >= 16 * 60 + 30 && nowMin < 16 * 60 + 35) {
+    // 4. Hydration nudge at 16:30..16:39
+    if (cfg.hydrationAndMacros && nowMin >= 16 * 60 + 30 && nowMin < 16 * 60 + 30 + windowMin) {
       const water = state.waterMlByDate?.[today] || 0;
       const goal = state.preferences?.nutritionGoals?.waterMl || 2500;
       if (water < goal * 0.55) {
@@ -212,8 +225,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // 5. Evening recap at 21:00..21:04
-    if (cfg.dailyBriefing && nowMin >= 21 * 60 && nowMin < 21 * 60 + 5) {
+    // 5. Evening recap at 21:00..21:09
+    if (cfg.dailyBriefing && nowMin >= 21 * 60 && nowMin < 21 * 60 + windowMin) {
       const tasksLeft = (state.tasks || []).filter((t) => !t.done && (!t.dueDate || t.dueDate <= today)).length;
       const hwLeft = (state.homework || []).filter((h) => !h.done && h.dueDate <= today).length;
       if (tasksLeft + hwLeft > 0) {
@@ -227,10 +240,7 @@ export default async function handler(req, res) {
 
     webpush.setVapidDetails(subject, publicKey, privateKey);
     for (const notif of toSend) {
-      await webpush.sendNotification(
-        cfg.pushSubscription,
-        JSON.stringify({ ...notif, url: '/' })
-      );
+      await webpush.sendNotification(cfg.pushSubscription, JSON.stringify({ ...notif, url: '/' }));
     }
 
     return res.status(200).json({ ok: true, sent: toSend.length, timeParis: `${today} ${nowMin}m` });

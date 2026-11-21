@@ -1,4 +1,8 @@
-import webpush from 'web-push';
+import { createRequire } from 'node:module';
+import { waitUntil } from '@vercel/functions';
+
+const require = createRequire(import.meta.url);
+const webpush = require('web-push');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -27,7 +31,7 @@ export default async function handler(req, res) {
     return res.status(503).json({
       ok: false,
       error:
-        'Clés VAPID non configurées sur Vercel (ajoute VITE_VAPID_PUBLIC_KEY et VAPID_PRIVATE_KEY dans Vercel → Settings → Environment Variables).',
+        'Clé VAPID_PRIVATE_KEY non configurée sur Vercel (Vercel → Settings → Environment Variables → Redeploy).',
     });
   }
 
@@ -35,27 +39,48 @@ export default async function handler(req, res) {
   if (!subscription || !subscription.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
     return res.status(400).json({
       ok: false,
-      error: 'Abonnement Push manquant — clique d’abord sur Activer sur ton iPhone.',
+      error: 'Abonnement Push manquant — clique d’abord sur Activer depuis l’icône Kora sur ton écran d’accueil.',
     });
-  }
-
-  const waitSec = Math.max(0, Math.min(45, Number(delaySec) || 0));
-  if (waitSec > 0) {
-    await sleep(waitSec * 1000);
   }
 
   try {
     webpush.setVapidDetails(subject, publicKey, privateKey);
-    await webpush.sendNotification(
-      subscription,
-      JSON.stringify({
-        title: title || 'Kora · Test Push (app fermée)',
-        body: body || 'Parfait ! Les notifications push arrivent même quand Kora est fermé.',
-        tag: tag || `kora-push-${Date.now()}`,
-        url: '/',
-      })
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: `Clé VAPID invalide : ${err?.message || String(err)}`,
+    });
+  }
+
+  const payload = JSON.stringify({
+    title: title || 'Kora · Push reçu (app fermée) ✓',
+    body: body || 'Top ! Ton iPhone reçoit bien les notifications push même quand Kora est fermé.',
+    tag: tag || `kora-push-${Date.now()}`,
+    url: '/',
+  });
+
+  const waitSec = Math.max(0, Math.min(45, Number(delaySec) || 0));
+
+  // If delayed (e.g. 10s closed-app test), return 200 IMMEDIATELY so the user can kill the iOS PWA
+  // while Vercel keeps the background task alive via waitUntil and delivers to Apple Push!
+  if (waitSec > 0) {
+    waitUntil(
+      sleep(waitSec * 1000)
+        .then(() => webpush.sendNotification(subscription, payload))
+        .catch((err) => {
+          console.error('[Kora Push Test] Delayed send error:', err?.statusCode, err?.body || err?.message);
+        })
     );
-    return res.status(200).json({ ok: true, delayedSec: waitSec });
+    return res.status(200).json({
+      ok: true,
+      scheduled: true,
+      delayedSec: waitSec,
+    });
+  }
+
+  try {
+    await webpush.sendNotification(subscription, payload);
+    return res.status(200).json({ ok: true, delayedSec: 0 });
   } catch (err) {
     const statusCode = err?.statusCode || 500;
     return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({

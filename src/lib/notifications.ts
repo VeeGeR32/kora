@@ -128,9 +128,20 @@ export async function triggerServerClosedAppPush(
         delaySec: options?.delaySec ?? 10,
       }),
     });
-    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      scheduled?: boolean;
+      delayedSec?: number;
+      error?: string;
+    };
     if (!res.ok || !data.ok) {
       return { ok: false, message: data.error || `Erreur serveur Push (HTTP ${res.status})` };
+    }
+    if (data.scheduled) {
+      return {
+        ok: true,
+        message: `✓ Programmé ! Ferme Kora et verrouille ton iPhone MAINTENANT — notif dans ${data.delayedSec ?? 10}s !`,
+      };
     }
     return { ok: true, message: 'Push serveur envoyé ✓' };
   } catch (err) {

@@ -133,9 +133,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   const handleTestClosedAppPush = async () => {
     setTestingClosedPush(true);
-    setNotifStatusMsg(
-      'Envoi programmé dans 10 secondes… Ferme Kora et verrouille ton iPhone maintenant !'
-    );
+    setNotifStatusMsg('Connexion au serveur Push…');
     try {
       let sub = notifCfg.pushSubscription || (await subscribeWebPush());
       if (!sub) {
