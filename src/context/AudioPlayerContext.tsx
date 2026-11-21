@@ -1,8 +1,21 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { MusicTrack } from '../types';
 import { getMediaObjectUrl, saveMediaBlob } from '../lib/mediaDb';
 import { downloadGoogleDriveAudioBlob, ensureGoogleDriveToken } from '../lib/googleDrive';
 import { useApp } from './AppContext';
+
+function shuffleTracksFisherYates(tracks: MusicTrack[], avoidFirstId?: string): MusicTrack[] {
+  const arr = [...tracks];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  if (avoidFirstId && arr.length > 1 && arr[0].id === avoidFirstId) {
+    const swapIdx = 1 + Math.floor(Math.random() * (arr.length - 1));
+    [arr[0], arr[swapIdx]] = [arr[swapIdx], arr[0]];
+  }
+  return arr;
+}
 
 interface AudioPlayerContextValue {
   currentTrack: MusicTrack | null;
@@ -17,6 +30,7 @@ interface AudioPlayerContextValue {
   hasPrev: boolean;
   getLiveTime: () => number;
   playTrack: (track: MusicTrack, startAtSec?: number, customQueue?: MusicTrack[]) => Promise<void>;
+  playShuffled: (tracks: MusicTrack[]) => Promise<void>;
   restoreTrack: (track: MusicTrack, startAtSec?: number, shouldExpand?: boolean) => void;
   playNext: () => void;
   playPrev: () => void;
@@ -52,6 +66,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const abLoopRef = useRef(abLoop);
   const currentTrackRef = useRef(currentTrack);
   const queueRef = useRef(queue);
+  const isShuffledRef = useRef(false);
+  const playRequestIdRef = useRef(0);
+  const lastReportedSecRef = useRef(-1);
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
 
@@ -77,23 +94,43 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const hasPrev = effectiveQueue.length > 1 && currentIdx >= 0;
 
   const playTrack = useCallback(
-    async (track: MusicTrack, startAtSec?: number, customQueue?: MusicTrack[]) => {
+    async (
+      track: MusicTrack,
+      startAtSec?: number,
+      customQueue?: MusicTrack[],
+      keepShuffleMode = false
+    ) => {
       const audio = audioRef.current;
       if (!audio) return;
 
+      const reqId = ++playRequestIdRef.current;
+      if (!keepShuffleMode && customQueue) {
+        isShuffledRef.current = false;
+      }
+
       if (customQueue && customQueue.length > 0) {
+        queueRef.current = customQueue;
         setQueue(customQueue);
       } else if (queueRef.current.length === 0 || !queueRef.current.some((t) => t.id === track.id)) {
+        queueRef.current = state.musicTracks;
         setQueue(state.musicTracks);
       }
+
+      // Immediately reflect track selection for zero-lag UI feedback
+      currentTrackRef.current = track;
+      setCurrentTrack(track);
+      pendingResumeSecRef.current = null;
+      lastReportedSecRef.current = -1;
 
       let src: string | null = null;
       if (track.mediaId) {
         src = await getMediaObjectUrl(track.mediaId);
       }
+      if (reqId !== playRequestIdRef.current) return;
       if (!src && track.googleDriveFileId) {
         src = await getMediaObjectUrl(`drive_${track.googleDriveFileId}`);
       }
+      if (reqId !== playRequestIdRef.current) return;
       if (!src && track.cloudAudioUrl) {
         src = track.cloudAudioUrl;
       }
@@ -101,17 +138,20 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         try {
           notify(`Chargement depuis Google Drive (« ${track.title} »)…`);
           const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
+          if (reqId !== playRequestIdRef.current) return;
           const blob = await downloadGoogleDriveAudioBlob(token, track.googleDriveFileId);
+          if (reqId !== playRequestIdRef.current) return;
           const cacheKey = track.mediaId || `drive_${track.googleDriveFileId}`;
           await saveMediaBlob(cacheKey, blob, `${track.title}.mp3`);
+          if (reqId !== playRequestIdRef.current) return;
           src = await getMediaObjectUrl(cacheKey);
         } catch (err) {
+          if (reqId !== playRequestIdRef.current) return;
           notify(`Google Drive : ${(err as Error).message}`);
         }
       }
+      if (reqId !== playRequestIdRef.current) return;
 
-      setCurrentTrack(track);
-      pendingResumeSecRef.current = null;
       if (!src) {
         audio.pause();
         audio.removeAttribute('src');
@@ -121,14 +161,17 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         return;
       }
 
-      const isSameTrack = currentTrackRef.current?.id === track.id && audio.src === src;
-      if (!isSameTrack) {
+      const isSameSrc = audio.src === src;
+      if (!isSameSrc) {
         audio.src = src;
+        setDuration(track.durationSec || 0);
         setAbLoop({ start: null, end: null });
       }
       if (typeof startAtSec === 'number') {
         audio.currentTime = startAtSec;
         setCurrentTime(startAtSec);
+      } else if (!isSameSrc) {
+        setCurrentTime(0);
       }
       updateLastSession({
         audioTrackId: track.id,
@@ -136,12 +179,22 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       });
       try {
         await audio.play();
-        setIsPlaying(true);
+        if (reqId === playRequestIdRef.current) setIsPlaying(true);
       } catch {
-        setIsPlaying(false);
+        if (reqId === playRequestIdRef.current) setIsPlaying(false);
       }
     },
     [state.musicTracks, state.preferences.firebaseConfig, notify, updateLastSession]
+  );
+
+  const playShuffled = useCallback(
+    async (tracks: MusicTrack[]) => {
+      if (tracks.length === 0) return;
+      const shuffled = shuffleTracksFisherYates(tracks, currentTrackRef.current?.id);
+      isShuffledRef.current = true;
+      await playTrack(shuffled[0], 0, shuffled, true);
+    },
+    [playTrack]
   );
 
   const restoreTrack = useCallback(
@@ -168,14 +221,21 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (activeQ.length === 0) return;
     const cur = currentTrackRef.current;
     const idx = cur ? activeQ.findIndex((t) => t.id === cur.id) : -1;
+    // If we reached the end of a shuffled queue, reshuffle cleanly without repeating the last track
+    if (isShuffledRef.current && idx >= activeQ.length - 1 && activeQ.length > 1) {
+      const reshuffled = shuffleTracksFisherYates(activeQ, cur?.id);
+      void playTrack(reshuffled[0], 0, reshuffled, true);
+      return;
+    }
     const nextIdx = idx >= 0 ? (idx + 1) % activeQ.length : 0;
-    void playTrack(activeQ[nextIdx], 0, activeQ);
+    void playTrack(activeQ[nextIdx], 0, activeQ, isShuffledRef.current);
   }, [state.musicTracks, playTrack]);
 
   const playPrev = useCallback(() => {
     const audio = audioRef.current;
     if (audio && audio.currentTime > 3) {
       audio.currentTime = 0;
+      lastReportedSecRef.current = 0;
       setCurrentTime(0);
       return;
     }
@@ -184,7 +244,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const cur = currentTrackRef.current;
     const idx = cur ? activeQ.findIndex((t) => t.id === cur.id) : 0;
     const prevIdx = idx > 0 ? idx - 1 : activeQ.length - 1;
-    void playTrack(activeQ[prevIdx], 0, activeQ);
+    void playTrack(activeQ[prevIdx], 0, activeQ, isShuffledRef.current);
   }, [state.musicTracks, playTrack]);
 
   useEffect(() => {
@@ -199,7 +259,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
     const onTimeUpdate = () => {
       const t = audio.currentTime;
-      setCurrentTime(t);
+      const wholeSec = Math.floor(t);
+      if (wholeSec !== lastReportedSecRef.current) {
+        lastReportedSecRef.current = wholeSec;
+        setCurrentTime(t);
+      }
       const { start, end } = abLoopRef.current;
       if (end !== null && t >= end) {
         if (loopRef.current) {
@@ -401,34 +465,61 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setCurrentTrack((prev) => (prev && prev.id === track.id ? track : prev));
   }, []);
 
+  const contextValue = useMemo<AudioPlayerContextValue>(
+    () => ({
+      currentTrack,
+      queue: effectiveQueue,
+      isPlaying,
+      currentTime,
+      duration,
+      loop,
+      expanded,
+      abLoop,
+      hasNext,
+      hasPrev,
+      getLiveTime,
+      playTrack,
+      playShuffled,
+      restoreTrack,
+      playNext,
+      playPrev,
+      togglePlay,
+      pause,
+      seek,
+      setLoop,
+      setExpanded: setExpandedSynced,
+      setAbLoop,
+      closePlayer,
+      syncTrackMetadata,
+    }),
+    [
+      currentTrack,
+      effectiveQueue,
+      isPlaying,
+      currentTime,
+      duration,
+      loop,
+      expanded,
+      abLoop,
+      hasNext,
+      hasPrev,
+      getLiveTime,
+      playTrack,
+      playShuffled,
+      restoreTrack,
+      playNext,
+      playPrev,
+      togglePlay,
+      pause,
+      seek,
+      setExpandedSynced,
+      closePlayer,
+      syncTrackMetadata,
+    ]
+  );
+
   return (
-    <AudioPlayerContext.Provider
-      value={{
-        currentTrack,
-        queue: effectiveQueue,
-        isPlaying,
-        currentTime,
-        duration,
-        loop,
-        expanded,
-        abLoop,
-        hasNext,
-        hasPrev,
-        getLiveTime,
-        playTrack,
-        restoreTrack,
-        playNext,
-        playPrev,
-        togglePlay,
-        pause,
-        seek,
-        setLoop,
-        setExpanded: setExpandedSynced,
-        setAbLoop,
-        closePlayer,
-        syncTrackMetadata,
-      }}
-    >
+    <AudioPlayerContext.Provider value={contextValue}>
       {children}
     </AudioPlayerContext.Provider>
   );

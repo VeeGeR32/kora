@@ -4,7 +4,6 @@ import {
   ArrowDownAZ,
   Calendar,
   CalendarPlus,
-  Copy,
   GitBranch,
   Layers,
   ListChecks,
@@ -13,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Shuffle,
   Star,
 } from 'lucide-react';
 import type { MusicTrack, ProjectKind } from '../../types';
@@ -663,11 +663,13 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   type="button"
                   onClick={() => {
                     const favQueue = favoriteGroups.map(getActiveTrackForGroup);
-                    if (favQueue[0]) void player.playTrack(favQueue[0], 0, favQueue);
+                    if (favQueue.length > 0) void player.playShuffled(favQueue);
                   }}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 hover:underline cursor-pointer"
+                  title="Lecture aléatoire des favoris (sans répétition)"
+                  aria-label="Lecture aléatoire des favoris"
+                  className="h-8 w-8 rounded-full inline-flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
                 >
-                  <Play size={11} fill="currentColor" /> Tout lire
+                  <Shuffle size={15} />
                 </button>
               )}
             </div>
@@ -966,7 +968,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                 />
               </div>
 
-              {/* Group vs All Versions Toggle + Copy Drive URLs */}
+              {/* Group vs All Versions Toggle + Shuffle Button */}
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
@@ -980,43 +982,20 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   {groupVersions ? <GitBranch size={13} /> : <Layers size={13} />}
                   {groupVersions ? 'Versions regroupées' : 'Toutes les versions'}
                 </button>
-                <button
-                  type="button"
-                  title="Copier le nom exact + lien Google Drive de tous les fichiers affichés"
-                  onClick={async () => {
-                    const lines: string[] = [];
-                    const seen = new Set<string>();
-                    for (const g of filteredLibraryGroups) {
-                      const tracksInGroup = [
-                        ...g.versions.map((v) => v.track),
-                        ...(g.prodTracks || []).map((p) => p.track),
-                      ];
-                      for (const t of tracksInGroup) {
-                        if (seen.has(t.id)) continue;
-                        seen.add(t.id);
-                        const exactName = t.sourceFilename || t.title;
-                        const url = t.googleDriveFileId
-                          ? `https://drive.google.com/file/d/${t.googleDriveFileId}/view`
-                          : '(local)';
-                        lines.push(`${exactName} — ${url}`);
-                      }
-                    }
-                    if (lines.length === 0) {
-                      notify('Aucun fichier à copier');
-                      return;
-                    }
-                    try {
-                      await navigator.clipboard.writeText(lines.join('\n'));
-                      notify(`${lines.length} fichiers (noms exacts + URLs Drive) copiés ✓`);
-                    } catch {
-                      window.prompt('Noms exacts & URLs Drive :', lines.join('\n'));
-                    }
-                  }}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
-                >
-                  <Copy size={13} />
-                  <span className="hidden sm:inline">Copier liens Drive</span>
-                </button>
+                {filteredLibraryGroups.length > 0 && (
+                  <button
+                    type="button"
+                    title="Lecture aléatoire (sans répétition)"
+                    aria-label="Lecture aléatoire"
+                    onClick={() => {
+                      const q = filteredLibraryGroups.map(getActiveTrackForGroup);
+                      if (q.length > 0) void player.playShuffled(q);
+                    }}
+                    className="h-9 w-9 inline-flex items-center justify-center rounded-xl border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+                  >
+                    <Shuffle size={14} />
+                  </button>
+                )}
               </div>
             </div>
 

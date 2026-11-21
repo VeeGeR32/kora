@@ -165,28 +165,32 @@ export function MiniAudioPlayer() {
     const miniTx = -r * MINI_TAPE_PX;
     const rot = t * 24; // smooth 24 deg/s vinyl spin synced directly to audio time
 
-    const tapeTransform = `translate3d(${tx}px, 0, 0)`;
+    const tapeTransform = `translate3d(${tx.toFixed(2)}px, 0, 0)`;
     if (tapePlayedRef.current) tapePlayedRef.current.style.transform = tapeTransform;
     if (tapeUnplayedRef.current) tapeUnplayedRef.current.style.transform = tapeTransform;
 
-    const miniTransform = `translate3d(${miniTx}px, 0, 0)`;
+    const miniTransform = `translate3d(${miniTx.toFixed(2)}px, 0, 0)`;
     if (miniTapePlayedRef.current) miniTapePlayedRef.current.style.transform = miniTransform;
     if (miniTapeUnplayedRef.current) miniTapeUnplayedRef.current.style.transform = miniTransform;
 
-    const discTransform = `rotate(${rot}deg)`;
+    const discTransform = `rotate3d(0, 0, 1, ${rot.toFixed(2)}deg)`;
     if (discRef.current) discRef.current.style.transform = discTransform;
     if (miniDiscRef.current) miniDiscRef.current.style.transform = discTransform;
 
     const label = `${fmt(t)} / ${fmt(dur)}`;
-    if (timeTextRef.current) timeTextRef.current.textContent = label;
-    if (scrubPillTextRef.current) scrubPillTextRef.current.textContent = label;
+    if (timeTextRef.current && timeTextRef.current.textContent !== label) {
+      timeTextRef.current.textContent = label;
+    }
+    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== label) {
+      scrubPillTextRef.current.textContent = label;
+    }
   };
 
-  // Sync visual frame synchronously before paint on mount / track change / seek / expand toggle
+  // Sync visual frame synchronously before paint on mount / track change / expand / pause (never fights rAF!)
   useLayoutEffect(() => {
     if (!currentTrack) return;
     applyVisualFrame(scrubbingRef.current ? scrubTimeRef.current : getLiveTime(), effectiveDuration);
-  }, [currentTrack?.id, expanded, effectiveDuration, currentTime, getLiveTime]);
+  }, [currentTrack?.id, expanded, effectiveDuration, isPlaying, getLiveTime]);
 
   // Smooth 60/120fps requestAnimationFrame loop while playing!
   useEffect(() => {
@@ -475,19 +479,20 @@ export function MiniAudioPlayer() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
               onClick={() => setExpanded(false)}
-              className="fixed inset-0 bg-neutral-900/72 backdrop-blur-2xl"
+              className="fixed inset-0 bg-neutral-950/82 backdrop-blur-md"
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.94, y: 24 }}
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.94, y: 24 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              transition={{ type: 'spring', stiffness: 440, damping: 36, mass: 0.8 }}
               className="relative z-10 w-full max-w-[356px] flex flex-col items-center gap-4"
             >
               {/* Main Obsidian Card */}
-              <div className="w-full rounded-[32px] bg-[#0b0b0d] text-white border border-white/10 shadow-[0_32px_90px_-14px_rgba(0,0,0,0.88)] px-6 pt-6 pb-6 flex flex-col items-center space-y-5">
+              <div className="w-full rounded-[32px] bg-[#0b0b0d] text-white border border-white/10 shadow-2xl px-6 pt-6 pb-6 flex flex-col items-center space-y-5">
                 {/* Title & Subtitle (+ 1-Tap Son/Prod Switcher when linked prod exists!) */}
                 <div className="w-full text-center space-y-1 px-2">
                   <h2 className="text-[15px] font-semibold tracking-tight text-white truncate">
@@ -542,12 +547,12 @@ export function MiniAudioPlayer() {
 
                 {/* 60/120fps Dual-Clip Scrolling Tape-Reel Waveform + Fixed Center Yellow Needle */}
                 <div className="w-full space-y-2.5">
-                  {/* Floating Yellow Time Pill (pure DOM text updates — zero flicker while scrubbing) */}
+                  {/* Floating Time Pill (pure DOM text updates — zero flicker while scrubbing) */}
                   <div className="h-6 flex items-center justify-center">
                     <span
                       ref={scrubPillTextRef}
-                      className={`rounded-full bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums shadow-md transition-all duration-150 ${
-                        scrubbing ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
+                      className={`rounded-full bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
+                        scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
                       }`}
                     />
                   </div>
@@ -588,8 +593,8 @@ export function MiniAudioPlayer() {
                       </div>
                     </div>
 
-                    {/* Fixed Center Yellow Playhead Needle */}
-                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.85)] z-30" />
+                    {/* Fixed Center Playhead Needle (crisp, zero glow) */}
+                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-300 z-30" />
                   </div>
 
                   {/* Time Readout below tape (pure DOM updated at 60/120fps) */}
