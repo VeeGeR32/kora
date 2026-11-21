@@ -100,18 +100,30 @@ export async function downloadGoogleDriveAudioBlob(
   token: string,
   fileId: string
 ): Promise<Blob> {
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 25_000);
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      }
+    );
+    if (res.status === 401) {
+      clearCachedDriveToken();
+      throw new Error('Session Google Drive expirée — reconnecte Google Drive.');
     }
-  );
-  if (res.status === 401) {
-    clearCachedDriveToken();
-    throw new Error('Session Google Drive expirée — reconnecte Google Drive.');
+    if (!res.ok) {
+      throw new Error(`Impossible de télécharger le fichier Drive (HTTP ${res.status})`);
+    }
+    return await res.blob();
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') {
+      throw new Error('Délai dépassé (25s) lors du téléchargement depuis Google Drive.');
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timer);
   }
-  if (!res.ok) {
-    throw new Error(`Impossible de télécharger le fichier Drive (HTTP ${res.status})`);
-  }
-  return await res.blob();
 }

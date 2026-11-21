@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
+  ArrowDownAZ,
+  ArrowUpAZ,
+  Calendar,
   Check,
   CloudDownload,
   FileAudio,
@@ -18,6 +21,7 @@ import {
   listGoogleDriveAudioFiles,
   type DriveAudioFile,
 } from '../../lib/googleDrive';
+import { saveMediaBlob } from '../../lib/mediaDb';
 import { useApp } from '../../context/AppContext';
 import { uid } from '../../utils/dates';
 
@@ -26,27 +30,85 @@ interface GoogleDrivePickerModalProps {
   onClose: () => void;
 }
 
+type SortBy = 'date' | 'name' | 'size';
+type SortDir = 'desc' | 'asc';
+
 function fmtSize(bytes: number): string {
   if (!bytes) return '';
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+function fmtShortDate(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+
+/** Reads audio duration with strict timeout so iOS Safari never hangs indefinitely */
+function readAudioDurationSafe(blob: Blob, timeoutMs = 2000): Promise<number> {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    let settled = false;
+    const finish = (sec: number) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      audio.src = '';
+      URL.revokeObjectURL(objectUrl);
+      resolve(sec);
+    };
+    const timer = window.setTimeout(() => finish(0), timeoutMs);
+    audio.onloadedmetadata = () => finish(isFinite(audio.duration) ? Math.round(audio.duration) : 0);
+    audio.onerror = () => finish(0);
+    audio.src = objectUrl;
+    try {
+      audio.load();
+    } catch {
+      finish(0);
+    }
+  });
+}
+
 export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModalProps) {
-  const { state, addMusicTrack, saveAndOptionallySyncMedia, notify } = useApp();
+  const { state, addMusicTrack, notify } = useApp();
 
   const [token, setToken] = useState<string | null>(() => getCachedDriveToken());
   const [files, setFiles] = useState<DriveAudioFile[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<SortBy>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number; label: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const existingDriveIds = new Set(
-    state.musicTracks.map((t) => t.googleDriveFileId).filter((id): id is string => Boolean(id))
+  const existingDriveIds = useMemo(
+    () =>
+      new Set(
+        state.musicTracks.map((t) => t.googleDriveFileId).filter((id): id is string => Boolean(id))
+      ),
+    [state.musicTracks]
   );
+
+  const sortedFiles = useMemo(() => {
+    const mult = sortDir === 'asc' ? 1 : -1;
+    return [...files].sort((a, b) => {
+      if (sortBy === 'name') {
+        return a.name.localeCompare(b.name, 'fr', { numeric: true, sensitivity: 'base' }) * mult;
+      }
+      if (sortBy === 'size') {
+        return (a.sizeBytes - b.sizeBytes) * mult;
+      }
+      const ta = a.modifiedTime ? new Date(a.modifiedTime).getTime() : 0;
+      const tb = b.modifiedTime ? new Date(b.modifiedTime).getTime() : 0;
+      return (ta - tb) * mult;
+    });
+  }, [files, sortBy, sortDir]);
 
   const loadFiles = async (activeToken: string, q = search) => {
     setLoading(true);
@@ -95,39 +157,37 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
     });
   };
 
+  const handleSelectSort = (nextBy: SortBy) => {
+    if (sortBy === nextBy) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(nextBy);
+      setSortDir(nextBy === 'name' ? 'asc' : 'desc');
+    }
+  };
+
   const handleImportSelected = async () => {
     if (!token || selectedIds.size === 0 || importing) return;
-    const chosen = files.filter((f) => selectedIds.has(f.id));
+    const chosen = sortedFiles.filter((f) => selectedIds.has(f.id));
     setImporting(true);
-    setImportProgress({ done: 0, total: chosen.length });
+    setImportProgress({ done: 0, total: chosen.length, label: chosen[0]?.name || '' });
     setError(null);
 
     let importedCount = 0;
     try {
       for (const file of chosen) {
+        setImportProgress({ done: importedCount, total: chosen.length, label: file.name });
         const blob = await downloadGoogleDriveAudioBlob(token, file.id);
         const mediaId = uid('aud');
-        const saved = await saveAndOptionallySyncMedia(mediaId, blob, file.name);
-
-        const objectUrl = URL.createObjectURL(blob);
-        const durationSec = await new Promise<number>((resolve) => {
-          const a = new Audio(objectUrl);
-          a.onloadedmetadata = () => {
-            URL.revokeObjectURL(objectUrl);
-            resolve(isFinite(a.duration) ? Math.round(a.duration) : 0);
-          };
-          a.onerror = () => {
-            URL.revokeObjectURL(objectUrl);
-            resolve(0);
-          };
-        });
+        // Save directly to local IndexedDB (fast, never blocks on Storage upload; Drive fileId handles cross-device sync!)
+        await saveMediaBlob(mediaId, blob, file.name);
+        const durationSec = await readAudioDurationSafe(blob);
 
         const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
         addMusicTrack({
           title: cleanTitle,
           artist: state.preferences.name || 'Moi',
-          mediaId: saved.mediaId,
-          cloudAudioUrl: saved.cloudUrl,
+          mediaId,
           googleDriveFileId: file.id,
           durationSec: durationSec || undefined,
           status: 'demo',
@@ -136,7 +196,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
           addedAt: new Date().toISOString(),
         });
         importedCount++;
-        setImportProgress({ done: importedCount, total: chosen.length });
+        setImportProgress({ done: importedCount, total: chosen.length, label: file.name });
       }
       notify(
         `${importedCount} morceau${importedCount > 1 ? 'x' : ''} importé${importedCount > 1 ? 's' : ''} depuis Google Drive ✓`
@@ -180,12 +240,16 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                   </p>
                 </div>
               </div>
-              <button type="button" onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer">
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
+              >
                 <X size={16} />
               </button>
             </div>
 
-            <div className="p-5 overflow-y-auto space-y-3.5 flex-1">
+            <div className="p-5 overflow-y-auto space-y-3 flex-1">
               {error && (
                 <div className="rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/30 px-3 py-2.5 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2 leading-relaxed">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
@@ -201,7 +265,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                   <div className="space-y-1">
                     <p className="text-sm font-semibold">Connecter ton Google Drive</p>
                     <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
-                      Accès lecture seule à tes fichiers audio. Les morceaux importés sont mis en cache pour la lecture hors-ligne et accessibles sur tous tes appareils.
+                      Accès lecture seule à tes fichiers MP3. Les morceaux importés sont mis en cache pour la lecture hors-ligne et accessibles sur tous tes appareils.
                     </p>
                   </div>
                   <button
@@ -252,20 +316,71 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                     </button>
                   </form>
 
-                  {/* File List */}
-                  {loading && files.length === 0 ? (
-                    <div className="py-10 flex items-center justify-center gap-2 text-xs text-slate-400">
-                      <Loader2 size={15} className="animate-spin" /> Chargement de tes fichiers audio…
+                  {/* Sort Controls: Date / Nom / Taille + Direction */}
+                  {files.length > 0 && (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] text-slate-400 mr-0.5">Trier :</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectSort('date')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                            sortBy === 'date'
+                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          <Calendar size={11} /> Date {sortBy === 'date' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectSort('name')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                            sortBy === 'name'
+                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          {sortBy === 'name' && sortDir === 'desc' ? (
+                            <ArrowUpAZ size={12} />
+                          ) : (
+                            <ArrowDownAZ size={12} />
+                          )}
+                          Nom {sortBy === 'name' ? (sortDir === 'asc' ? 'A→Z' : 'Z→A') : ''}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectSort('size')}
+                          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                            sortBy === 'size'
+                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          Taille {sortBy === 'size' ? (sortDir === 'desc' ? '↓' : '↑') : ''}
+                        </button>
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {sortedFiles.length} MP3
+                      </span>
                     </div>
-                  ) : files.length === 0 ? (
+                  )}
+
+                  {/* File List */}
+                  {loading && sortedFiles.length === 0 ? (
+                    <div className="py-10 flex items-center justify-center gap-2 text-xs text-slate-400">
+                      <Loader2 size={15} className="animate-spin" /> Chargement de tes MP3…
+                    </div>
+                  ) : sortedFiles.length === 0 ? (
                     <p className="py-8 text-center text-xs text-slate-400">
                       Aucun fichier MP3 trouvé sur ton Google Drive.
                     </p>
                   ) : (
                     <div className="space-y-1.5 max-h-[42vh] overflow-y-auto pr-0.5">
-                      {files.map((f) => {
+                      {sortedFiles.map((f) => {
                         const alreadyImported = existingDriveIds.has(f.id);
                         const selected = selectedIds.has(f.id);
+                        const dateStr = fmtShortDate(f.modifiedTime);
                         return (
                           <button
                             key={f.id}
@@ -294,8 +409,9 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                                   {f.name}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-mono">
-                                  {fmtSize(f.sizeBytes)}
-                                  {alreadyImported ? ' · Déjà dans Kora' : ''}
+                                  {[fmtSize(f.sizeBytes), dateStr, alreadyImported ? 'Déjà dans Kora' : '']
+                                    .filter(Boolean)
+                                    .join(' · ')}
                                 </p>
                               </div>
                             </div>
@@ -310,12 +426,12 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
 
             {token && (
               <div className="px-5 py-3.5 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-2 bg-slate-50/60 dark:bg-zinc-950/40">
-                <span className="text-[11px] text-slate-500">
+                <span className="text-[11px] text-slate-500 truncate min-w-0">
                   {importProgress
-                    ? `Import ${importProgress.done}/${importProgress.total}…`
+                    ? `Import ${importProgress.done}/${importProgress.total} · ${importProgress.label}`
                     : `${selectedIds.size} sélectionné${selectedIds.size > 1 ? 's' : ''}`}
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={onClose}

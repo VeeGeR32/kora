@@ -166,18 +166,29 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     for (const file of Array.from(files)) {
       const mediaId = uid('aud');
       const saved = await saveAndOptionallySyncMedia(mediaId, file, file.name);
-      // Read duration cleanly
+      // Read duration cleanly with 2s timeout so iOS Safari never hangs
       const objectUrl = URL.createObjectURL(file);
       const durationSec = await new Promise<number>((resolve) => {
-        const a = new Audio(objectUrl);
-        a.onloadedmetadata = () => {
+        const a = new Audio();
+        a.preload = 'metadata';
+        let done = false;
+        const finish = (sec: number) => {
+          if (done) return;
+          done = true;
+          window.clearTimeout(timer);
+          a.src = '';
           URL.revokeObjectURL(objectUrl);
-          resolve(isFinite(a.duration) ? Math.round(a.duration) : 0);
+          resolve(sec);
         };
-        a.onerror = () => {
-          URL.revokeObjectURL(objectUrl);
-          resolve(0);
-        };
+        const timer = window.setTimeout(() => finish(0), 2000);
+        a.onloadedmetadata = () => finish(isFinite(a.duration) ? Math.round(a.duration) : 0);
+        a.onerror = () => finish(0);
+        a.src = objectUrl;
+        try {
+          a.load();
+        } catch {
+          finish(0);
+        }
       });
 
       if (targetTrackId) {
