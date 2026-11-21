@@ -277,6 +277,9 @@ export interface MusicTrack {
   cloudCoverUrl?: string;
   googleDriveFileId?: string; // Google Drive file ID for cross-device MP3 sync
   sourceFilename?: string; // Raw filename e.g. "Project_306_3.2.mp3" for version grouping
+  manualGroupKey?: string; // User-assigned version group override (e.g. attach track as version of another song)
+  manualGroupTitle?: string; // Optional custom display title for the manual group
+  manualVersionLabel?: string; // Optional custom version label (e.g. "Mix final", "Acoustique")
   modifiedAt?: string; // Drive modifiedTime or last file edit ISO
   durationSec?: number;
   bpm?: number;

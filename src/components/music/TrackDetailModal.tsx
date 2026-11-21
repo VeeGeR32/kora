@@ -6,6 +6,7 @@ import {
   FileText,
   FolderKanban,
   GitBranch,
+  Link2,
   ListChecks,
   Pause,
   Play,
@@ -13,6 +14,7 @@ import {
   Star,
   Tag,
   Trash2,
+  Unlink,
   X,
 } from 'lucide-react';
 import type { MusicTrack, TrackStatus } from '../../types';
@@ -30,6 +32,9 @@ interface TrackDetailModalProps {
   selectedTrackId: string | null;
   onSelectVersion: (trackId: string) => void;
   onOpenLyrics: (track: MusicTrack) => void;
+  onRequestPullVersion: (group: TrackGroup, trackId: string) => void;
+  onRequestAttachToOther: (group: TrackGroup, trackId: string) => void;
+  onDetachVersion: (trackId: string) => void;
   onClose: () => void;
 }
 
@@ -74,6 +79,9 @@ export function TrackDetailModal({
   selectedTrackId,
   onSelectVersion,
   onOpenLyrics,
+  onRequestPullVersion,
+  onRequestAttachToOther,
+  onDetachVersion,
   onClose,
 }: TrackDetailModalProps) {
   const {
@@ -348,23 +356,45 @@ export function TrackDetailModal({
               </div>
             </div>
 
-            {/* Versions Switcher (if multiple versions exist) */}
-            {group.hasMultipleVersions && (
-              <section className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                    <GitBranch size={12} /> Versions de {group.baseTitle} ({group.versions.length})
-                  </h3>
-                  <span className="text-[11px] text-slate-400">Clique pour écouter / comparer</span>
+            {/* Versions Switcher + Manual Linking / Detaching */}
+            <section className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <GitBranch size={12} /> Versions de {group.baseTitle} ({group.versions.length})
+                </h3>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onRequestPullVersion(group, track.id)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-500/12 hover:bg-fuchsia-500/20 text-fuchsia-600 dark:text-fuchsia-400 px-2 py-1 text-[11px] font-semibold transition cursor-pointer"
+                  >
+                    <Plus size={11} /> Ajouter une version
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRequestAttachToOther(group, track.id)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-600 dark:text-zinc-300 px-2 py-1 text-[11px] font-medium transition cursor-pointer"
+                  >
+                    <Link2 size={11} /> Rattacher à…
+                  </button>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {group.versions.map((v) => {
-                    const selected = v.track.id === track.id;
-                    const playingThis =
-                      player.currentTrack?.id === v.track.id && player.isPlaying;
-                    return (
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {group.versions.map((v) => {
+                  const selected = v.track.id === track.id;
+                  const playingThis =
+                    player.currentTrack?.id === v.track.id && player.isPlaying;
+                  return (
+                    <div
+                      key={v.track.id}
+                      className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
+                        selected
+                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-slate-900 dark:border-zinc-100 shadow-xs'
+                          : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600'
+                      }`}
+                    >
                       <button
-                        key={v.track.id}
                         type="button"
                         onClick={() => {
                           onSelectVersion(v.track.id);
@@ -374,11 +404,7 @@ export function TrackDetailModal({
                             group.versions.map((x) => x.track)
                           );
                         }}
-                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium border transition cursor-pointer ${
-                          selected
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-slate-900 dark:border-zinc-100 shadow-xs'
-                            : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600'
-                        }`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
                       >
                         <span className="font-mono font-semibold">{v.versionLabel}</span>
                         {v.isLatest && (
@@ -389,18 +415,31 @@ export function TrackDetailModal({
                                 : 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
                             }`}
                           >
-                            Dernière
+                            Actuelle
                           </span>
                         )}
                         {playingThis && (
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                         )}
                       </button>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+
+                      {group.hasMultipleVersions && (
+                        <button
+                          type="button"
+                          title="Détacher cette version en son indépendant"
+                          onClick={() => onDetachVersion(v.track.id)}
+                          className={`pr-2 pl-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
+                            selected ? 'hover:text-rose-300 dark:hover:text-rose-600' : 'hover:text-rose-500'
+                          }`}
+                        >
+                          <Unlink size={11} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
 
             {/* Description (like a Project!) */}
             <section className="space-y-1.5">

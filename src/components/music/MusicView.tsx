@@ -40,6 +40,7 @@ import { ProjectAlbumModal } from './ProjectAlbumModal';
 import { TrackCard } from './TrackCard';
 import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu';
 import { TrackDetailModal } from './TrackDetailModal';
+import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal';
 import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import type { QuickAddContext } from '../QuickAddModal';
 
@@ -71,11 +72,12 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   // Selected version override per groupKey (defaults to latest version)
   const [selectedVersionByGroup, setSelectedVersionByGroup] = useState<Record<string, string>>({});
 
-  // Context Menu & Track Detail Modal
+  // Context Menu, Track Detail Modal & Manual Version Link Modal
   const [contextMenu, setContextMenu] = useState<TrackContextMenuState | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ groupKey: string; trackId: string } | null>(
     null
   );
+  const [linkModal, setLinkModal] = useState<LinkVersionModalState | null>(null);
 
   // Google Drive Full Sync state
   const [syncingDrive, setSyncingDrive] = useState(false);
@@ -375,6 +377,33 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       y: e.clientY,
       initialSection,
     });
+  };
+
+  const handleConfirmManualLink = (
+    movingTrackIds: string[],
+    targetGroupKey: string,
+    targetGroupTitle: string,
+    customVersionLabel?: string
+  ) => {
+    for (const id of movingTrackIds) {
+      updateMusicTrack(id, {
+        manualGroupKey: targetGroupKey,
+        manualGroupTitle: targetGroupTitle,
+        ...(customVersionLabel ? { manualVersionLabel: customVersionLabel } : {}),
+      });
+    }
+    notify(`Associé comme version de « ${targetGroupTitle} » ✓`);
+  };
+
+  const handleDetachVersion = (trackId: string) => {
+    const target = state.musicTracks.find((t) => t.id === trackId);
+    if (!target) return;
+    updateMusicTrack(trackId, {
+      manualGroupKey: `solo_${trackId}`,
+      manualGroupTitle: target.title,
+      manualVersionLabel: 'Original',
+    });
+    notify(`« ${target.title} » détaché en son indépendant ✓`);
   };
 
   const handleCreateProject = (e: React.FormEvent) => {
@@ -1077,6 +1106,13 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
           if (detailGroup) handleSelectVersion(detailGroup.groupKey, trackId, false);
         }}
         onOpenLyrics={openLinkedLyrics}
+        onRequestPullVersion={(g, tid) =>
+          setLinkModal({ mode: 'pull-into-group', sourceGroup: g, sourceTrackId: tid })
+        }
+        onRequestAttachToOther={(g, tid) =>
+          setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
+        }
+        onDetachVersion={handleDetachVersion}
         onClose={() => setDetailTarget(null)}
       />
 
@@ -1087,6 +1123,17 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         onSelectVersion={handleSelectVersion}
         onOpenDetails={(groupKey, trackId) => setDetailTarget({ groupKey, trackId })}
         onOpenLyrics={openLinkedLyrics}
+        onRequestLinkVersion={(g, tid) =>
+          setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
+        }
+        onDetachVersion={handleDetachVersion}
+      />
+
+      <LinkVersionModal
+        modal={linkModal}
+        allGroups={trackGroups}
+        onClose={() => setLinkModal(null)}
+        onConfirmLink={handleConfirmManualLink}
       />
     </div>
   );

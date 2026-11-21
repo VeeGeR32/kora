@@ -6,11 +6,13 @@ import {
   FileText,
   FolderKanban,
   GitBranch,
+  Link2,
   ListChecks,
   Pause,
   Play,
   Star,
   Trash2,
+  Unlink,
 } from 'lucide-react';
 import type { MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -32,6 +34,8 @@ interface TrackContextMenuProps {
   onSelectVersion: (groupKey: string, trackId: string, autoPlay?: boolean) => void;
   onOpenDetails: (groupKey: string, trackId: string) => void;
   onOpenLyrics: (track: MusicTrack) => void;
+  onRequestLinkVersion: (group: TrackGroup, trackId: string) => void;
+  onDetachVersion: (trackId: string) => void;
 }
 
 function fmtShortDate(iso?: string): string {
@@ -48,6 +52,8 @@ export function TrackContextMenu({
   onSelectVersion,
   onOpenDetails,
   onOpenLyrics,
+  onRequestLinkVersion,
+  onDetachVersion,
 }: TrackContextMenuProps) {
   const {
     state,
@@ -285,6 +291,33 @@ export function TrackContextMenu({
                 </div>
               )}
             </div>
+          )}
+
+          {/* Manual Version Link / Detach */}
+          <button
+            type="button"
+            onClick={() => {
+              onRequestLinkVersion(group, track.id);
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+          >
+            <Link2 size={14} className="text-fuchsia-500 shrink-0" />
+            <span className="font-medium">Version d’un autre son…</span>
+          </button>
+
+          {group.hasMultipleVersions && (
+            <button
+              type="button"
+              onClick={() => {
+                onDetachVersion(track.id);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+            >
+              <Unlink size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
+              <span className="font-medium">Détacher en son séparé</span>
+            </button>
           )}
 
           {/* Open Lyrics (LexCore) */}
