@@ -405,6 +405,20 @@ export interface ActiveFocusSession {
   linkedTrackId?: string;
 }
 
+export interface LastSessionState {
+  activeTab: ActiveTab;
+  musicSubTab?: 'dashboard' | 'library' | 'lyrics';
+  sportSubTab?: 'gym' | 'nutrition' | 'poids';
+  studiesSubTab?: 'exams' | 'cursus' | 'docs' | 'pronote';
+  openMusicProjectId?: string;
+  selectedLyricsId?: string;
+  audioTrackId?: string;
+  audioTimeSec?: number;
+  audioExpanded?: boolean;
+  scrollY?: number;
+  savedAt: number; // epoch ms
+}
+
 export interface UserPreferences {
   name: string;
   bio?: string;
@@ -420,6 +434,7 @@ export interface UserPreferences {
   notifications?: NotificationSettings;
   activeWorkout?: ActiveWorkoutDraft;
   activeFocus?: ActiveFocusSession;
+  lastSession?: LastSessionState;
 }
 
 export interface AppState {

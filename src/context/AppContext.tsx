@@ -14,6 +14,7 @@ import type {
   FocusSession,
   GradeEntry,
   HomeworkItem,
+  LastSessionState,
   LyricsDoc,
   MealEntry,
   MealPreset,
@@ -27,6 +28,7 @@ import type {
   WorkoutRoutine,
   WorkoutSession,
 } from '../types';
+import { isExcludedProdName } from '../lib/googleDrive';
 import { createEmptyState, createSeedState } from '../data/seed';
 import { uid } from '../utils/dates';
 import {
@@ -196,6 +198,7 @@ interface AppContextValue {
 
   // Preferences & Data
   updatePreferences: (patch: Partial<UserPreferences>) => void;
+  updateLastSession: (patch: Partial<Omit<LastSessionState, 'savedAt'>>) => void;
   toggleTheme: () => void;
   resetToDemo: () => void;
   clearAllData: () => void;
@@ -1207,10 +1210,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (incoming: Omit<MusicTrack, 'id'>[], excludedDriveIds?: string[]) => {
       const excludedSet = new Set(excludedDriveIds || []);
       const currentTracks = latestStateRef.current.musicTracks;
-      const keptTracks =
-        excludedSet.size > 0
-          ? currentTracks.filter((t) => !t.googleDriveFileId || !excludedSet.has(t.googleDriveFileId))
-          : currentTracks;
+      const isExcludedExisting = (t: MusicTrack) =>
+        (t.googleDriveFileId && excludedSet.has(t.googleDriveFileId)) ||
+        (Boolean(t.googleDriveFileId) &&
+          (isExcludedProdName(t.sourceFilename || '') || isExcludedProdName(t.title || '')));
+
+      const keptTracks = currentTracks.filter((t) => !isExcludedExisting(t));
       const removed = currentTracks.length - keptTracks.length;
 
       const byDriveId = new Map<string, number>();
@@ -1249,12 +1254,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (added > 0 || updated > 0 || removed > 0) {
         touch((prev) => {
-          const merged =
-            excludedSet.size > 0
-              ? prev.musicTracks.filter(
-                  (t) => !t.googleDriveFileId || !excludedSet.has(t.googleDriveFileId)
-                )
-              : [...prev.musicTracks];
+          const merged = prev.musicTracks.filter((t) => !isExcludedExisting(t));
           const prevMap = new Map<string, number>();
           merged.forEach((t, i) => {
             if (t.googleDriveFileId) prevMap.set(t.googleDriveFileId, i);
@@ -1687,6 +1687,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const updateLastSession = useCallback((patch: Partial<Omit<LastSessionState, 'savedAt'>>) => {
+    setState((prev) => {
+      const cur: LastSessionState = prev.preferences.lastSession || {
+        activeTab: 'today',
+        savedAt: 0,
+      };
+      const next: LastSessionState = {
+        ...cur,
+        ...patch,
+        savedAt: Date.now(),
+      };
+      // Skip write if nothing meaningful changed
+      const keys = Object.keys(patch) as (keyof Omit<LastSessionState, 'savedAt'>)[];
+      const changed = keys.some((k) => cur[k] !== next[k]);
+      if (!changed) return prev;
+      return {
+        ...prev,
+        preferences: {
+          ...prev.preferences,
+          lastSession: next,
+        },
+        updatedAt: Date.now(),
+      };
+    });
+  }, []);
+
   const toggleTheme = useCallback(() => {
     touch((prev) => ({
       ...prev,
@@ -1842,6 +1868,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         stopActiveFocus,
         completeActiveFocus,
         updatePreferences,
+        updateLastSession,
         toggleTheme,
         resetToDemo,
         clearAllData,

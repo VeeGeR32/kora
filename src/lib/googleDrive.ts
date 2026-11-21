@@ -173,11 +173,24 @@ export async function ensureGoogleDriveToken(
   return token;
 }
 
-const EXCLUDED_FOLDER_REGEX = /drum[\s_-]*kits?/i;
+const EXCLUDED_FOLDER_REGEX =
+  /(?:drum[\s_-]*kits?|\bprods?\b|\binstrus?\b|\binstrumentals?\b|\bbeats?\b|\btype[\s_-]*beats?\b|\bsamples?\b)/i;
+
+const EXCLUDED_PROD_FILENAME_REGEX =
+  /(?:ytmp3(?:free)?|y2mate|notube|mp3juice|ssyoutube|savefrom|type[\s_-]*beat|free[\s_-]+(?:for[\s_-]+profit|beat)|\[[\s]*free[\s]*\]|\([\s]*free[\s]*\)|^free[\s_-]+|\b(?:instrumental|instru)\b|(?:^|[\s_-])prods?(?:\.mp3|\b))/i;
 
 /**
- * Finds all Google Drive folder IDs named "drumkit" (case-insensitive)
- * plus every nested subfolder inside them so drum samples are excluded from Music.
+ * Returns true if a filename or track title looks like a downloaded prod / type beat / instrumental
+ * (e.g. "ytmp3free.cc free ...", "... type beat ...", "..._prod.mp3").
+ */
+export function isExcludedProdName(raw: string): boolean {
+  if (!raw) return false;
+  return EXCLUDED_PROD_FILENAME_REGEX.test(raw.trim());
+}
+
+/**
+ * Finds all Google Drive folder IDs named "drumkit" or "prod(s)" / "instru(s)" / "beats" (case-insensitive)
+ * plus every nested subfolder inside them so samples & prods are excluded from Music.
  */
 async function getExcludedDrumkitFolderIds(token: string): Promise<Set<string>> {
   const allFolders: { id: string; name: string; parents?: string[] }[] = [];
@@ -247,7 +260,9 @@ export async function listGoogleDriveAudioFiles(
     fetchGoogleDriveAudioPage(token, searchQuery, pageToken, 100),
   ]);
   return page.files.filter(
-    (f) => !f.parents?.some((pid) => excludedFolders.has(pid))
+    (f) =>
+      !f.parents?.some((pid) => excludedFolders.has(pid)) &&
+      !isExcludedProdName(f.name)
   );
 }
 
@@ -357,7 +372,7 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
     for (const f of res.files) {
       if (seen.has(f.id)) continue;
       seen.add(f.id);
-      if (f.parents?.some((pid) => excludedFolders.has(pid))) {
+      if (f.parents?.some((pid) => excludedFolders.has(pid)) || isExcludedProdName(f.name)) {
         excludedFileIds.push(f.id);
       } else {
         all.push(f);

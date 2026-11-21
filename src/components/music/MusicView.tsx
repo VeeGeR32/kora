@@ -58,6 +58,7 @@ type LibrarySort = 'recent' | 'name' | 'versions';
 export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const {
     state,
+    lastCloudSyncAt,
     addMusicTrack,
     syncMusicTracksBatch,
     updateMusicTrack,
@@ -65,12 +66,28 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     addMusicProject,
     addLyricsDoc,
     saveAndOptionallySyncMedia,
+    updateLastSession,
     notify,
   } = useApp();
 
   const player = useAudioPlayer();
-  const [subTab, setSubTab] = useState<MusicSubTab>('dashboard');
-  const [selectedLyricsId, setSelectedLyricsId] = useState<string | null>(null);
+  const [subTab, setSubTabState] = useState<MusicSubTab>(
+    () => state.preferences.lastSession?.musicSubTab || 'dashboard'
+  );
+  const [selectedLyricsId, setSelectedLyricsIdState] = useState<string | null>(
+    () => state.preferences.lastSession?.selectedLyricsId || null
+  );
+  const musicCloudSyncedRef = useRef(false);
+
+  const setSubTab = (next: MusicSubTab) => {
+    setSubTabState(next);
+    updateLastSession({ musicSubTab: next });
+  };
+
+  const setSelectedLyricsId = (id: string | null) => {
+    setSelectedLyricsIdState(id);
+    updateLastSession({ selectedLyricsId: id || undefined });
+  };
 
   // Selected version override per groupKey (defaults to latest version)
   const [selectedVersionByGroup, setSelectedVersionByGroup] = useState<Record<string, string>>({});
@@ -114,7 +131,25 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const [newProjTitle, setNewProjTitle] = useState('');
   const [newProjKind, setNewProjKind] = useState<ProjectKind>('ep');
   const [newProjDate, setNewProjDate] = useState('');
-  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const [openProjectId, setOpenProjectIdState] = useState<string | null>(
+    () => state.preferences.lastSession?.openMusicProjectId || null
+  );
+
+  const setOpenProjectId = (id: string | null) => {
+    setOpenProjectIdState(id);
+    updateLastSession({ openMusicProjectId: id || undefined });
+  };
+
+  // Adopt remote lastSession sub-tab / open project / open lyrics on initial cloud hydration
+  useEffect(() => {
+    if (!lastCloudSyncAt || musicCloudSyncedRef.current) return;
+    musicCloudSyncedRef.current = true;
+    const ls = state.preferences.lastSession;
+    if (!ls) return;
+    if (ls.musicSubTab) setSubTabState(ls.musicSubTab);
+    if (ls.openMusicProjectId) setOpenProjectIdState(ls.openMusicProjectId);
+    if (ls.selectedLyricsId) setSelectedLyricsIdState(ls.selectedLyricsId);
+  }, [lastCloudSyncAt]);
 
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -264,9 +299,9 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
 
       const drumkitNote =
         removed > 0
-          ? ` · ${removed} sample${removed > 1 ? 's' : ''} drumkit retiré${removed > 1 ? 's' : ''}`
+          ? ` · ${removed} prod${removed > 1 ? 's' : ''}/sample${removed > 1 ? 's' : ''} retiré${removed > 1 ? 's' : ''}`
           : excludedFileIds.length > 0
-          ? ` · dossier drumkit exclu`
+          ? ` · prods & drumkit exclus`
           : '';
 
       if (added === 0 && updated === 0 && removed === 0) {

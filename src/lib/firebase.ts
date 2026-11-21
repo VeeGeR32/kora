@@ -377,6 +377,42 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     if (cleanTrack) cleanFocus.linkedTrackId = cleanTrack;
     cleanPreferences.activeFocus = cleanFocus;
   }
+  if (p.lastSession && typeof p.lastSession === 'object' && p.lastSession.activeTab) {
+    const validTabs = ['today', 'planning', 'studies', 'sport', 'music'] as const;
+    const validMusicSub = ['dashboard', 'library', 'lyrics'] as const;
+    const validSportSub = ['gym', 'nutrition', 'poids'] as const;
+    const validStudiesSub = ['exams', 'cursus', 'docs', 'pronote'] as const;
+    const ls = p.lastSession;
+    const cleanSession: Record<string, unknown> = {
+      activeTab: (validTabs as readonly string[]).includes(ls.activeTab) ? ls.activeTab : 'today',
+      savedAt: numOr(ls.savedAt, Date.now(), 0, 4102444800000),
+    };
+    if (ls.musicSubTab && (validMusicSub as readonly string[]).includes(ls.musicSubTab)) {
+      cleanSession.musicSubTab = ls.musicSubTab;
+    }
+    if (ls.sportSubTab && (validSportSub as readonly string[]).includes(ls.sportSubTab)) {
+      cleanSession.sportSubTab = ls.sportSubTab;
+    }
+    if (ls.studiesSubTab && (validStudiesSub as readonly string[]).includes(ls.studiesSubTab)) {
+      cleanSession.studiesSubTab = ls.studiesSubTab;
+    }
+    const cleanProjId = optStr(ls.openMusicProjectId, 120);
+    if (cleanProjId) cleanSession.openMusicProjectId = cleanProjId;
+    const cleanLyrId = optStr(ls.selectedLyricsId, 120);
+    if (cleanLyrId) cleanSession.selectedLyricsId = cleanLyrId;
+    const cleanAudioId = optStr(ls.audioTrackId, 120);
+    if (cleanAudioId) cleanSession.audioTrackId = cleanAudioId;
+    if (typeof ls.audioTimeSec === 'number' && Number.isFinite(ls.audioTimeSec) && ls.audioTimeSec >= 0) {
+      cleanSession.audioTimeSec = Math.round(Math.min(86400, ls.audioTimeSec));
+    }
+    if (typeof ls.audioExpanded === 'boolean') {
+      cleanSession.audioExpanded = ls.audioExpanded;
+    }
+    if (typeof ls.scrollY === 'number' && Number.isFinite(ls.scrollY) && ls.scrollY >= 0) {
+      cleanSession.scrollY = Math.round(Math.min(100000, ls.scrollY));
+    }
+    cleanPreferences.lastSession = cleanSession;
+  }
 
   const ap = raw.academicProfile || ({} as AppState['academicProfile']);
   const cleanAcademicProfile = {

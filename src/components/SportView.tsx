@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   BarChart3,
@@ -78,12 +78,14 @@ function estimateMealLocally(text: string): { calories: number; protein: number;
 export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
   const {
     state,
+    lastCloudSyncAt,
     deleteWorkout,
     addRoutine,
     updateRoutine,
     deleteRoutine,
     updateFitnessProfile,
     updatePreferences,
+    updateLastSession,
     startActiveWorkout,
     addMeal,
     deleteMeal,
@@ -95,7 +97,22 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
   const { draftActions, applyDraftAction, dismissDraftAction } = useAI();
 
   const today = todayISO();
-  const [subTab, setSubTab] = useState<SportSubTab>('gym');
+  const [subTab, setSubTabState] = useState<SportSubTab>(
+    () => state.preferences.lastSession?.sportSubTab || 'gym'
+  );
+  const sportCloudSyncedRef = useRef(false);
+
+  const setSubTab = (next: SportSubTab) => {
+    setSubTabState(next);
+    updateLastSession({ sportSubTab: next });
+  };
+
+  useEffect(() => {
+    if (!lastCloudSyncAt || sportCloudSyncedRef.current) return;
+    sportCloudSyncedRef.current = true;
+    const saved = state.preferences.lastSession?.sportSubTab;
+    if (saved) setSubTabState(saved);
+  }, [lastCloudSyncAt]);
 
   // Domain-specific goals editors (moved out of global Settings!)
   const [showNutritionGoals, setShowNutritionGoals] = useState(false);

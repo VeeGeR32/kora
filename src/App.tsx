@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Dumbbell, Play, Timer, X } from 'lucide-react';
 import type { AIDomain, ActiveTab, CalendarOccurrence } from './types';
 import { AppProvider, useApp } from './context/AppContext';
-import { AudioPlayerProvider } from './context/AudioPlayerContext';
+import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
 import { AIProvider, useAI } from './context/AIContext';
 import { AuthGate } from './components/AuthGate';
 import { KoraLogo } from './components/ui/KoraLogo';
@@ -41,14 +41,19 @@ function KoraApp() {
     cloudConfigured,
     cloudUser,
     authReady,
+    lastCloudSyncAt,
     workoutModalOpen,
     setWorkoutModalOpen,
     discardActiveWorkout,
     completeActiveFocus,
+    updateLastSession,
   } = useApp();
+  const player = useAudioPlayer();
   const { openAI, requestAIConfirmation } = useAI();
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('today');
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(
+    () => state.preferences.lastSession?.activeTab || 'today'
+  );
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddCtx, setQuickAddCtx] = useState<QuickAddContext | undefined>(undefined);
   const [selectedOccurrence, setSelectedOccurrence] = useState<CalendarOccurrence | null>(null);
@@ -58,9 +63,75 @@ function KoraApp() {
   const [focusNowMs, setFocusNowMs] = useState(() => Date.now());
 
   const autoOpenedFocusIdRef = useRef<string | null>(null);
+  const bootTimestampRef = useRef<number>(Date.now());
+  const localRestoredRef = useRef(false);
+  const cloudRestoredRef = useRef(false);
+
+  const setActiveTab = useCallback(
+    (next: ActiveTab) => {
+      setActiveTabState(next);
+      updateLastSession({ activeTab: next, scrollY: 0 });
+    },
+    [updateLastSession]
+  );
 
   const activeFocus = state.preferences.activeFocus || null;
   const activeWorkout = state.preferences.activeWorkout || null;
+
+  // Restore exact last session (tab, scroll position & audio track/timestamp) on app launch & cloud hydration!
+  useEffect(() => {
+    const ls = state.preferences.lastSession;
+    if (!ls) return;
+
+    const shouldApplyLocal = !localRestoredRef.current;
+    const shouldApplyCloud =
+      Boolean(lastCloudSyncAt) &&
+      !cloudRestoredRef.current &&
+      ls.savedAt > 0 &&
+      ls.savedAt <= bootTimestampRef.current + 15_000;
+
+    if (!shouldApplyLocal && !shouldApplyCloud) return;
+    if (shouldApplyLocal) localRestoredRef.current = true;
+    if (lastCloudSyncAt) cloudRestoredRef.current = true;
+
+    if (ls.activeTab) {
+      setActiveTabState(ls.activeTab);
+    }
+
+    if (ls.audioTrackId && !player.isPlaying) {
+      const foundTrack = state.musicTracks.find((t) => t.id === ls.audioTrackId);
+      if (foundTrack && player.currentTrack?.id !== foundTrack.id) {
+        player.restoreTrack(foundTrack, ls.audioTimeSec || 0, Boolean(ls.audioExpanded));
+      }
+    }
+
+    if (typeof ls.scrollY === 'number' && ls.scrollY > 20) {
+      const targetY = ls.scrollY;
+      window.setTimeout(() => {
+        window.scrollTo({ top: targetY, behavior: 'auto' });
+      }, 120);
+    }
+  }, [
+    lastCloudSyncAt,
+    state.preferences.lastSession?.savedAt,
+    state.musicTracks.length,
+  ]);
+
+  // Persist exact scroll position when leaving / closing the app on any device
+  useEffect(() => {
+    const saveScroll = () => {
+      updateLastSession({ scrollY: Math.round(window.scrollY || 0) });
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') saveScroll();
+    };
+    window.addEventListener('pagehide', saveScroll);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', saveScroll);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [updateLastSession]);
 
   const openQuickAdd = useCallback((ctx?: QuickAddContext) => {
     setQuickAddCtx(ctx);

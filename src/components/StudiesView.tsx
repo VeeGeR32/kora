@@ -44,6 +44,7 @@ type StudiesSubTab = 'exams' | 'cursus' | 'docs' | 'pronote';
 export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
   const {
     state,
+    lastCloudSyncAt,
     toggleHomework,
     deleteHomework,
     updateExam,
@@ -62,12 +63,28 @@ export function StudiesView({ onOpenQuickAdd, onRequestAI }: StudiesViewProps) {
     addManyEvents,
     addHomework,
     updatePreferences,
+    updateLastSession,
     saveAndOptionallySyncMedia,
     notify,
   } = useApp();
   const { draftActions, applyDraftAction, dismissDraftAction } = useAI();
 
-  const [subTab, setSubTab] = useState<StudiesSubTab>('exams');
+  const [subTab, setSubTabState] = useState<StudiesSubTab>(
+    () => state.preferences.lastSession?.studiesSubTab || 'exams'
+  );
+  const studiesCloudSyncedRef = useRef(false);
+
+  const setSubTab = (next: StudiesSubTab) => {
+    setSubTabState(next);
+    updateLastSession({ studiesSubTab: next });
+  };
+
+  useEffect(() => {
+    if (!lastCloudSyncAt || studiesCloudSyncedRef.current) return;
+    studiesCloudSyncedRef.current = true;
+    const saved = state.preferences.lastSession?.studiesSubTab;
+    if (saved) setSubTabState(saved);
+  }, [lastCloudSyncAt]);
   const [hwFilter, setHwFilter] = useState<'todo' | 'done' | 'all'>('todo');
   const [subjectFilter, setSubjectFilter] = useState<string>('all');
   const [topicInputs, setTopicInputs] = useState<Record<string, string>>({});

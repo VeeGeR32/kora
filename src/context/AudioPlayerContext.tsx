@@ -17,6 +17,7 @@ interface AudioPlayerContextValue {
   hasPrev: boolean;
   getLiveTime: () => number;
   playTrack: (track: MusicTrack, startAtSec?: number, customQueue?: MusicTrack[]) => Promise<void>;
+  restoreTrack: (track: MusicTrack, startAtSec?: number, shouldExpand?: boolean) => void;
   playNext: () => void;
   playPrev: () => void;
   togglePlay: () => void;
@@ -32,8 +33,9 @@ interface AudioPlayerContextValue {
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
 
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
-  const { state, updateMusicTrack, notify } = useApp();
+  const { state, updateMusicTrack, updateLastSession, notify } = useApp();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const pendingResumeSecRef = useRef<number | null>(null);
   const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
   const [queue, setQueue] = useState<MusicTrack[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -109,6 +111,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       }
 
       setCurrentTrack(track);
+      pendingResumeSecRef.current = null;
       if (!src) {
         audio.pause();
         audio.removeAttribute('src');
@@ -127,6 +130,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         audio.currentTime = startAtSec;
         setCurrentTime(startAtSec);
       }
+      updateLastSession({
+        audioTrackId: track.id,
+        audioTimeSec: Math.round(typeof startAtSec === 'number' ? startAtSec : audio.currentTime || 0),
+      });
       try {
         await audio.play();
         setIsPlaying(true);
@@ -134,7 +141,26 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         setIsPlaying(false);
       }
     },
-    [state.musicTracks, state.preferences.firebaseConfig, notify]
+    [state.musicTracks, state.preferences.firebaseConfig, notify, updateLastSession]
+  );
+
+  const restoreTrack = useCallback(
+    (track: MusicTrack, startAtSec = 0, shouldExpand = false) => {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute('src');
+      }
+      const clamped = Math.max(0, Math.round(startAtSec));
+      pendingResumeSecRef.current = clamped;
+      setCurrentTrack(track);
+      setQueue((prev) => (prev.length > 0 ? prev : state.musicTracks));
+      setCurrentTime(clamped);
+      setDuration(track.durationSec || 0);
+      setIsPlaying(false);
+      setExpanded(Boolean(shouldExpand));
+    },
+    [state.musicTracks]
   );
 
   const playNext = useCallback(() => {
@@ -248,43 +274,118 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
-    if (!audio || !audio.src) return;
+    if (!audio) return;
+    if (!audio.src) {
+      const cur = currentTrackRef.current;
+      if (cur) {
+        void playTrack(cur, pendingResumeSecRef.current ?? 0);
+      }
+      return;
+    }
     if (audio.paused) {
       void audio.play().catch(() => {});
     } else {
       audio.pause();
+      if (currentTrackRef.current) {
+        updateLastSession({
+          audioTrackId: currentTrackRef.current.id,
+          audioTimeSec: Math.round(audio.currentTime || 0),
+        });
+      }
     }
-  }, []);
+  }, [playTrack, updateLastSession]);
 
   const pause = useCallback(() => {
-    audioRef.current?.pause();
-  }, []);
-
-  const seek = useCallback((sec: number) => {
     const audio = audioRef.current;
-    if (!audio) return;
-    const clamped = Math.max(0, Math.min(audio.duration || sec, sec));
-    audio.currentTime = clamped;
-    setCurrentTime(clamped);
-  }, []);
+    audio?.pause();
+    if (audio && currentTrackRef.current) {
+      updateLastSession({
+        audioTrackId: currentTrackRef.current.id,
+        audioTimeSec: Math.round(audio.currentTime || 0),
+      });
+    }
+  }, [updateLastSession]);
+
+  const seek = useCallback(
+    (sec: number) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      const maxDur = audio.duration || currentTrackRef.current?.durationSec || sec;
+      const clamped = Math.max(0, Math.min(maxDur, sec));
+      if (audio.src) {
+        audio.currentTime = clamped;
+      } else {
+        pendingResumeSecRef.current = clamped;
+      }
+      setCurrentTime(clamped);
+      if (currentTrackRef.current) {
+        updateLastSession({
+          audioTrackId: currentTrackRef.current.id,
+          audioTimeSec: Math.round(clamped),
+        });
+      }
+    },
+    [updateLastSession]
+  );
+
+  const setExpandedSynced = useCallback(
+    (v: boolean) => {
+      setExpanded(v);
+      if (currentTrackRef.current) {
+        updateLastSession({ audioExpanded: v });
+      }
+    },
+    [updateLastSession]
+  );
 
   const closePlayer = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute('src');
     }
+    pendingResumeSecRef.current = null;
     setCurrentTrack(null);
     setExpanded(false);
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
     setAbLoop({ start: null, end: null });
-  }, []);
+    updateLastSession({
+      audioTrackId: undefined,
+      audioTimeSec: undefined,
+      audioExpanded: false,
+    });
+  }, [updateLastSession]);
 
   const getLiveTime = useCallback(() => {
     const a = audioRef.current;
-    return a && isFinite(a.currentTime) ? a.currentTime : 0;
+    if (a && a.src && isFinite(a.currentTime)) return a.currentTime;
+    return pendingResumeSecRef.current ?? 0;
   }, []);
+
+  // Periodically save playback timestamp while playing + on app hide/close for cross-device resume
+  useEffect(() => {
+    const persistNow = () => {
+      const cur = currentTrackRef.current;
+      if (!cur) return;
+      const t = Math.round(getLiveTime());
+      updateLastSession({
+        audioTrackId: cur.id,
+        audioTimeSec: t,
+      });
+    };
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') persistNow();
+    };
+    window.addEventListener('pagehide', persistNow);
+    document.addEventListener('visibilitychange', onHide);
+    const timer = isPlaying ? window.setInterval(persistNow, 10_000) : null;
+    return () => {
+      window.removeEventListener('pagehide', persistNow);
+      document.removeEventListener('visibilitychange', onHide);
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, [isPlaying, getLiveTime, updateLastSession]);
 
   const syncTrackMetadata = useCallback((track: MusicTrack) => {
     setCurrentTrack((prev) => (prev && prev.id === track.id ? track : prev));
@@ -305,13 +406,14 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         hasPrev,
         getLiveTime,
         playTrack,
+        restoreTrack,
         playNext,
         playPrev,
         togglePlay,
         pause,
         seek,
         setLoop,
-        setExpanded,
+        setExpanded: setExpandedSynced,
         setAbLoop,
         closePlayer,
         syncTrackMetadata,
