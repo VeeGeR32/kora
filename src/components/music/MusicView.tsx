@@ -4,22 +4,16 @@ import {
   ArrowDownAZ,
   Calendar,
   CalendarPlus,
-  CloudDownload,
   Copy,
-  Disc3,
-  FileText,
-  FolderKanban,
   GitBranch,
-  HardDrive,
   Layers,
   ListChecks,
-  Loader2,
   Pause,
   Play,
   Plus,
+  RefreshCw,
   Search,
   Star,
-  Upload,
 } from 'lucide-react';
 import type { MusicTrack, ProjectKind } from '../../types';
 import { useApp } from '../../context/AppContext';
@@ -39,7 +33,6 @@ import {
 } from '../../lib/musicVersioning';
 import { todayISO, uid } from '../../utils/dates';
 import { LyricsStudio } from './LyricsStudio';
-import { GoogleDrivePickerModal } from './GoogleDrivePickerModal';
 import { ProjectAlbumModal } from './ProjectAlbumModal';
 import { TrackCard } from './TrackCard';
 import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu';
@@ -63,13 +56,11 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     state,
     lastCloudSyncAt,
     autoSyncingDrive,
-    addMusicTrack,
     syncMusicTracksBatch,
     updateMusicTrack,
     setTrackGroupFavorite,
     addMusicProject,
     addLyricsDoc,
-    saveAndOptionallySyncMedia,
     updateLastSession,
     notify,
   } = useApp();
@@ -106,7 +97,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   // Google Drive Full Sync & Permanent Zero-Popup Setup state
   const [syncingDrive, setSyncingDrive] = useState(false);
   const [syncProgressText, setSyncProgressText] = useState('');
-  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const [permanentDriveEmail, setPermanentDriveEmail] = useState<string | null>(null);
   const [permanentDriveReady, setPermanentDriveReady] = useState(false);
   const [permanentSetupOpen, setPermanentSetupOpen] = useState(false);
@@ -155,8 +145,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     if (ls.openMusicProjectId) setOpenProjectIdState(ls.openMusicProjectId);
     if (ls.selectedLyricsId) setSelectedLyricsIdState(ls.selectedLyricsId);
   }, [lastCloudSyncAt]);
-
-  const audioInputRef = useRef<HTMLInputElement>(null);
 
   // Grouped tracks (deduplicated by project/base name, latest version promoted to front!)
   const trackGroups = useMemo(() => groupMusicTracks(state.musicTracks), [state.musicTracks]);
@@ -360,58 +348,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     }
   };
 
-  const handleUploadAudioFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    for (const file of Array.from(files)) {
-      const mediaId = uid('aud');
-      const saved = await saveAndOptionallySyncMedia(mediaId, file, file.name);
-      const objectUrl = URL.createObjectURL(file);
-      const durationSec = await new Promise<number>((resolve) => {
-        const a = new Audio();
-        a.preload = 'metadata';
-        let done = false;
-        const finish = (sec: number) => {
-          if (done) return;
-          done = true;
-          window.clearTimeout(timer);
-          a.src = '';
-          URL.revokeObjectURL(objectUrl);
-          resolve(sec);
-        };
-        const timer = window.setTimeout(() => finish(0), 2000);
-        a.onloadedmetadata = () => finish(isFinite(a.duration) ? Math.round(a.duration) : 0);
-        a.onerror = () => finish(0);
-        a.src = objectUrl;
-        try {
-          a.load();
-        } catch {
-          finish(0);
-        }
-      });
-
-      const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
-      const parsed = parseTrackVersion({ title: cleanTitle, sourceFilename: file.name });
-      const modifiedIso = file.lastModified
-        ? new Date(file.lastModified).toISOString()
-        : new Date().toISOString();
-
-      addMusicTrack({
-        title: cleanTitle || file.name,
-        artist: state.preferences.name || 'Moi',
-        mediaId: saved.mediaId,
-        cloudAudioUrl: saved.cloudUrl,
-        sourceFilename: file.name,
-        modifiedAt: modifiedIso,
-        coverGradient: getDeterministicGradientId(parsed.groupKey),
-        durationSec: durationSec || undefined,
-        status: 'demo',
-        tags: [],
-        markers: [],
-        addedAt: modifiedIso,
-      });
-    }
-  };
-
   const openLinkedLyrics = (track: MusicTrack) => {
     if (track.linkedLyricsId) {
       setSelectedLyricsId(track.linkedLyricsId);
@@ -541,143 +477,101 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
 
   return (
     <div className="space-y-5 pb-14">
-      {/* Hidden local audio uploader */}
-      <input
-        ref={audioInputRef}
-        type="file"
-        accept="audio/*,.mp3,.wav,.m4a"
-        multiple
-        onChange={(e) => void handleUploadAudioFiles(e.target.files)}
-        className="hidden"
-      />
+      {/* Minimalist Header + Compact Sync + Fluid Underline Tabs */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-zinc-50">
+              Music
+            </h1>
+          </div>
 
-      {/* Header + Sub-tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-zinc-50">
-            Music
-          </h1>
-          <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-            Dernières versions, favoris, TODO par son & projets musicaux
-          </p>
+          {/* Ultra-compact Sync & Drive Setup Controls */}
+          <div className="flex items-center gap-1.5">
+            {permanentDriveEmail && !permanentDriveReady && (
+              <button
+                type="button"
+                onClick={() => setPermanentSetupOpen(true)}
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
+              >
+                Configurer Drive
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={syncingDrive}
+              onClick={() => void handleSyncAllDrive()}
+              title="Synchroniser avec Google Drive"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-50 transition cursor-pointer"
+            >
+              <RefreshCw
+                size={11}
+                className={syncingDrive || autoSyncingDrive ? 'animate-spin text-fuchsia-500' : ''}
+              />
+              <span>
+                {syncingDrive
+                  ? syncProgressText || 'Sync…'
+                  : autoSyncingDrive
+                  ? 'Maj…'
+                  : 'Sync'}
+              </span>
+              {permanentDriveReady && !syncingDrive && !autoSyncingDrive && (
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              )}
+            </button>
+          </div>
         </div>
 
-        <div className="inline-flex items-center rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-1 self-start sm:self-auto overflow-x-auto max-w-full">
+        {/* Minimalist Fluid Underline Tab Bar */}
+        <nav
+          aria-label="Sections Music"
+          className="flex items-center gap-6 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto"
+        >
           {(
             [
-              ['dashboard', 'Dashboard', FolderKanban],
-              ['library', 'Bibliothèque', Disc3],
-              ['lyrics', 'LexCore · Textes', FileText],
+              ['dashboard', 'Aperçu', null],
+              ['library', 'Sons', trackGroups.length],
+              ['lyrics', 'Textes', state.lyricsDocs.filter((d) => !d.deletedAt).length],
             ] as const
-          ).map(([id, label, Icon]) => {
+          ).map(([id, label, count]) => {
             const active = subTab === id;
             return (
               <button
                 key={id}
                 type="button"
                 onClick={() => setSubTab(id)}
-                className={`relative flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition cursor-pointer whitespace-nowrap ${
+                className={`relative pb-2.5 text-[13px] font-medium transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                   active
-                    ? 'text-white dark:text-zinc-950'
-                    : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                    ? 'text-slate-950 dark:text-white'
+                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
                 }`}
               >
+                <span>{label}</span>
+                {count !== null && count > 0 && (
+                  <span
+                    className={`font-mono text-[10px] ${
+                      active ? 'text-slate-500 dark:text-zinc-400' : 'opacity-65'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                )}
                 {active && (
                   <motion.span
-                    layoutId="musicSubTabPill"
-                    transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                    className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-zinc-100"
+                    layoutId="musicMinimalTabUnderline"
+                    transition={{ type: 'spring', stiffness: 520, damping: 36 }}
+                    className="absolute left-0 right-0 -bottom-[1px] h-[2px] rounded-full bg-slate-950 dark:bg-white"
                   />
                 )}
-                <span className="relative z-10 flex items-center gap-1.5">
-                  <Icon size={13} />
-                  {label}
-                </span>
               </button>
             );
           })}
-        </div>
+        </nav>
       </div>
 
       {/* ================= TAB 1: DASHBOARD MUSIC (MISE EN AVANT) ================= */}
       {subTab === 'dashboard' && (
         <div className="space-y-6">
-          {/* Quick Action Strip: Sync all Drive MP3s + Pick + Local Upload + Session */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 tempo-card rounded-2xl px-4 py-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
-                <HardDrive size={16} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate flex items-center gap-1.5">
-                  <span>Google Drive · Synchronisation automatique</span>
-                  {autoSyncingDrive ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-2 py-0.5 text-[10px] font-semibold">
-                      <Loader2 size={10} className="animate-spin" />
-                      Mise à jour…
-                    </span>
-                  ) : (
-                    permanentDriveReady && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-semibold">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        Auto-sync actif
-                      </span>
-                    )
-                  )}
-                </p>
-                <p className="text-[11px] text-slate-400 truncate">
-                  {permanentDriveReady
-                    ? 'Tes nouveaux MP3 Drive apparaissent automatiquement à chaque chargement'
-                    : permanentDriveEmail
-                    ? 'Partage ton dossier MP3 1 seule fois pour activer l’auto-sync sur tous tes appareils'
-                    : 'Charge tous tes MP3 et regroupe tes versions (ex. Project 306 → v3.2)'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {permanentDriveEmail && !permanentDriveReady && (
-                <button
-                  type="button"
-                  onClick={() => setPermanentSetupOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
-                >
-                  Configurer accès permanent (1×)
-                </button>
-              )}
-
-              <button
-                type="button"
-                disabled={syncingDrive}
-                onClick={() => void handleSyncAllDrive()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold hover:opacity-92 disabled:opacity-50 transition cursor-pointer"
-              >
-                {syncingDrive ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <CloudDownload size={13} />
-                )}
-                {syncingDrive ? syncProgressText || 'Sync…' : 'Sync tous mes MP3 Drive'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDrivePickerOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 px-3 py-2 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition cursor-pointer"
-              >
-                Choisir
-              </button>
-
-              <button
-                type="button"
-                onClick={() => audioInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 px-3 py-2 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 transition cursor-pointer"
-              >
-                <Upload size={13} />
-                Local
-              </button>
-            </div>
-          </div>
 
           {/* Year / Saison Filter Bar (automatically detected from Drive folders 23/24, 24/25, 25/26, 26/27!) */}
           {availableYears.length > 0 && (
@@ -862,8 +756,8 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   onClick={() => void handleSyncAllDrive()}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
                 >
-                  <CloudDownload size={14} />
-                  Sync tous mes MP3 Drive
+                  <RefreshCw size={13} className={syncingDrive ? 'animate-spin' : ''} />
+                  Synchroniser Google Drive
                 </button>
               </div>
             ) : (
@@ -1055,72 +949,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       {/* ================= TAB 2: BIBLIOTHÈQUE COMPLÈTE (CARTES CLIQUABLES + VERSIONS) ================= */}
       {subTab === 'library' && (
         <div className="space-y-4">
-          {/* Import & Sync Toolbar */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <button
-              type="button"
-              disabled={syncingDrive}
-              onClick={() => void handleSyncAllDrive()}
-              className="tempo-card rounded-2xl p-4 text-left flex items-center gap-3 hover:border-fuchsia-400 dark:hover:border-fuchsia-600 transition cursor-pointer disabled:opacity-60"
-            >
-              <div className="h-10 w-10 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
-                {syncingDrive ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <CloudDownload size={16} />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                  {syncingDrive ? syncProgressText || 'Synchronisation…' : 'Sync tous mes MP3 Drive'}
-                </p>
-                <p className="text-[11px] text-slate-400 truncate">
-                  Charge tout & regroupe les versions
-                </p>
-              </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setDrivePickerOpen(true)}
-              className="tempo-card rounded-2xl p-4 text-left flex items-center gap-3 hover:border-slate-400 dark:hover:border-zinc-600 transition cursor-pointer"
-            >
-              <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 flex items-center justify-center shrink-0">
-                <HardDrive size={16} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                  Parcourir Google Drive
-                </p>
-                <p className="text-[11px] text-slate-400 truncate">
-                  Choisir des fichiers précis
-                </p>
-              </div>
-            </button>
-
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                void handleUploadAudioFiles(e.dataTransfer.files);
-              }}
-              onClick={() => audioInputRef.current?.click()}
-              className="tempo-card rounded-2xl border-dashed border-2 border-slate-200 dark:border-zinc-800 p-4 text-left flex items-center gap-3 hover:border-fuchsia-400 dark:hover:border-fuchsia-600 transition cursor-pointer"
-            >
-              <div className="h-10 w-10 rounded-xl bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center shrink-0">
-                <Upload size={16} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                  Importer MP3 / WAV local
-                </p>
-                <p className="text-[11px] text-slate-400 truncate">
-                  Glisser-déposer ou parcourir
-                </p>
-              </div>
-            </div>
-          </div>
-
           {/* Search + Filters + Grouping + Sort Bar */}
           <div className="tempo-card rounded-2xl p-3 space-y-2.5">
             <div className="flex flex-col sm:flex-row gap-2">
@@ -1349,8 +1177,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       {subTab === 'lyrics' && <LyricsStudio initialDocId={selectedLyricsId} />}
 
       {/* ================= MODALS & RIGHT-CLICK CONTEXT MENU ================= */}
-      <GoogleDrivePickerModal open={drivePickerOpen} onClose={() => setDrivePickerOpen(false)} />
-
       <ProjectAlbumModal projectId={openProjectId} onClose={() => setOpenProjectId(null)} />
 
       <TrackDetailModal
