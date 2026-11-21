@@ -354,6 +354,23 @@ export interface NotificationSettings {
   pushSubscription?: StoredPushSubscription;
 }
 
+export interface ActiveWorkoutDraft {
+  session: WorkoutSession;
+  elapsedSec: number;
+  paused: boolean;
+  lastTickAt: number;
+}
+
+export interface ActiveFocusSession {
+  id: string;
+  label: string;
+  category: 'cours' | 'musique' | 'perso';
+  presetMin: number;
+  startedAt: number; // epoch ms
+  endsAt: number; // epoch ms — never pauses across app close or devices
+  linkedTrackId?: string;
+}
+
 export interface UserPreferences {
   name: string;
   bio?: string;
@@ -367,6 +384,8 @@ export interface UserPreferences {
   pronoteBridgeToken?: string;
   firebaseConfig?: FirebaseUserConfig;
   notifications?: NotificationSettings;
+  activeWorkout?: ActiveWorkoutDraft;
+  activeFocus?: ActiveFocusSession;
 }
 
 export interface AppState {

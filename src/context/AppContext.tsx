@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import type { User } from 'firebase/auth';
 import type {
   AcademicProfile,
+  ActiveFocusSession,
+  ActiveWorkoutDraft,
   AppState,
   AudioMarker,
   CourseDocument,
@@ -171,9 +173,18 @@ interface AppContextValue {
   deleteMusicProjectStep: (projectId: string, stepId: string) => void;
   deleteMusicProject: (id: string) => void;
 
-  // Energy & Focus
+  // Energy & Focus + Persistent Live Sessions
   setEnergyCheckin: (checkin: EnergyCheckin) => void;
   addFocusSession: (session: Omit<FocusSession, 'id'>) => void;
+  workoutModalOpen: boolean;
+  setWorkoutModalOpen: (open: boolean) => void;
+  startActiveWorkout: (session: WorkoutSession) => void;
+  updateActiveWorkout: (draft: ActiveWorkoutDraft | null) => void;
+  finishActiveWorkout: (completed: WorkoutSession) => void;
+  discardActiveWorkout: () => void;
+  startActiveFocus: (focus: ActiveFocusSession) => void;
+  stopActiveFocus: () => void;
+  completeActiveFocus: () => void;
 
   // Preferences & Data
   updatePreferences: (patch: Partial<UserPreferences>) => void;
@@ -267,7 +278,18 @@ function loadInitialState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY);
     if (!raw) return { ...createEmptyState(), updatedAt: 0 };
-    return mergeWithSeed(JSON.parse(raw) as Partial<AppState>);
+    const merged = mergeWithSeed(JSON.parse(raw) as Partial<AppState>);
+    // Always restore any in-progress workout in PAUSED mode after app close/reopen
+    if (merged.preferences.activeWorkout) {
+      merged.preferences = {
+        ...merged.preferences,
+        activeWorkout: {
+          ...merged.preferences.activeWorkout,
+          paused: true,
+        },
+      };
+    }
+    return merged;
   } catch {
     return { ...createEmptyState(), updatedAt: 0 };
   }
@@ -282,6 +304,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<number | null>(null);
+  const [workoutModalOpen, setWorkoutModalOpen] = useState(false);
 
   const clearAuthError = useCallback(() => setAuthError(null), []);
 
@@ -1410,6 +1433,104 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
+  // ===== PERSISTENT LIVE WORKOUT & LIVE FOCUS =====
+  const startActiveWorkout = useCallback((session: WorkoutSession) => {
+    const draft: ActiveWorkoutDraft = {
+      session,
+      elapsedSec: 0,
+      paused: false,
+      lastTickAt: Date.now(),
+    };
+    touch((prev) => ({
+      ...prev,
+      preferences: { ...prev.preferences, activeWorkout: draft },
+    }));
+    setWorkoutModalOpen(true);
+  }, []);
+
+  const updateActiveWorkout = useCallback((draft: ActiveWorkoutDraft | null) => {
+    touch((prev) => ({
+      ...prev,
+      preferences: { ...prev.preferences, activeWorkout: draft || undefined },
+    }));
+  }, []);
+
+  const finishActiveWorkout = useCallback(
+    (completed: WorkoutSession) => {
+      touch((prev) => {
+        const exists = completed.id && prev.workouts.some((w) => w.id === completed.id);
+        const nextWorkouts = exists
+          ? prev.workouts.map((w) => (w.id === completed.id ? { ...w, ...completed } : w))
+          : [{ ...completed, id: completed.id || uid('wk') }, ...prev.workouts];
+        return {
+          ...prev,
+          workouts: nextWorkouts,
+          preferences: { ...prev.preferences, activeWorkout: undefined },
+        };
+      });
+      setWorkoutModalOpen(false);
+      notify(
+        completed.prCount
+          ? `Séance terminée · ${completed.totalVolumeKg} kg · ${completed.prCount} PR 🏆`
+          : `Séance terminée · ${completed.totalVolumeKg || 0} kg`
+      );
+    },
+    [notify]
+  );
+
+  const discardActiveWorkout = useCallback(() => {
+    touch((prev) => ({
+      ...prev,
+      preferences: { ...prev.preferences, activeWorkout: undefined },
+    }));
+    setWorkoutModalOpen(false);
+    notify('Séance en cours abandonnée');
+  }, [notify]);
+
+  const startActiveFocus = useCallback((focus: ActiveFocusSession) => {
+    touch((prev) => ({
+      ...prev,
+      preferences: { ...prev.preferences, activeFocus: focus },
+    }));
+  }, []);
+
+  const stopActiveFocus = useCallback(() => {
+    touch((prev) => ({
+      ...prev,
+      preferences: { ...prev.preferences, activeFocus: undefined },
+    }));
+  }, []);
+
+  const completeActiveFocus = useCallback(() => {
+    const active = latestStateRef.current.preferences.activeFocus;
+    if (!active) return;
+    touch((prev) => {
+      const curr = prev.preferences.activeFocus;
+      if (!curr) return prev;
+      const alreadyLogged = prev.focusSessions.some((f) => f.id === curr.id);
+      const nextSessions = alreadyLogged
+        ? prev.focusSessions
+        : [
+            {
+              id: curr.id,
+              date: new Date(curr.endsAt).toISOString().slice(0, 10),
+              durationMin: curr.presetMin,
+              label: curr.label || 'Session Focus',
+              category: curr.category,
+              linkedTrackId: curr.linkedTrackId,
+              completedAt: new Date(curr.endsAt).toISOString(),
+            },
+            ...prev.focusSessions,
+          ];
+      return {
+        ...prev,
+        focusSessions: nextSessions,
+        preferences: { ...prev.preferences, activeFocus: undefined },
+      };
+    });
+    notify(`Session Focus (${active.presetMin} min) terminée ✓`);
+  }, [notify]);
+
   // ===== PREFERENCES =====
   const updatePreferences = useCallback((patch: Partial<UserPreferences>) => {
     touch((prev) => ({
@@ -1564,6 +1685,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteMusicProject,
         setEnergyCheckin,
         addFocusSession,
+        workoutModalOpen,
+        setWorkoutModalOpen,
+        startActiveWorkout,
+        updateActiveWorkout,
+        finishActiveWorkout,
+        discardActiveWorkout,
+        startActiveFocus,
+        stopActiveFocus,
+        completeActiveFocus,
         updatePreferences,
         toggleTheme,
         resetToDemo,

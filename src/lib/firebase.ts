@@ -341,6 +341,29 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     }
     cleanPreferences.notifications = cleanNotif;
   }
+  if (p.activeWorkout && typeof p.activeWorkout === 'object' && p.activeWorkout.session) {
+    cleanPreferences.activeWorkout = {
+      session: p.activeWorkout.session,
+      elapsedSec: numOr(p.activeWorkout.elapsedSec, 0, 0, 86400),
+      paused: Boolean(p.activeWorkout.paused),
+      lastTickAt: numOr(p.activeWorkout.lastTickAt, Date.now(), 0, 4102444800000),
+    };
+  }
+  if (p.activeFocus && typeof p.activeFocus === 'object' && typeof p.activeFocus.endsAt === 'number') {
+    const cleanFocus: Record<string, unknown> = {
+      id: strOr(p.activeFocus.id, 'foc', 80),
+      label: strOr(p.activeFocus.label, 'Session Focus', 160),
+      category: ['cours', 'musique', 'perso'].includes(p.activeFocus.category)
+        ? p.activeFocus.category
+        : 'cours',
+      presetMin: numOr(p.activeFocus.presetMin, 25, 1, 240),
+      startedAt: numOr(p.activeFocus.startedAt, Date.now(), 0, 4102444800000),
+      endsAt: numOr(p.activeFocus.endsAt, Date.now(), 0, 4102444800000),
+    };
+    const cleanTrack = optStr(p.activeFocus.linkedTrackId, 120);
+    if (cleanTrack) cleanFocus.linkedTrackId = cleanTrack;
+    cleanPreferences.activeFocus = cleanFocus;
+  }
 
   const ap = raw.academicProfile || ({} as AppState['academicProfile']);
   const cleanAcademicProfile = {

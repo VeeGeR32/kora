@@ -226,9 +226,9 @@ export function Layout({
         </div>
       </aside>
 
-      {/* Mobile Fixed Safe-Area Top Bar (Crisp & Always Visible in PWA) */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-40 pt-[env(safe-area-inset-top)] bg-white/96 dark:bg-[#0e0e11]/96 backdrop-blur-md border-b border-slate-200/80 dark:border-zinc-800/90 shadow-[0_1px_10px_rgba(15,23,42,0.04)] dark:shadow-[0_1px_12px_rgba(0,0,0,0.4)]">
-        <div className="h-13 px-4 flex items-center justify-between">
+      {/* Mobile Fixed Safe-Area Top Bar (100% Opaque & Below iOS Status-Bar Feather Zone) */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-40 pt-[calc(env(safe-area-inset-top)+10px)] bg-white dark:bg-[#0e0e11] border-b border-slate-200/80 dark:border-zinc-800/90">
+        <div className="h-12 px-4 flex items-center justify-between">
           <KoraLogo size={28} />
 
           <div className="flex items-center gap-1">
@@ -270,7 +270,7 @@ export function Layout({
 
       {/* Main Content */}
       <main
-        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.25rem+env(safe-area-inset-top))] md:pt-5 max-w-6xl w-full mx-auto ${
+        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.75rem+env(safe-area-inset-top))] md:pt-5 max-w-6xl w-full mx-auto ${
           currentTrack ? 'pb-40 md:pb-24' : 'pb-24 md:pb-10'
         }`}
       >

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
+  ChevronDown,
   Disc3,
   Pause,
   Play,
@@ -12,18 +13,12 @@ import {
   Trophy,
   X,
 } from 'lucide-react';
-import type { SetType, WorkoutExercise, WorkoutSession } from '../../types';
+import type { SetType, WorkoutExercise } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { sendKoraNotification } from '../../lib/notifications';
 import { EXERCISE_LIBRARY } from '../../data/exercises';
 import { todayISO, uid } from '../../utils/dates';
-
-interface LiveWorkoutModalProps {
-  sessionDraft: WorkoutSession | null;
-  onClose: () => void;
-  onFinish: (completedSession: WorkoutSession) => void;
-}
 
 function playBeep() {
   try {
@@ -49,14 +44,25 @@ function fmtSec(sec: number) {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-export function LiveWorkoutModal({ sessionDraft, onClose, onFinish }: LiveWorkoutModalProps) {
-  const { state } = useApp();
+export function LiveWorkoutModal() {
+  const {
+    state,
+    workoutModalOpen,
+    setWorkoutModalOpen,
+    updateActiveWorkout,
+    finishActiveWorkout,
+    discardActiveWorkout,
+  } = useApp();
   const player = useAudioPlayer();
+
+  const activeDraft = state.preferences.activeWorkout || null;
+  const sessionDraft = workoutModalOpen && activeDraft ? activeDraft.session : null;
 
   const [title, setTitle] = useState('');
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [notes, setNotes] = useState('');
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [paused, setPaused] = useState(false);
   const [restSec, setRestSec] = useState(0);
   const [restActive, setRestActive] = useState(false);
 
@@ -65,23 +71,91 @@ export function LiveWorkoutModal({ sessionDraft, onClose, onFinish }: LiveWorkou
   const [searchEx, setSearchEx] = useState('');
   const [muscleFilter, setMuscleFilter] = useState('Tous');
 
-  useEffect(() => {
-    if (!sessionDraft) return;
-    setTitle(sessionDraft.title);
-    setExercises(sessionDraft.exercises.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s })) })));
-    setNotes(sessionDraft.notes || '');
-    setElapsedSec(0);
-    setRestSec(0);
-    setRestActive(false);
-    setPickerOpen(false);
-  }, [sessionDraft]);
+  const hydratedOpenRef = useRef(false);
+  const latestRef = useRef({ title, exercises, notes, elapsedSec, paused, activeDraft });
+  latestRef.current = { title, exercises, notes, elapsedSec, paused, activeDraft };
 
-  // Workout elapsed stopwatch
+  const persistDraft = useCallback(
+    (forcePaused?: boolean) => {
+      const cur = latestRef.current;
+      if (!cur.activeDraft) return;
+      updateActiveWorkout({
+        session: {
+          ...cur.activeDraft.session,
+          title: cur.title.trim() || cur.activeDraft.session.title,
+          exercises: cur.exercises,
+          notes: cur.notes.trim() || undefined,
+        },
+        elapsedSec: cur.elapsedSec,
+        paused: typeof forcePaused === 'boolean' ? forcePaused : cur.paused,
+        lastTickAt: Date.now(),
+      });
+    },
+    [updateActiveWorkout]
+  );
+
+  // Hydrate cleanly whenever the workout modal opens (and resume automatically when user clicks "Reprendre")
   useEffect(() => {
-    if (!sessionDraft) return;
-    const id = window.setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    if (workoutModalOpen && activeDraft && !hydratedOpenRef.current) {
+      hydratedOpenRef.current = true;
+      setTitle(activeDraft.session.title);
+      setExercises(
+        activeDraft.session.exercises.map((e) => ({ ...e, sets: e.sets.map((s) => ({ ...s })) }))
+      );
+      setNotes(activeDraft.session.notes || '');
+      setElapsedSec(activeDraft.elapsedSec || 0);
+      setPaused(false);
+      setRestSec(0);
+      setRestActive(false);
+      setPickerOpen(false);
+    } else if (!workoutModalOpen) {
+      hydratedOpenRef.current = false;
+    }
+  }, [workoutModalOpen, activeDraft]);
+
+  // Persist immediately whenever exercises/title/notes change while open
+  useEffect(() => {
+    if (!workoutModalOpen || !hydratedOpenRef.current || !activeDraft) return;
+    const t = window.setTimeout(() => persistDraft(), 250);
+    return () => window.clearTimeout(t);
+  }, [title, exercises, notes, paused, workoutModalOpen, persistDraft]);
+
+  // Auto-pause and flush to storage/cloud when app is closed, hidden, or backgrounded!
+  useEffect(() => {
+    if (!workoutModalOpen || !activeDraft) return;
+    const handleBackground = () => {
+      if (document.visibilityState === 'hidden') {
+        setPaused(true);
+        persistDraft(true);
+      }
+    };
+    const handlePageHide = () => {
+      setPaused(true);
+      persistDraft(true);
+    };
+    document.addEventListener('visibilitychange', handleBackground);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', handleBackground);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [workoutModalOpen, activeDraft, persistDraft]);
+
+  // Workout elapsed stopwatch (ticks only when open & not paused; persists every 5s)
+  useEffect(() => {
+    if (!sessionDraft || paused) return;
+    const id = window.setInterval(() => {
+      setElapsedSec((s) => {
+        const next = s + 1;
+        if (next % 5 === 0) {
+          latestRef.current.elapsedSec = next;
+          persistDraft(false);
+        }
+        return next;
+      });
+    }, 1000);
     return () => window.clearInterval(id);
-  }, [sessionDraft]);
+  }, [sessionDraft, paused, persistDraft]);
 
   // Rest countdown
   useEffect(() => {
@@ -253,9 +327,15 @@ export function LiveWorkoutModal({ sessionDraft, onClose, onFinish }: LiveWorkou
     setSearchEx('');
   };
 
+  const handleMinimizeAndPause = () => {
+    setPaused(true);
+    persistDraft(true);
+    setWorkoutModalOpen(false);
+  };
+
   const handleFinish = () => {
     if (!sessionDraft) return;
-    onFinish({
+    finishActiveWorkout({
       ...sessionDraft,
       title: title.trim() || sessionDraft.title,
       date: sessionDraft.date || todayISO(),
@@ -282,18 +362,28 @@ export function LiveWorkoutModal({ sessionDraft, onClose, onFinish }: LiveWorkou
     <AnimatePresence>
       {sessionDraft && (
         <div className="fixed inset-0 z-50 bg-[var(--bg)] flex flex-col">
-          {/* Sticky Top Live Workout Bar (Hevy Style) */}
-          <header className="shrink-0 bg-white/95 dark:bg-[#111114]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-zinc-800 px-4 py-3">
+          {/* Sticky Top Live Workout Bar (Hevy Style — Solid Safe-Area Header) */}
+          <header className="shrink-0 bg-white dark:bg-[#111114] border-b border-slate-200/80 dark:border-zinc-800 px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-3">
             <div className="max-w-2xl mx-auto space-y-2.5">
               <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
-                  title="Quitter sans enregistrer"
-                >
-                  <X size={18} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={handleMinimizeAndPause}
+                    className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
+                    title="Mettre en pause et réduire"
+                  >
+                    <ChevronDown size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={discardActiveWorkout}
+                    className="rounded-xl p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer"
+                    title="Abandonner la séance"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={title}
@@ -309,14 +399,32 @@ export function LiveWorkoutModal({ sessionDraft, onClose, onFinish }: LiveWorkou
                 </button>
               </div>
 
-              {/* Live Metrics Strip */}
+              {/* Live Metrics Strip with Pause / Resume Control */}
               <div className="grid grid-cols-3 gap-2 text-center bg-slate-50 dark:bg-zinc-900/70 rounded-xl py-2 px-3">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400">Durée</p>
-                  <p className="font-mono text-xs sm:text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextPaused = !paused;
+                    setPaused(nextPaused);
+                    persistDraft(nextPaused);
+                  }}
+                  title={paused ? 'Reprendre le chrono' : 'Mettre en pause'}
+                  className="cursor-pointer rounded-lg hover:bg-slate-200/60 dark:hover:bg-zinc-800/70 transition py-0.5"
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400 flex items-center justify-center gap-1">
+                    {paused ? <Play size={9} className="text-amber-500" /> : <Pause size={9} className="text-emerald-500" />}
+                    {paused ? 'En pause' : 'Durée'}
+                  </p>
+                  <p
+                    className={`font-mono text-xs sm:text-sm font-semibold tabular-nums ${
+                      paused
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    }`}
+                  >
                     {fmtSec(elapsedSec)}
                   </p>
-                </div>
+                </button>
                 <div>
                   <p className="text-[10px] uppercase tracking-wider text-slate-400">Volume</p>
                   <p className="font-mono text-xs sm:text-sm font-semibold tabular-nums">

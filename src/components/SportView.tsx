@@ -18,14 +18,13 @@ import {
   Utensils,
   X,
 } from 'lucide-react';
-import type { AIDomain, FitnessGoal, MealSlot, WorkoutFocus, WorkoutRoutine, WorkoutSession } from '../types';
+import type { AIDomain, FitnessGoal, MealSlot, WorkoutFocus, WorkoutRoutine } from '../types';
 import { useApp } from '../context/AppContext';
 import { useAI } from '../context/AIContext';
 import { formatShortDateFR, todayISO, uid } from '../utils/dates';
 import { MEAL_SLOT_LABELS, WORKOUT_FOCUSES } from '../utils/theme';
 import { ProgressRing } from './ui/ProgressRing';
 import { WeightChart } from './ui/WeightSparkline';
-import { LiveWorkoutModal } from './sport/LiveWorkoutModal';
 import type { QuickAddContext } from './QuickAddModal';
 
 interface SportViewProps {
@@ -74,14 +73,13 @@ function estimateMealLocally(text: string): { calories: number; protein: number;
 export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
   const {
     state,
-    addWorkout,
-    updateWorkout,
     deleteWorkout,
     addRoutine,
     updateRoutine,
     deleteRoutine,
     updateFitnessProfile,
     updatePreferences,
+    startActiveWorkout,
     addMeal,
     deleteMeal,
     addWater,
@@ -93,7 +91,6 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
 
   const today = todayISO();
   const [subTab, setSubTab] = useState<SportSubTab>('gym');
-  const [liveSession, setLiveSession] = useState<WorkoutSession | null>(null);
 
   // Domain-specific goals editors (moved out of global Settings!)
   const [showNutritionGoals, setShowNutritionGoals] = useState(false);
@@ -154,7 +151,7 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
 
   // Launch Live Workout (empty or from routine or existing session)
   const startEmptyWorkout = () => {
-    setLiveSession({
+    startActiveWorkout({
       id: '',
       title: 'Séance libre',
       date: today,
@@ -167,7 +164,7 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
   };
 
   const startFromRoutine = (rt: WorkoutRoutine) => {
-    setLiveSession({
+    startActiveWorkout({
       id: '',
       title: rt.title,
       date: today,
@@ -191,21 +188,6 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
         })),
       })),
     });
-  };
-
-  const handleFinishLiveWorkout = (completed: WorkoutSession) => {
-    if (completed.id && state.workouts.some((w) => w.id === completed.id)) {
-      updateWorkout(completed.id, completed);
-    } else {
-      const { id: _ignore, ...rest } = completed;
-      addWorkout(rest);
-    }
-    notify(
-      completed.prCount
-        ? `Séance terminée · ${completed.totalVolumeKg} kg · ${completed.prCount} PR 🏆`
-        : `Séance terminée · ${completed.totalVolumeKg || 0} kg`
-    );
-    setLiveSession(null);
   };
 
   const handleCreateRoutine = (e: React.FormEvent) => {
@@ -621,7 +603,7 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
-                        onClick={() => setLiveSession(w)}
+                        onClick={() => startActiveWorkout(w)}
                         className="rounded-xl bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 px-3 py-1.5 text-xs font-semibold hover:bg-emerald-500/20 cursor-pointer"
                       >
                         {w.completed ? 'Revoir' : 'Lancer'}
@@ -1065,13 +1047,6 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
           </div>
         </div>
       )}
-
-      {/* Hevy-Style Full-Screen Live Workout Modal */}
-      <LiveWorkoutModal
-        sessionDraft={liveSession}
-        onClose={() => setLiveSession(null)}
-        onFinish={handleFinishLiveWorkout}
-      />
     </div>
   );
 }
