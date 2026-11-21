@@ -483,7 +483,7 @@ export function TrackContextMenu({
           >
             <FileText size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
             <span className="font-medium">
-              {track.linkedLyricsId ? 'Ouvrir texte LexCore' : 'Créer texte LexCore'}
+              {track.linkedLyricsId ? 'Ouvrir le texte' : 'Créer un texte'}
             </span>
           </button>
 

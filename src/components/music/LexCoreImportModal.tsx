@@ -64,13 +64,13 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
     const { folders, docs } = preview.parsed;
     if (folders.length === 0 && docs.length === 0) {
       setError(
-        'Aucun texte ni dossier LexCore reconnu dans ce JSON. Vérifie que le fichier contient tes documents/notes.'
+        'Aucun texte ni dossier reconnu dans ce JSON. Vérifie que le fichier contient tes documents/notes.'
       );
       return;
     }
     const { foldersAdded, docsAdded, skipped } = importLexCoreBackup(folders, docs);
     notify(
-      `Import LexCore terminé : ${docsAdded} texte${docsAdded > 1 ? 's' : ''}, ${foldersAdded} dossier${
+      `Import terminé : ${docsAdded} texte${docsAdded > 1 ? 's' : ''}, ${foldersAdded} dossier${
         foldersAdded > 1 ? 's' : ''
       }${skipped > 0 ? ` (${skipped} doublon${skipped > 1 ? 's' : ''} ignoré${skipped > 1 ? 's' : ''})` : ''} ✓`
     );
@@ -96,10 +96,10 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `lexcore-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `kora-textes-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    notify('Backup LexCore exporté en JSON ✓');
+    notify('Backup Textes exporté en JSON ✓');
   };
 
   return (
@@ -127,7 +127,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                   <Database size={16} />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold">Importer Backup LexCore / MongoDB</h2>
+                  <h2 className="text-sm font-semibold">Importer / Exporter Textes (JSON)</h2>
                   <p className="text-[11px] text-slate-400">
                     Supporte JSON, MongoDB Compass, Atlas, Extended JSON & NDJSON
                   </p>

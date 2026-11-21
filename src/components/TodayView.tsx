@@ -698,7 +698,7 @@ export function TodayView({
           {(activeProject || latestTrack) && (
             <section className="tempo-card rounded-3xl p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Music · LexCore</h2>
+                <h2 className="text-sm font-semibold">Music · Textes</h2>
                 <button
                   type="button"
                   onClick={() => onNavigate('music')}

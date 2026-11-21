@@ -459,7 +459,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       trackIds: [],
       steps: [
         { id: uid('ps'), label: 'Sélection des prods / MP3', done: false },
-        { id: uid('ps'), label: 'Écriture des textes (LexCore)', done: false },
+        { id: uid('ps'), label: 'Écriture des textes', done: false },
         { id: uid('ps'), label: 'Enregistrement voix', done: false },
         { id: uid('ps'), label: 'Mix / Master & Pochette', done: false },
       ],
@@ -525,7 +525,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         {/* Minimalist Fluid Underline Tab Bar */}
         <nav
           aria-label="Sections Music"
-          className="flex items-center gap-6 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto"
+          className="flex items-center gap-6 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {(
             [
@@ -560,7 +560,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   <motion.span
                     layoutId="musicMinimalTabUnderline"
                     transition={{ type: 'spring', stiffness: 520, damping: 36 }}
-                    className="absolute left-0 right-0 -bottom-[1px] h-[2px] rounded-full bg-slate-950 dark:bg-white"
+                    className="absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-slate-950 dark:bg-white"
                   />
                 )}
               </button>
@@ -631,7 +631,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               </p>
             </div>
             <div className="tempo-card rounded-2xl p-4">
-              <p className="text-[11px] text-slate-400">Textes LexCore</p>
+              <p className="text-[11px] text-slate-400">Textes</p>
               <p className="font-mono text-2xl font-semibold tabular-nums mt-1">
                 {state.lyricsDocs.filter((d) => !d.deletedAt).length}
               </p>

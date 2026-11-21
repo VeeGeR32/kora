@@ -1,17 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ChevronDown,
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Circle,
   Disc3,
   Edit3,
   Eye,
-  FilePlus,
   FileText,
   Folder,
   FolderPlus,
-  Menu,
+  Music2,
   Pause,
   Play,
   Plus,
@@ -35,6 +34,24 @@ interface LyricsStudioProps {
   initialDocId?: string | null;
 }
 
+const STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
+  1: {
+    label: 'Brouillon',
+    dot: 'text-slate-300 dark:text-zinc-600',
+    badge: 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300',
+  },
+  2: {
+    label: 'En cours',
+    dot: 'text-amber-500',
+    badge: 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
+  },
+  3: {
+    label: 'Terminé',
+    dot: 'text-emerald-500',
+    badge: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
+  },
+};
+
 function fmt(sec: number) {
   if (!sec || !isFinite(sec)) return '0:00';
   const m = Math.floor(sec / 60);
@@ -42,12 +59,17 @@ function fmt(sec: number) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function fmtShortDate(iso?: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
   const {
     state,
     addLyricsFolder,
-    renameLyricsFolder,
-    moveLyricsFolder,
     deleteLyricsFolder,
     addLyricsDoc,
     updateLyricsDoc,
@@ -59,25 +81,17 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
 
   const player = useAudioPlayer();
 
-  const [activeDocId, setActiveDocId] = useState<string | null>(
-    initialDocId || state.lyricsDocs.find((d) => !d.deletedAt)?.id || null
-  );
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Only open the full-screen editor when a doc is explicitly opened (or passed via initialDocId)
+  const [activeDocId, setActiveDocId] = useState<string | null>(initialDocId || null);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const [treeView, setTreeView] = useState<'explorer' | 'trash'>('explorer');
-  const [expandedFolders, setExpandedFolders] = useState<string[]>(() =>
-    state.lyricsFolders.map((f) => f.id)
-  );
+  const [beatBarOpen, setBeatBarOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'docs' | 'trash'>('docs');
+  const [selectedFolderId, setSelectedFolderId] = useState<string | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<0 | 1 | 2 | 3>(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [markdownMode, setMarkdownMode] = useState<'edit' | 'preview'>('edit');
   const [beatMode, setBeatMode] = useState<'mp3' | 'youtube'>('mp3');
-  const [inlineEdit, setInlineEdit] = useState<{
-    id: string;
-    type: 'file' | 'folder' | 'new-folder';
-    value: string;
-    parentId?: string | null;
-  } | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [newFolderInput, setNewFolderInput] = useState<string | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -88,7 +102,10 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
   const isUndoing = useRef(false);
 
   useEffect(() => {
-    if (initialDocId) setActiveDocId(initialDocId);
+    if (initialDocId) {
+      setActiveDocId(initialDocId);
+      setViewMode('docs');
+    }
   }, [initialDocId]);
 
   const activeDoc = useMemo(
@@ -104,19 +121,58 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
   useEffect(() => {
     if (activeDoc) {
       setBeatMode(activeDoc.linkedTrackId ? 'mp3' : activeDoc.mediaUrl ? 'youtube' : 'mp3');
+      setBeatBarOpen(Boolean(activeDoc.linkedTrackId || activeDoc.mediaUrl));
       setHistory([activeDoc.content]);
       setHistoryStep(0);
+      setMarkdownMode('edit');
     }
   }, [activeDocId]);
 
-  const visibleDocs = useMemo(
-    () => state.lyricsDocs.filter((d) => !d.deletedAt),
-    [state.lyricsDocs]
-  );
+  // Escape key closes full-screen editor cleanly
+  useEffect(() => {
+    if (!activeDoc) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !importModalOpen) {
+        setActiveDocId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeDoc, importModalOpen]);
+
+  const visibleDocs = useMemo(() => {
+    return state.lyricsDocs
+      .filter((d) => !d.deletedAt)
+      .sort((a, b) => new Date(b.lastModified || 0).getTime() - new Date(a.lastModified || 0).getTime());
+  }, [state.lyricsDocs]);
+
   const trashedDocs = useMemo(
     () => state.lyricsDocs.filter((d) => Boolean(d.deletedAt)),
     [state.lyricsDocs]
   );
+
+  const filteredDocs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return visibleDocs.filter((d) => {
+      if (selectedFolderId !== 'all' && d.folderId !== selectedFolderId) return false;
+      if (statusFilter !== 0 && d.status !== statusFilter) return false;
+      if (q && !d.title.toLowerCase().includes(q) && !d.content.toLowerCase().includes(q)) {
+        return false;
+      }
+      return true;
+    });
+  }, [visibleDocs, selectedFolderId, statusFilter, searchQuery]);
+
+  const folderMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of state.lyricsFolders) map.set(f.id, f.name);
+    return map;
+  }, [state.lyricsFolders]);
+
+  const trackMap = useMemo(() => {
+    const map = new Map(state.musicTracks.map((t) => [t.id, t]));
+    return map;
+  }, [state.musicTracks]);
 
   const handleContentChange = (nextContent: string) => {
     if (!activeDoc) return;
@@ -193,205 +249,21 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
       .join('');
   }, [activeDoc?.content]);
 
-  const handleCreateDoc = (folderId: string | null) => {
+  const handleCreateDoc = () => {
+    const folderId = selectedFolderId !== 'all' ? selectedFolderId : null;
     const newId = addLyricsDoc({ folderId });
     setActiveDocId(newId);
-    setTreeView('explorer');
-    if (folderId && !expandedFolders.includes(folderId)) {
-      setExpandedFolders((prev) => [...prev, folderId]);
-    }
-    setSidebarOpen(false);
+    setViewMode('docs');
   };
 
-  const saveInlineEdit = () => {
-    if (!inlineEdit || !inlineEdit.value.trim()) {
-      setInlineEdit(null);
+  const handleSaveNewFolder = () => {
+    if (!newFolderInput || !newFolderInput.trim()) {
+      setNewFolderInput(null);
       return;
     }
-    if (inlineEdit.type === 'file') {
-      updateLyricsDoc(inlineEdit.id, { title: inlineEdit.value.trim() });
-    } else if (inlineEdit.type === 'folder') {
-      renameLyricsFolder(inlineEdit.id, inlineEdit.value.trim());
-    } else if (inlineEdit.type === 'new-folder') {
-      const fId = addLyricsFolder(inlineEdit.value.trim(), inlineEdit.parentId ?? null);
-      setExpandedFolders((prev) => [...prev, fId]);
-    }
-    setInlineEdit(null);
-  };
-
-  const handleDrop = (e: React.DragEvent, targetFolderId: string | null) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOverId(null);
-    const id = e.dataTransfer.getData('lexId');
-    const type = e.dataTransfer.getData('lexType');
-    if (!id) return;
-    if (type === 'file') updateLyricsDoc(id, { folderId: targetFolderId });
-    else if (type === 'folder' && id !== targetFolderId) moveLyricsFolder(id, targetFolderId);
-    if (targetFolderId && !expandedFolders.includes(targetFolderId)) {
-      setExpandedFolders((prev) => [...prev, targetFolderId]);
-    }
-  };
-
-  const renderTree = (parentId: string | null = null, depth = 0): React.ReactNode => {
-    const childFolders = state.lyricsFolders.filter((f) => f.parentId === parentId);
-    const childDocs = visibleDocs.filter((d) => {
-      const matchesParent =
-        d.folderId === parentId ||
-        (parentId === null && d.folderId && !state.lyricsFolders.some((f) => f.id === d.folderId));
-      const matchesSearch =
-        !searchQuery.trim() ||
-        d.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.content.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesParent && matchesSearch;
-    });
-
-    return (
-      <>
-        {childFolders.map((folder) => {
-          const isExpanded = expandedFolders.includes(folder.id);
-          const isEditing = inlineEdit?.id === folder.id && inlineEdit.type === 'folder';
-          return (
-            <div key={folder.id}>
-              <div
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('lexId', folder.id);
-                  e.dataTransfer.setData('lexType', 'folder');
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setDragOverId(folder.id);
-                }}
-                onDragLeave={() => setDragOverId(null)}
-                onDrop={(e) => handleDrop(e, folder.id)}
-                onClick={() =>
-                  setExpandedFolders((prev) =>
-                    isExpanded ? prev.filter((x) => x !== folder.id) : [...prev, folder.id]
-                  )
-                }
-                style={{ paddingLeft: `${depth * 12 + 8}px` }}
-                className={`group flex items-center gap-1.5 py-1.5 pr-2 rounded-lg text-xs font-semibold cursor-pointer transition ${
-                  dragOverId === folder.id
-                    ? 'bg-fuchsia-500/15'
-                    : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
-                }`}
-              >
-                {isExpanded ? <ChevronDown size={13} className="opacity-50" /> : <ChevronRight size={13} className="opacity-50" />}
-                <Folder size={13} className="opacity-70 shrink-0" />
-                {isEditing ? (
-                  <input
-                    autoFocus
-                    value={inlineEdit.value}
-                    onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => e.key === 'Enter' && saveInlineEdit()}
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex-1 bg-transparent outline-none min-w-0"
-                  />
-                ) : (
-                  <span
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      setInlineEdit({ id: folder.id, type: 'folder', value: folder.name });
-                    }}
-                    className="truncate flex-1"
-                  >
-                    {folder.name}
-                  </span>
-                )}
-                <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCreateDoc(folder.id);
-                    }}
-                    className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer"
-                    title="Nouveau texte"
-                  >
-                    <Plus size={12} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteLyricsFolder(folder.id);
-                    }}
-                    className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
-                    title="Supprimer dossier"
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              </div>
-              {isExpanded && renderTree(folder.id, depth + 1)}
-            </div>
-          );
-        })}
-
-        {childDocs.map((doc) => {
-          const isActive = activeDocId === doc.id;
-          return (
-            <div
-              key={doc.id}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('lexId', doc.id);
-                e.dataTransfer.setData('lexType', 'file');
-              }}
-              onClick={() => {
-                setActiveDocId(doc.id);
-                setSidebarOpen(false);
-              }}
-              style={{ paddingLeft: `${depth * 12 + 24}px` }}
-              className={`group flex items-center justify-between py-1.5 pr-2 rounded-lg text-xs cursor-pointer transition ${
-                isActive
-                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-medium'
-                  : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
-              }`}
-            >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <button
-                  type="button"
-                  title="Statut : Brouillon → En cours → Terminé"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const nextStatus = doc.status === 3 ? 1 : ((doc.status + 1) as 1 | 2 | 3);
-                    updateLyricsDoc(doc.id, { status: nextStatus });
-                  }}
-                  className="shrink-0 cursor-pointer"
-                >
-                  <Circle
-                    size={8}
-                    className={`${
-                      doc.status === 3
-                        ? 'text-emerald-500'
-                        : doc.status === 2
-                        ? 'text-amber-500'
-                        : 'text-slate-300 dark:text-zinc-600'
-                    } fill-current`}
-                  />
-                </button>
-                <span className="truncate">{doc.title}</span>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  softDeleteLyricsDoc(doc.id);
-                  if (activeDocId === doc.id) setActiveDocId(null);
-                }}
-                className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition cursor-pointer shrink-0"
-              >
-                <Trash2 size={11} />
-              </button>
-            </div>
-          );
-        })}
-      </>
-    );
+    const fId = addLyricsFolder(newFolderInput.trim(), null);
+    setSelectedFolderId(fId);
+    setNewFolderInput(null);
   };
 
   const wordCount = useMemo(() => {
@@ -408,306 +280,559 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
     linkedTrack && player.currentTrack?.id === linkedTrack.id && player.isPlaying
   );
 
+  const activeIdx = activeDoc ? visibleDocs.findIndex((d) => d.id === activeDoc.id) : -1;
+
   return (
-    <div className="tempo-card rounded-3xl overflow-hidden flex flex-col lg:flex-row min-h-[640px] relative">
-      {/* Mobile Explorer Drawer Backdrop */}
-      {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
-        />
-      )}
-
-      {/* LEFT: LexCore Folder & File Explorer */}
-      <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 shrink-0 border-r border-slate-100 dark:border-zinc-800/80 bg-slate-50/95 dark:bg-[#101014] lg:bg-slate-50/60 lg:dark:bg-zinc-900/35 flex flex-col transition-transform duration-200 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
-      >
-        <div className="p-3.5 border-b border-slate-100 dark:border-zinc-800/80 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-              LEXCORE · TEXTES
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setImportModalOpen(true)}
-                title="Importer / Exporter backup LexCore (JSON MongoDB)"
-                className="p-1.5 rounded-lg text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/12 cursor-pointer"
-              >
-                <Upload size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleCreateDoc(null)}
-                title="Nouveau texte"
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/70 dark:hover:bg-zinc-800 cursor-pointer"
-              >
-                <FilePlus size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setInlineEdit({ id: 'new', type: 'new-folder', value: '', parentId: null })
-                }
-                title="Nouveau dossier"
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/70 dark:hover:bg-zinc-800 cursor-pointer"
-              >
-                <FolderPlus size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(false)}
-                className="lg:hidden p-1.5 rounded-lg text-slate-400"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1.5">
-            <Search size={13} className="text-slate-400 shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Rechercher un texte…"
-              className="w-full bg-transparent text-xs outline-none"
-            />
-          </div>
+    <div className="space-y-4">
+      {/* Compact Native Kora Toolbar (mirrors Sons) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex-1 min-w-[200px] flex items-center gap-2 rounded-2xl bg-white dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 px-3.5 py-2.5">
+          <Search size={14} className="text-slate-400 shrink-0" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Rechercher un texte ou des paroles…"
+            className="w-full bg-transparent text-xs sm:text-sm outline-none text-slate-800 dark:text-zinc-100 placeholder:text-slate-400"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          )}
         </div>
 
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOverId(null);
-          }}
-          onDrop={(e) => handleDrop(e, null)}
-          className="flex-1 overflow-y-auto p-2 space-y-0.5"
+        <button
+          type="button"
+          onClick={() => setImportModalOpen(true)}
+          title="Importer ou exporter tes textes (JSON)"
+          className="inline-flex items-center gap-1.5 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-3 py-2.5 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:border-slate-400 dark:hover:border-zinc-600 transition cursor-pointer"
         >
-          {treeView === 'explorer' ? (
-            <>
-              {renderTree(null, 0)}
-              {inlineEdit?.type === 'new-folder' && (
-                <div className="flex items-center gap-1.5 px-2 py-1.5">
-                  <Folder size={13} className="text-slate-400" />
-                  <input
-                    autoFocus
-                    value={inlineEdit.value}
-                    onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
-                    onBlur={saveInlineEdit}
-                    onKeyDown={(e) => e.key === 'Enter' && saveInlineEdit()}
-                    placeholder="Nom du dossier…"
-                    className="flex-1 bg-transparent border-b border-slate-400 text-xs outline-none"
-                  />
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="space-y-1.5 p-1">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Corbeille
-                </span>
-                {trashedDocs.length > 0 && (
+          <Upload size={13} />
+          <span className="hidden sm:inline">Importer</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleCreateDoc}
+          className="inline-flex items-center gap-1.5 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2.5 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+        >
+          <Plus size={14} />
+          Nouveau texte
+        </button>
+      </div>
+
+      {/* Minimalist Folders + Status + Trash Pill Strip */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pb-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode('docs');
+              setSelectedFolderId('all');
+            }}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition cursor-pointer shrink-0 ${
+              viewMode === 'docs' && selectedFolderId === 'all'
+                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
+            }`}
+          >
+            Tous <span className="font-mono text-[10px] opacity-65 ml-0.5">{visibleDocs.length}</span>
+          </button>
+
+          {state.lyricsFolders.map((folder) => {
+            const active = viewMode === 'docs' && selectedFolderId === folder.id;
+            const count = visibleDocs.filter((d) => d.folderId === folder.id).length;
+            return (
+              <div
+                key={folder.id}
+                className={`inline-flex items-center gap-1 rounded-full pl-3 pr-2 py-1 text-xs font-medium transition shrink-0 ${
+                  active
+                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                    : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('docs');
+                    setSelectedFolderId(folder.id);
+                  }}
+                  className="inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Folder size={11} className="opacity-70" />
+                  <span>{folder.name}</span>
+                  <span className="font-mono text-[10px] opacity-65">{count}</span>
+                </button>
+                {active && (
                   <button
                     type="button"
-                    onClick={emptyLyricsTrash}
-                    className="text-[10px] font-semibold text-rose-500 hover:underline cursor-pointer"
+                    onClick={() => {
+                      deleteLyricsFolder(folder.id);
+                      setSelectedFolderId('all');
+                    }}
+                    title="Supprimer ce dossier"
+                    className="ml-0.5 p-0.5 rounded-full hover:bg-rose-500/20 hover:text-rose-400 transition cursor-pointer"
                   >
-                    Vider
+                    <X size={11} />
                   </button>
                 )}
               </div>
-              {trashedDocs.length === 0 ? (
-                <p className="text-xs text-slate-400 px-1 py-4 text-center">Corbeille vide</p>
-              ) : (
-                trashedDocs.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between gap-2 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 px-2.5 py-1.5 text-xs"
-                  >
-                    <span className="truncate text-rose-800 dark:text-rose-200">{d.title}</span>
+            );
+          })}
+
+          {newFolderInput !== null ? (
+            <div className="inline-flex items-center gap-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-300 dark:border-zinc-700 px-3 py-1 shrink-0">
+              <Folder size={11} className="text-slate-400" />
+              <input
+                autoFocus
+                type="text"
+                value={newFolderInput}
+                onChange={(e) => setNewFolderInput(e.target.value)}
+                onBlur={handleSaveNewFolder}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveNewFolder();
+                  if (e.key === 'Escape') setNewFolderInput(null);
+                }}
+                placeholder="Nom du dossier…"
+                className="w-28 bg-transparent text-xs outline-none"
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setNewFolderInput('')}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 border border-dashed border-slate-300 dark:border-zinc-700 transition cursor-pointer shrink-0"
+            >
+              <FolderPlus size={11} />
+              Dossier
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {viewMode === 'docs' && (
+            <div className="inline-flex items-center gap-1">
+              {([0, 1, 2, 3] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setStatusFilter(st)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    statusFilter === st
+                      ? 'bg-slate-200/90 dark:bg-zinc-800 text-slate-900 dark:text-zinc-100'
+                      : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-300'
+                  }`}
+                >
+                  {st === 0 ? 'Tous statuts' : STATUS_META[st].label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {(trashedDocs.length > 0 || viewMode === 'trash') && (
+            <button
+              type="button"
+              onClick={() => setViewMode((v) => (v === 'trash' ? 'docs' : 'trash'))}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                viewMode === 'trash'
+                  ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                  : 'text-slate-400 hover:text-rose-500'
+              }`}
+            >
+              <Trash2 size={11} />
+              <span>Corbeille</span>
+              <span className="font-mono text-[10px]">{trashedDocs.length}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* MAIN CONTENT: Clean Cards Grid (or Trash) */}
+      {viewMode === 'trash' ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-slate-500 dark:text-zinc-400">
+              Textes supprimés ({trashedDocs.length})
+            </p>
+            {trashedDocs.length > 0 && (
+              <button
+                type="button"
+                onClick={emptyLyricsTrash}
+                className="text-xs font-semibold text-rose-500 hover:underline cursor-pointer"
+              >
+                Vider la corbeille
+              </button>
+            )}
+          </div>
+
+          {trashedDocs.length === 0 ? (
+            <div className="tempo-card rounded-2xl p-10 text-center">
+              <p className="text-xs text-slate-400">La corbeille est vide.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {trashedDocs.map((doc) => (
+                <div
+                  key={doc.id}
+                  className="tempo-card rounded-2xl p-4 flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200 truncate">
+                      {doc.title || 'Sans titre'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                      {doc.content.trim().slice(0, 60) || 'Texte vide'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => restoreLyricsDoc(doc.id)}
+                      title="Restaurer"
+                      className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 cursor-pointer"
+                    >
+                      <RefreshCcw size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => permanentDeleteLyricsDoc(doc.id)}
+                      title="Supprimer définitivement"
+                      className="p-2 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 cursor-pointer"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : filteredDocs.length === 0 ? (
+        <div className="tempo-card rounded-2xl py-14 px-6 text-center flex flex-col items-center">
+          <FileText size={28} className="text-slate-300 dark:text-zinc-700 mb-2.5" />
+          <p className="text-sm font-medium text-slate-600 dark:text-zinc-300">
+            {searchQuery || selectedFolderId !== 'all' || statusFilter !== 0
+              ? 'Aucun texte ne correspond à ce filtre'
+              : 'Aucun texte pour le moment'}
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            Crée une nouvelle page ou importe tes textes existants en JSON.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={handleCreateDoc}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
+            >
+              <Plus size={13} /> Nouveau texte
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:border-slate-400 cursor-pointer"
+            >
+              <Upload size={13} /> Importer JSON
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filteredDocs.map((doc) => {
+            const st = STATUS_META[doc.status || 1];
+            const folderName = doc.folderId ? folderMap.get(doc.folderId) : undefined;
+            const docTrack = doc.linkedTrackId ? trackMap.get(doc.linkedTrackId) : undefined;
+            const isDocTrackPlaying = Boolean(
+              docTrack && player.currentTrack?.id === docTrack.id && player.isPlaying
+            );
+            const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+
+            return (
+              <div
+                key={doc.id}
+                onClick={() => setActiveDocId(doc.id)}
+                className="group tempo-card rounded-2xl p-4 flex flex-col justify-between gap-3 cursor-pointer hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-sm transition"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                      {doc.title || 'Sans titre'}
+                    </h3>
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
-                        onClick={() => restoreLyricsDoc(d.id)}
-                        title="Restaurer"
-                        className="p-1 text-emerald-600 cursor-pointer"
+                        title={`Statut : ${st.label} (cliquer pour changer)`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const nextStatus = doc.status === 3 ? 1 : ((doc.status + 1) as 1 | 2 | 3);
+                          updateLyricsDoc(doc.id, { status: nextStatus });
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition cursor-pointer ${st.badge}`}
                       >
-                        <RefreshCcw size={12} />
+                        <Circle size={6} className={`${st.dot} fill-current`} />
+                        {st.label}
                       </button>
                       <button
                         type="button"
-                        onClick={() => permanentDeleteLyricsDoc(d.id)}
-                        title="Supprimer définitivement"
-                        className="p-1 text-rose-500 cursor-pointer"
+                        title="Mettre à la corbeille"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          softDeleteLyricsDoc(doc.id);
+                        }}
+                        className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1 rounded-lg text-slate-400 hover:text-rose-500 transition cursor-pointer"
                       >
                         <Trash2 size={12} />
                       </button>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          )}
+
+                  <p className="text-xs leading-relaxed text-slate-500 dark:text-zinc-400 line-clamp-3 whitespace-pre-line min-h-[3.3rem]">
+                    {doc.content.trim() ? (
+                      doc.content.trim()
+                    ) : (
+                      <span className="italic text-slate-300 dark:text-zinc-600">Page blanche…</span>
+                    )}
+                  </p>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-100 dark:border-zinc-800/70 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {folderName && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-zinc-800/80 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:text-zinc-400 truncate max-w-[100px]">
+                        <Folder size={9} />
+                        {folderName}
+                      </span>
+                    )}
+                    {docTrack && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (player.currentTrack?.id === docTrack.id) player.togglePlay();
+                          else void player.playTrack(docTrack);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 px-2 py-0.5 text-[10px] font-semibold hover:bg-fuchsia-500/20 transition cursor-pointer truncate max-w-[125px]"
+                        title={`Écouter ${docTrack.title}`}
+                      >
+                        {isDocTrackPlaying ? <Pause size={9} fill="currentColor" /> : <Play size={9} fill="currentColor" />}
+                        <span className="truncate">{docTrack.title}</span>
+                      </button>
+                    )}
+                    {!folderName && !docTrack && (
+                      <span className="font-mono text-[10px]">{words} mots</span>
+                    )}
+                  </div>
+
+                  <span className="font-mono text-[10px] shrink-0">
+                    {fmtShortDate(doc.lastModified) || `${words} mots`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
+      )}
 
-        <div className="p-2.5 border-t border-slate-100 dark:border-zinc-800/80">
-          <button
-            type="button"
-            onClick={() => setTreeView((v) => (v === 'explorer' ? 'trash' : 'explorer'))}
-            className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium transition cursor-pointer ${
-              treeView === 'trash'
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                : 'text-slate-500 hover:bg-slate-200/60 dark:hover:bg-zinc-800/70'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              {treeView === 'trash' ? <Folder size={13} /> : <Trash2 size={13} />}
-              {treeView === 'trash' ? 'Retour textes' : 'Corbeille'}
-            </span>
-            <span className="font-mono text-[10px] opacity-75">{trashedDocs.length}</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* CENTER: Minimalist Lyrics Editor + Beat Player */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Editor Toolbar */}
-        <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300"
-              aria-label="Ouvrir les textes"
-            >
-              <Menu size={15} />
-            </button>
-
-            {activeDoc ? (
-              <input
-                type="text"
-                value={activeDoc.title}
-                onChange={(e) => updateLyricsDoc(activeDoc.id, { title: e.target.value })}
-                className="font-semibold text-base sm:text-lg text-slate-900 dark:text-zinc-100 bg-transparent outline-none truncate flex-1 min-w-0"
-              />
-            ) : (
-              <span className="text-sm text-slate-400">Aucun texte sélectionné</span>
-            )}
-          </div>
-
-          {activeDoc && (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <div className="flex items-center rounded-xl border border-slate-200/80 dark:border-zinc-800 p-0.5 bg-slate-50 dark:bg-zinc-900">
+      {/* ================= FULL-SCREEN EDITORIAL WRITING PAGE ================= */}
+      {activeDoc && (
+        <div
+          className={`fixed inset-0 z-40 bg-white dark:bg-[#0c0c0f] flex flex-col overflow-hidden ${
+            player.currentTrack ? 'pb-24 sm:pb-28' : ''
+          }`}
+        >
+          {/* Minimalist Safe-Area Header */}
+          <header className="shrink-0 border-b border-slate-100 dark:border-zinc-800/80 bg-white/90 dark:bg-[#0c0c0f]/90 backdrop-blur-md pt-[env(safe-area-inset-top)]">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleUndo}
-                  disabled={historyStep <= 0}
-                  className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-30 cursor-pointer"
+                  onClick={() => setActiveDocId(null)}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
                 >
-                  <Undo size={13} />
+                  <ArrowLeft size={15} />
+                  <span>Textes</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={handleRedo}
-                  disabled={historyStep >= history.length - 1}
-                  className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-30 cursor-pointer"
-                >
-                  <Redo size={13} />
-                </button>
+
+                {visibleDocs.length > 1 && (
+                  <div className="hidden sm:flex items-center gap-0.5 pl-1 border-l border-slate-200/80 dark:border-zinc-800">
+                    <button
+                      type="button"
+                      disabled={activeIdx <= 0}
+                      onClick={() => activeIdx > 0 && setActiveDocId(visibleDocs[activeIdx - 1].id)}
+                      className="p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-25 cursor-pointer"
+                      title="Texte précédent"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={activeIdx < 0 || activeIdx >= visibleDocs.length - 1}
+                      onClick={() =>
+                        activeIdx >= 0 &&
+                        activeIdx < visibleDocs.length - 1 &&
+                        setActiveDocId(visibleDocs[activeIdx + 1].id)
+                      }
+                      className="p-1.5 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-25 cursor-pointer"
+                      title="Texte suivant"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="hidden sm:flex items-center gap-0.5">
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                {/* Status Cycler */}
                 <button
                   type="button"
                   onClick={() => {
-                    const idx = visibleDocs.findIndex((d) => d.id === activeDoc.id);
-                    if (idx > 0) setActiveDocId(visibleDocs[idx - 1].id);
+                    const nextStatus = activeDoc.status === 3 ? 1 : ((activeDoc.status + 1) as 1 | 2 | 3);
+                    updateLyricsDoc(activeDoc.id, { status: nextStatus });
                   }}
-                  className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
-                  title="Texte précédent"
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    STATUS_META[activeDoc.status || 1].badge
+                  }`}
                 >
-                  <ChevronLeft size={15} />
+                  <Circle size={7} className={`${STATUS_META[activeDoc.status || 1].dot} fill-current`} />
+                  {STATUS_META[activeDoc.status || 1].label}
                 </button>
+
+                {/* Folder Picker */}
+                {state.lyricsFolders.length > 0 && (
+                  <select
+                    value={activeDoc.folderId || ''}
+                    onChange={(e) =>
+                      updateLyricsDoc(activeDoc.id, { folderId: e.target.value || null })
+                    }
+                    className="hidden sm:block rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-transparent px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 outline-none cursor-pointer"
+                  >
+                    <option value="">Sans dossier</option>
+                    {state.lyricsFolders.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Undo / Redo */}
+                <div className="hidden sm:flex items-center rounded-xl border border-slate-200/80 dark:border-zinc-800 p-0.5">
+                  <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={historyStep <= 0}
+                    className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-25 cursor-pointer"
+                    title="Annuler"
+                  >
+                    <Undo size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRedo}
+                    disabled={historyStep >= history.length - 1}
+                    className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-25 cursor-pointer"
+                    title="Rétablir"
+                  >
+                    <Redo size={13} />
+                  </button>
+                </div>
+
+                {/* Edit / Preview */}
+                <button
+                  type="button"
+                  onClick={() => setMarkdownMode((m) => (m === 'edit' ? 'preview' : 'edit'))}
+                  className="p-1.5 rounded-xl border border-slate-200/80 dark:border-zinc-800 text-slate-500 hover:text-slate-900 dark:hover:text-zinc-100 transition cursor-pointer"
+                  title={markdownMode === 'edit' ? 'Aperçu' : 'Édition'}
+                >
+                  {markdownMode === 'edit' ? <Eye size={14} /> : <Edit3 size={14} />}
+                </button>
+
+                {/* Beat Bar Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setBeatBarOpen((v) => !v)}
+                  className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium transition cursor-pointer ${
+                    beatBarOpen
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      : 'border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
+                  }`}
+                >
+                  <Music2 size={12} />
+                  <span className="hidden sm:inline">Instru</span>
+                </button>
+
+                {/* Tools Toggle (Inspiration + Métronome) */}
+                <button
+                  type="button"
+                  onClick={() => setToolsOpen((v) => !v)}
+                  className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium transition cursor-pointer ${
+                    toolsOpen
+                      ? 'bg-fuchsia-600 text-white'
+                      : 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300 hover:bg-fuchsia-500/15'
+                  }`}
+                >
+                  <Sparkles size={12} />
+                  <span className="hidden sm:inline">Outils</span>
+                </button>
+
+                {/* Delete */}
                 <button
                   type="button"
                   onClick={() => {
-                    const idx = visibleDocs.findIndex((d) => d.id === activeDoc.id);
-                    if (idx >= 0 && idx < visibleDocs.length - 1) setActiveDocId(visibleDocs[idx + 1].id);
+                    softDeleteLyricsDoc(activeDoc.id);
+                    setActiveDocId(null);
                   }}
-                  className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
-                  title="Texte suivant"
+                  title="Mettre à la corbeille"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition cursor-pointer"
                 >
-                  <ChevronRight size={15} />
+                  <Trash2 size={14} />
                 </button>
               </div>
-
-              <button
-                type="button"
-                onClick={() => wrapSelection('**')}
-                className="px-2 py-1 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
-              >
-                B
-              </button>
-              <button
-                type="button"
-                onClick={() => wrapSelection('*')}
-                className="px-2 py-1 rounded-lg text-xs italic text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
-              >
-                I
-              </button>
-
-              <div className="flex items-center rounded-xl border border-slate-200/80 dark:border-zinc-800 p-0.5 bg-slate-50 dark:bg-zinc-900">
-                <button
-                  type="button"
-                  onClick={() => setMarkdownMode('edit')}
-                  className={`p-1.5 rounded-lg transition cursor-pointer ${
-                    markdownMode === 'edit'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                      : 'text-slate-500'
-                  }`}
-                  title="Édition"
-                >
-                  <Edit3 size={13} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMarkdownMode('preview')}
-                  className={`p-1.5 rounded-lg transition cursor-pointer ${
-                    markdownMode === 'preview'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                      : 'text-slate-500'
-                  }`}
-                  title="Aperçu"
-                >
-                  <Eye size={13} />
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setToolsOpen((v) => !v)}
-                className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium transition cursor-pointer ${
-                  toolsOpen
-                    ? 'bg-fuchsia-600 text-white'
-                    : 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300'
-                }`}
-              >
-                <Sparkles size={12} />
-                Outils
-              </button>
             </div>
-          )}
-        </div>
+          </header>
 
-        {/* Main Writing Canvas */}
-        {activeDoc ? (
-          <>
-            <div className="flex-1 flex flex-col md:flex-row min-h-[320px]">
-              <div className="flex-1 flex flex-col min-w-0">
+          {/* Editorial Body + Optional Tools Sidebar */}
+          <div className="flex-1 overflow-y-auto">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row gap-6">
+              {/* Centered Writing Column */}
+              <div className="flex-1 min-w-0 max-w-2xl mx-auto w-full flex flex-col">
+                <input
+                  type="text"
+                  value={activeDoc.title}
+                  onChange={(e) => updateLyricsDoc(activeDoc.id, { title: e.target.value })}
+                  placeholder="Titre du texte…"
+                  className="w-full text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white bg-transparent outline-none placeholder:text-slate-300 dark:placeholder:text-zinc-700"
+                />
+
+                <div className="mt-2 pb-4 mb-4 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                  <span className="font-mono">
+                    {lineCount} lignes · {wordCount} mots
+                    {activeDoc.lastModified ? ` · ${fmtShortDate(activeDoc.lastModified)}` : ''}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => wrapSelection('**')}
+                      className="px-2 py-0.5 rounded-md font-bold hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
+                      title="Gras"
+                    >
+                      B
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => wrapSelection('*')}
+                      className="px-2 py-0.5 rounded-md italic hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
+                      title="Italique"
+                    >
+                      I
+                    </button>
+                  </div>
+                </div>
+
                 {markdownMode === 'edit' ? (
                   <textarea
                     ref={textareaRef}
@@ -715,192 +840,159 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
                     onChange={(e) => handleContentChange(e.target.value)}
                     placeholder="Commence à écrire tes couplets, refrains, idées de flow…"
                     spellCheck={false}
-                    className="flex-1 w-full min-h-[290px] p-5 sm:p-7 bg-transparent outline-none resize-none text-[15px] leading-[1.85] font-medium text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700"
+                    className="flex-1 w-full min-h-[45vh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700"
                   />
                 ) : (
                   <div
-                    className="flex-1 w-full min-h-[290px] p-5 sm:p-7 text-[15px] leading-[1.85] text-slate-800 dark:text-zinc-100 overflow-y-auto"
+                    className="flex-1 w-full min-h-[45vh] text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100"
                     dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
                   />
                 )}
+              </div>
 
-                <div className="px-5 py-1.5 flex items-center justify-between text-[10px] font-mono text-slate-400 border-t border-slate-100/80 dark:border-zinc-800/60">
-                  <span>
-                    {lineCount} lignes · {wordCount} mots
-                  </span>
-                  <div className="flex items-center gap-2">
+              {/* Optional Right Tools Column (Inspiration + Métronome) */}
+              {toolsOpen && (
+                <aside className="w-full lg:w-72 shrink-0 space-y-3">
+                  <LexCoreInspirationWidget onInsertWord={insertWord} />
+                  <MetronomeWidget initialBpm={linkedTrack?.bpm || 120} />
+                </aside>
+              )}
+            </div>
+          </div>
+
+          {/* Collapsible Sleek Beat / Instru Footer */}
+          {beatBarOpen && (
+            <div className="shrink-0 border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/80 dark:bg-zinc-900/60 backdrop-blur-md">
+              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="inline-flex items-center rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setBeatMode('mp3')}
+                      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                        beatMode === 'mp3'
+                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      Son Kora
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBeatMode('youtube')}
+                      className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                        beatMode === 'youtube'
+                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      Prod YouTube
+                    </button>
+                  </div>
+
+                  {beatMode === 'mp3' && (
                     <select
                       value={activeDoc.linkedTrackId || ''}
                       onChange={(e) =>
                         updateLyricsDoc(activeDoc.id, { linkedTrackId: e.target.value || undefined })
                       }
-                      className="bg-transparent text-[11px] text-slate-500 dark:text-zinc-400 outline-none cursor-pointer"
+                      className="rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-2.5 py-1 text-[11px] text-slate-600 dark:text-zinc-300 outline-none cursor-pointer max-w-[220px]"
                     >
-                      <option value="">Associer un MP3…</option>
+                      <option value="">Associer un son…</option>
                       {state.musicTracks.map((t) => (
                         <option key={t.id} value={t.id}>
-                          MP3 : {t.title}
+                          {t.title}
                         </option>
                       ))}
                     </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Collapsible LexCore Inspiration + Metronome Panel */}
-              {toolsOpen && (
-                <div className="w-full md:w-64 shrink-0 border-t md:border-t-0 md:border-l border-slate-100 dark:border-zinc-800/80 p-3.5 space-y-3 bg-white/40 dark:bg-zinc-950/30">
-                  <LexCoreInspirationWidget onInsertWord={insertWord} />
-                  <MetronomeWidget initialBpm={linkedTrack?.bpm || 120} />
-                </div>
-              )}
-            </div>
-
-            {/* Bottom Dual Beat Player (MP3 Bibliothèque OU Prod YouTube LexCore) */}
-            <div className="border-t border-slate-100 dark:border-zinc-800/80 p-4 bg-slate-50/50 dark:bg-zinc-900/35 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="inline-flex items-center rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setBeatMode('mp3')}
-                    className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
-                      beatMode === 'mp3'
-                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                        : 'text-slate-500'
-                    }`}
-                  >
-                    MP3 Kora
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setBeatMode('youtube')}
-                    className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
-                      beatMode === 'youtube'
-                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                        : 'text-slate-500'
-                    }`}
-                  >
-                    Prod YouTube
-                  </button>
-                </div>
-
-                {linkedTrack && beatMode === 'mp3' && (
-                  <span className="text-[11px] font-mono text-slate-400 truncate">
-                    {linkedTrack.title} {linkedTrack.bpm ? `· ${linkedTrack.bpm} BPM` : ''}
-                  </span>
-                )}
-              </div>
-
-              {beatMode === 'youtube' ? (
-                <YoutubeBeatPlayer
-                  url={activeDoc.mediaUrl || ''}
-                  loop={activeDoc.loop}
-                  markers={activeDoc.markers}
-                  onUpdate={(patch) => updateLyricsDoc(activeDoc.id, patch)}
-                />
-              ) : linkedTrack ? (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        player.currentTrack?.id === linkedTrack.id
-                          ? player.togglePlay()
-                          : void player.playTrack(linkedTrack)
-                      }
-                      className="h-10 w-10 rounded-full bg-fuchsia-600 text-white flex items-center justify-center shrink-0 hover:bg-fuchsia-700 transition cursor-pointer"
-                    >
-                      {isPlayingLinked ? (
-                        <Pause size={16} fill="currentColor" />
-                      ) : (
-                        <Play size={16} fill="currentColor" className="ml-0.5" />
-                      )}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                        {linkedTrack.title}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        {linkedTrack.mediaId || linkedTrack.cloudAudioUrl
-                          ? 'Lecture synchronisée avec le Mini-Player'
-                          : 'Importe le fichier MP3 dans Bibliothèque MP3 pour l’écouter ici'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => player.setLoop(!player.loop)}
-                      className={`h-9 w-9 rounded-xl flex items-center justify-center cursor-pointer ${
-                        player.loop
-                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-500'
-                      }`}
-                    >
-                      <Repeat size={14} />
-                    </button>
-                  </div>
-
-                  {linkedTrack.markers.length > 0 && (
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {linkedTrack.markers.map((mk) => (
-                        <button
-                          key={mk.id}
-                          type="button"
-                          onClick={() => void player.playTrack(linkedTrack, mk.timeSec)}
-                          className="inline-flex items-center gap-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-300 hover:border-fuchsia-400 transition cursor-pointer"
-                        >
-                          <Disc3 size={10} className="text-fuchsia-500" />
-                          {mk.label}
-                          <span className="font-mono text-[10px] text-slate-400">
-                            {fmt(mk.timeSec)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
                   )}
                 </div>
-              ) : (
-                <p className="text-xs text-slate-400 dark:text-zinc-500">
-                  Associe un MP3 de ta bibliothèque ci-dessus ou bascule sur <strong>Prod YouTube</strong> pour écrire sur instru.
-                </p>
-              )}
+
+                {beatMode === 'youtube' ? (
+                  <YoutubeBeatPlayer
+                    url={activeDoc.mediaUrl || ''}
+                    loop={activeDoc.loop}
+                    markers={activeDoc.markers}
+                    onUpdate={(patch) => updateLyricsDoc(activeDoc.id, patch)}
+                  />
+                ) : linkedTrack ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          player.currentTrack?.id === linkedTrack.id
+                            ? player.togglePlay()
+                            : void player.playTrack(linkedTrack)
+                        }
+                        className="h-9 w-9 rounded-full bg-fuchsia-600 text-white flex items-center justify-center shrink-0 hover:bg-fuchsia-700 transition cursor-pointer"
+                      >
+                        {isPlayingLinked ? (
+                          <Pause size={15} fill="currentColor" />
+                        ) : (
+                          <Play size={15} fill="currentColor" className="ml-0.5" />
+                        )}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                          {linkedTrack.title}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                          {linkedTrack.bpm ? `${linkedTrack.bpm} BPM · ` : ''}
+                          Lecture synchronisée avec le lecteur
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => player.setLoop(!player.loop)}
+                        className={`h-8 w-8 rounded-xl flex items-center justify-center cursor-pointer ${
+                          player.loop
+                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            : 'bg-white dark:bg-zinc-800 text-slate-500 border border-slate-200/80 dark:border-zinc-700'
+                        }`}
+                        title="Boucle"
+                      >
+                        <Repeat size={13} />
+                      </button>
+                    </div>
+
+                    {linkedTrack.markers.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {linkedTrack.markers.map((mk) => (
+                          <button
+                            key={mk.id}
+                            type="button"
+                            onClick={() => void player.playTrack(linkedTrack, mk.timeSec)}
+                            className="inline-flex items-center gap-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-300 hover:border-fuchsia-400 transition cursor-pointer"
+                          >
+                            <Disc3 size={10} className="text-fuchsia-500" />
+                            {mk.label}
+                            <span className="font-mono text-[10px] text-slate-400">
+                              {fmt(mk.timeSec)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Sélectionne un son ci-dessus ou bascule sur <strong>Prod YouTube</strong> pour écrire sur instru.
+                  </p>
+                )}
+              </div>
             </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-            <FileText size={36} className="text-slate-300 dark:text-zinc-700 mb-3" />
-            <p className="text-sm font-medium text-slate-500 dark:text-zinc-400">
-              Ouvre un texte ou crée une nouvelle page blanche
-            </p>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleCreateDoc(null)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
-              >
-                <Plus size={14} /> Nouveau texte
-              </button>
-              <button
-                type="button"
-                onClick={() => setImportModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-2 text-xs font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/10 cursor-pointer"
-              >
-                <Upload size={14} /> Importer backup JSON
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       <LexCoreImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
-        onImported={(firstDocId, newFolderIds) => {
-          if (newFolderIds.length > 0) {
-            setExpandedFolders((prev) => Array.from(new Set([...prev, ...newFolderIds])));
-          }
+        onImported={(firstDocId) => {
           if (firstDocId) {
             setActiveDocId(firstDocId);
-            setTreeView('explorer');
+            setViewMode('docs');
           }
         }}
       />

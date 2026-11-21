@@ -63,7 +63,7 @@ export function LexCoreInspirationWidget({ onInsertWord }: { onInsertWord?: (wor
       <div className="flex items-center justify-between">
         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
           <Sparkles size={12} className="text-fuchsia-500" />
-          LexCore · Inspiration
+          Inspiration
         </h4>
         <button
           type="button"
