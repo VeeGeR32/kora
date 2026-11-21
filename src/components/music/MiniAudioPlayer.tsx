@@ -105,7 +105,15 @@ export function MiniAudioPlayer() {
 
   useEffect(() => {
     let active = true;
-    if (currentTrack?.coverDataUrl) {
+    // Rule: If the linked project has a cover, it applies to all tracks in the project;
+    // otherwise each track keeps its own individual cover!
+    if (linkedProject?.coverDataUrl) {
+      setCoverUrl(linkedProject.coverDataUrl);
+    } else if (linkedProject?.coverMediaId) {
+      getMediaObjectUrl(linkedProject.coverMediaId).then((url) => {
+        if (active) setCoverUrl(url);
+      });
+    } else if (currentTrack?.coverDataUrl) {
       setCoverUrl(currentTrack.coverDataUrl);
     } else if (currentTrack?.coverMediaId) {
       getMediaObjectUrl(currentTrack.coverMediaId).then((url) => {
@@ -113,12 +121,6 @@ export function MiniAudioPlayer() {
       });
     } else if (currentTrack?.cloudCoverUrl) {
       setCoverUrl(currentTrack.cloudCoverUrl);
-    } else if (linkedProject?.coverDataUrl) {
-      setCoverUrl(linkedProject.coverDataUrl);
-    } else if (linkedProject?.coverMediaId) {
-      getMediaObjectUrl(linkedProject.coverMediaId).then((url) => {
-        if (active) setCoverUrl(url);
-      });
     } else {
       setCoverUrl(null);
     }
@@ -126,11 +128,11 @@ export function MiniAudioPlayer() {
       active = false;
     };
   }, [
+    linkedProject?.coverDataUrl,
+    linkedProject?.coverMediaId,
     currentTrack?.coverDataUrl,
     currentTrack?.coverMediaId,
     currentTrack?.cloudCoverUrl,
-    linkedProject?.coverDataUrl,
-    linkedProject?.coverMediaId,
   ]);
 
   // Deterministic waveform bars (memoized once per track)

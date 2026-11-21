@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   Disc3,
@@ -10,9 +10,10 @@ import {
   Star,
 } from 'lucide-react';
 import type { MusicTrack } from '../../types';
+import { useApp } from '../../context/AppContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import type { TrackGroup } from '../../lib/musicVersioning';
-import { getDeterministicGradientId } from '../../lib/musicVersioning';
+import { resolveEffectiveTrackCover } from '../../lib/trackCover';
 import { TRACK_STATUS_META } from '../../utils/theme';
 import { getGradientClass } from './MiniAudioPlayer';
 
@@ -58,6 +59,7 @@ export function TrackCard({
   onOpenContextMenu,
   compact = false,
 }: TrackCardProps) {
+  const { state } = useApp();
   const activeEntry =
     (selectedTrackId ? group.versions.find((v) => v.track.id === selectedTrackId) : null) ||
     group.versions[0];
@@ -65,25 +67,38 @@ export function TrackCard({
   const track = activeEntry.track;
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
 
+  const effectiveCover = useMemo(
+    () =>
+      resolveEffectiveTrackCover(
+        track,
+        state.musicProjects,
+        group.groupKey,
+        group.versions.map((v) => v.track)
+      ),
+    [track, state.musicProjects, group.groupKey, group.versions]
+  );
+
   useEffect(() => {
     let alive = true;
-    if (track.coverDataUrl) {
-      setCoverUrl(track.coverDataUrl);
-    } else if (track.coverMediaId) {
-      getMediaObjectUrl(track.coverMediaId).then((u) => alive && setCoverUrl(u));
-    } else if (track.cloudCoverUrl) {
-      setCoverUrl(track.cloudCoverUrl);
+    if (effectiveCover.coverDataUrl) {
+      setCoverUrl(effectiveCover.coverDataUrl);
+    } else if (effectiveCover.coverMediaId) {
+      getMediaObjectUrl(effectiveCover.coverMediaId).then((u) => alive && setCoverUrl(u));
+    } else if (effectiveCover.cloudCoverUrl) {
+      setCoverUrl(effectiveCover.cloudCoverUrl);
     } else {
       setCoverUrl(null);
     }
     return () => {
       alive = false;
     };
-  }, [track.id, track.coverDataUrl, track.coverMediaId, track.cloudCoverUrl]);
+  }, [
+    effectiveCover.coverDataUrl,
+    effectiveCover.coverMediaId,
+    effectiveCover.cloudCoverUrl,
+  ]);
 
-  const gradCls = getGradientClass(
-    track.coverGradient || getDeterministicGradientId(group.groupKey)
-  );
+  const gradCls = getGradientClass(effectiveCover.gradientId);
   const todos = track.todos || [];
   const todoDone = todos.filter((t) => t.done).length;
   const todoTotal = todos.length;

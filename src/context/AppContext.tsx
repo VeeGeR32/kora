@@ -165,6 +165,10 @@ interface AppContextValue {
   ) => { added: number; updated: number; removed: number };
   updateMusicTrack: (id: string, patch: Partial<MusicTrack>) => void;
   renameTrackGroup: (trackIds: string[], newTitle: string) => void;
+  setTrackGroupCover: (
+    trackIds: string[],
+    cover: { coverDataUrl?: string | null; coverGradient?: string }
+  ) => void;
   setTrackGroupFavorite: (trackIds: string[], isFavorite: boolean) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
@@ -1426,6 +1430,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const setTrackGroupCover = useCallback(
+    (trackIds: string[], cover: { coverDataUrl?: string | null; coverGradient?: string }) => {
+      const idSet = new Set(trackIds);
+      touch((prev) => ({
+        ...prev,
+        musicTracks: prev.musicTracks.map((t) => {
+          if (!idSet.has(t.id)) return t;
+          const next = { ...t };
+          if ('coverDataUrl' in cover) {
+            next.coverDataUrl = cover.coverDataUrl || undefined;
+            if (!cover.coverDataUrl) {
+              next.coverMediaId = undefined;
+              next.cloudCoverUrl = undefined;
+            }
+          }
+          if (cover.coverGradient !== undefined) {
+            next.coverGradient = cover.coverGradient;
+          }
+          return next;
+        }),
+      }));
+    },
+    []
+  );
+
   const setTrackGroupFavorite = useCallback((trackIds: string[], isFavorite: boolean) => {
     const idSet = new Set(trackIds);
     touch((prev) => ({
@@ -2027,6 +2056,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         syncMusicTracksBatch,
         updateMusicTrack,
         renameTrackGroup,
+        setTrackGroupCover,
         setTrackGroupFavorite,
         addMusicTrackTodo,
         toggleMusicTrackTodo,

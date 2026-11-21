@@ -23,6 +23,7 @@ import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { compressCoverImage, resolveEffectiveTrackCover } from '../../lib/trackCover';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { getDeterministicGradientId } from '../../lib/musicVersioning';
 import { TRACK_STATUS_META } from '../../utils/theme';
@@ -54,28 +55,6 @@ function fmtDate(iso?: string): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: '2-digit' });
 }
 
-async function resizeTrackCover(file: File, maxSize = 360): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.78));
-      };
-      img.onerror = reject;
-      img.src = String(reader.result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 export function TrackDetailModal({
   group,
   selectedTrackId,
@@ -90,6 +69,7 @@ export function TrackDetailModal({
     state,
     updateMusicTrack,
     renameTrackGroup,
+    setTrackGroupCover,
     setTrackGroupFavorite,
     addMusicTrackTodo,
     toggleMusicTrackTodo,
@@ -123,25 +103,42 @@ export function TrackDetailModal({
 
   const track = activeEntry?.track || null;
 
+  const effectiveCover = useMemo(
+    () =>
+      track && group
+        ? resolveEffectiveTrackCover(
+            track,
+            state.musicProjects,
+            group.groupKey,
+            group.versions.map((v) => v.track)
+          )
+        : null,
+    [track, group, state.musicProjects]
+  );
+
   useEffect(() => {
     let alive = true;
-    if (!track) {
+    if (!effectiveCover) {
       setCoverUrl(null);
       return;
     }
-    if (track.coverDataUrl) {
-      setCoverUrl(track.coverDataUrl);
-    } else if (track.coverMediaId) {
-      getMediaObjectUrl(track.coverMediaId).then((u) => alive && setCoverUrl(u));
-    } else if (track.cloudCoverUrl) {
-      setCoverUrl(track.cloudCoverUrl);
+    if (effectiveCover.coverDataUrl) {
+      setCoverUrl(effectiveCover.coverDataUrl);
+    } else if (effectiveCover.coverMediaId) {
+      getMediaObjectUrl(effectiveCover.coverMediaId).then((u) => alive && setCoverUrl(u));
+    } else if (effectiveCover.cloudCoverUrl) {
+      setCoverUrl(effectiveCover.cloudCoverUrl);
     } else {
       setCoverUrl(null);
     }
     return () => {
       alive = false;
     };
-  }, [track?.id, track?.coverDataUrl, track?.coverMediaId, track?.cloudCoverUrl]);
+  }, [
+    effectiveCover?.coverDataUrl,
+    effectiveCover?.coverMediaId,
+    effectiveCover?.cloudCoverUrl,
+  ]);
 
   if (!group || !activeEntry || !track) return null;
 
@@ -151,16 +148,20 @@ export function TrackDetailModal({
   const doneTodos = todos.filter((td) => td.done).length;
   const todoPct = todos.length > 0 ? Math.round((doneTodos / todos.length) * 100) : 0;
   const gradCls = getGradientClass(
-    track.coverGradient || getDeterministicGradientId(group.groupKey)
+    effectiveCover?.gradientId || track.coverGradient || getDeterministicGradientId(group.groupKey)
   );
   const allGroupTrackIds = group.versions.map((v) => v.track.id);
 
   const handleUploadCover = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const dataUrl = await resizeTrackCover(file);
-      updateMusicTrack(track.id, { coverDataUrl: dataUrl });
-      notify('Pochette du son mise à jour ✓');
+      const dataUrl = await compressCoverImage(file, 360);
+      setTrackGroupCover(allGroupTrackIds, { coverDataUrl: dataUrl });
+      notify(
+        effectiveCover?.inheritedFromProject
+          ? 'Pochette du son enregistrée (affichée dès que le projet n’a pas sa propre pochette) ✓'
+          : 'Pochette du son mise à jour ✓'
+      );
     } catch {
       notify('Impossible de lire cette image');
     }
@@ -268,11 +269,19 @@ export function TrackDetailModal({
                 <button
                   type="button"
                   onClick={() => coverInputRef.current?.click()}
-                  title="Changer la pochette"
+                  title="Changer la pochette individuelle du son"
                   className="absolute inset-0 rounded-[22px] bg-black/45 opacity-0 group-hover:opacity-100 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition cursor-pointer"
                 >
                   <Camera size={16} />
                   Pochette
+                </button>
+                <button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  aria-label="Changer la pochette"
+                  className="absolute bottom-1.5 right-1.5 h-7 w-7 rounded-full bg-black/65 text-white flex items-center justify-center shadow-md backdrop-blur-xs cursor-pointer sm:opacity-85 hover:scale-105 transition"
+                >
+                  <Camera size={13} />
                 </button>
                 <input
                   ref={coverInputRef}
@@ -307,16 +316,16 @@ export function TrackDetailModal({
                   </p>
                 </div>
 
-                {/* Quick Gradient Swatches */}
-                <div className="flex items-center justify-center sm:justify-start gap-1.5">
+                {/* Quick Gradient Swatches + Remove Custom Cover */}
+                <div className="flex items-center justify-center sm:justify-start gap-1.5 flex-wrap">
                   {PROJECT_GRADIENTS.map((g) => (
                     <button
                       key={g.id}
                       type="button"
                       onClick={() =>
-                        updateMusicTrack(track.id, {
+                        setTrackGroupCover(allGroupTrackIds, {
                           coverGradient: g.id,
-                          coverDataUrl: undefined,
+                          coverDataUrl: null,
                         })
                       }
                       title={g.label}
@@ -328,6 +337,11 @@ export function TrackDetailModal({
                       }`}
                     />
                   ))}
+                  {effectiveCover?.inheritedFromProject && (
+                    <span className="text-[10px] text-fuchsia-600 dark:text-fuchsia-400 font-medium ml-1">
+                      Pochette du projet active
+                    </span>
+                  )}
                 </div>
 
                 {/* Action Pills */}

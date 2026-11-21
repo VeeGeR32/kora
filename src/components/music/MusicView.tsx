@@ -44,7 +44,9 @@ import { TrackCard } from './TrackCard';
 import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu';
 import { TrackDetailModal } from './TrackDetailModal';
 import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal';
-import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
+import { ProjectCoverArtwork } from './ProjectCoverArtwork';
+import { getProjectTrackIndividualCovers } from '../../lib/trackCover';
+import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import type { QuickAddContext } from '../QuickAddModal';
 
 interface MusicViewProps {
@@ -894,7 +896,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   const isPlayingProj =
                     player.isPlaying &&
                     linkedTracks.some((t) => t.id === player.currentTrack?.id);
-                  const gradCls = getGradientClass(proj.coverGradient);
 
                   return (
                     <div
@@ -903,15 +904,12 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                       className="group cursor-pointer space-y-2.5"
                     >
                       <div className="relative aspect-square w-full rounded-[26px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015] group-active:scale-[0.985]">
-                        {proj.coverDataUrl ? (
-                          <img
-                            src={proj.coverDataUrl}
-                            alt={proj.title}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className={`h-full w-full bg-gradient-to-br ${gradCls}`} />
-                        )}
+                        <ProjectCoverArtwork
+                          title={proj.title}
+                          projectCoverUrl={proj.coverDataUrl}
+                          trackCoverUrls={getProjectTrackIndividualCovers(linkedTracks)}
+                          gradientId={proj.coverGradient}
+                        />
 
                         <span className="absolute top-2.5 left-2.5 rounded-full bg-black/35 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
                           {proj.kind}

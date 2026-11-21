@@ -19,6 +19,7 @@ import {
 } from '../../lib/publicShare';
 import { triggerHapticTick } from '../../lib/haptics';
 import { getGradientClass } from './MiniAudioPlayer';
+import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 import { KoraLogo } from '../ui/KoraLogo';
 
 interface PublicSharePageProps {
@@ -380,7 +381,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
   }
 
   const coverUrl =
-    activeTrack?.coverDataUrl || data.project?.coverDataUrl || null;
+    data.project?.coverDataUrl || activeTrack?.coverDataUrl || null;
   const gradCls = getGradientClass(
     activeTrack?.coverGradient || data.project?.coverGradient || 'pink'
   );
@@ -580,7 +581,9 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
 
   // ===== VIEW B: PROJECT / ALBUM / EP PUBLIC PAGE ([UNTITLED] EDITORIAL STYLE) =====
   const projectCover = data.project?.coverDataUrl || null;
-  const projectGrad = getGradientClass(data.project?.coverGradient || 'pink');
+  const projectTrackCovers = Array.from(
+    new Set(tracks.map((t) => t.coverDataUrl).filter((c): c is string => Boolean(c)))
+  );
 
   return (
     <div className="min-h-[100dvh] bg-white text-zinc-950 pb-28">
@@ -599,15 +602,12 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
         {/* Large Centered Cover Art */}
         <div className="flex justify-center pt-1">
           <div className="aspect-square w-64 sm:w-72 rounded-[28px] overflow-hidden shadow-xl border border-zinc-200/80">
-            {projectCover ? (
-              <img
-                src={projectCover}
-                alt={data.project?.title}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className={`h-full w-full bg-gradient-to-br ${projectGrad}`} />
-            )}
+            <ProjectCoverArtwork
+              title={data.project?.title || 'Projet'}
+              projectCoverUrl={projectCover}
+              trackCoverUrls={projectTrackCovers}
+              gradientId={data.project?.coverGradient || 'pink'}
+            />
           </div>
         </div>
 
@@ -668,6 +668,13 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
                       idx + 1
                     )}
                   </span>
+                  {(projectCover || trk.coverDataUrl) && (
+                    <img
+                      src={projectCover || trk.coverDataUrl || ''}
+                      alt={trk.title}
+                      className="h-9 w-9 rounded-lg object-cover border border-zinc-200 shrink-0"
+                    />
+                  )}
                   <div className="min-w-0">
                     <p
                       className={`text-sm truncate ${

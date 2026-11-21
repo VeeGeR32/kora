@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronRight,
@@ -7,6 +7,7 @@ import {
   FileText,
   FolderKanban,
   GitBranch,
+  ImagePlus,
   Link2,
   ListChecks,
   Pause,
@@ -21,6 +22,7 @@ import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { compressCoverImage } from '../../lib/trackCover';
 
 export interface TrackContextMenuState {
   group: TrackGroup;
@@ -61,6 +63,7 @@ export function TrackContextMenu({
   const {
     state,
     renameTrackGroup,
+    setTrackGroupCover,
     setTrackGroupFavorite,
     updateMusicTrack,
     updateMusicProject,
@@ -68,6 +71,7 @@ export function TrackContextMenu({
     notify,
   } = useApp();
   const player = useAudioPlayer();
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [openSection, setOpenSection] = useState<'versions' | 'projects' | 'rename' | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -228,6 +232,35 @@ export function TrackContextMenu({
               </form>
             )}
           </div>
+
+          {/* Change Song Cover (applies cleanly to all versions of the song!) */}
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/*"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              try {
+                const dataUrl = await compressCoverImage(file, 360);
+                setTrackGroupCover(allIds, { coverDataUrl: dataUrl });
+                notify(`Pochette de « ${group.baseTitle} » mise à jour ✓`);
+                onClose();
+              } catch {
+                notify('Impossible de lire cette image');
+              }
+            }}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => coverInputRef.current?.click()}
+            className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+          >
+            <ImagePlus size={14} className="text-fuchsia-500 shrink-0" />
+            <span className="font-medium">Changer la pochette</span>
+          </button>
 
           {/* Public Share Link (zero login for recipient!) */}
           <button

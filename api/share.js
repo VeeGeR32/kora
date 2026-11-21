@@ -401,12 +401,14 @@ export default async function handler(req, res) {
       }
 
       const ownerName = state.preferences?.name || 'Artiste';
+      const projectCover = resolved.project?.coverDataUrl || null;
       const publicTracks = resolved.tracks.map((t) => ({
         id: t.id,
         title: t.manualGroupTitle || t.title,
         artist: t.artist || ownerName,
         durationSec: t.durationSec || 0,
-        coverDataUrl: t.coverDataUrl || t.cloudCoverUrl || null,
+        // Rule: if the project has a cover, apply it to all its tracks; otherwise keep each track's individual cover
+        coverDataUrl: projectCover || t.coverDataUrl || t.cloudCoverUrl || null,
         coverGradient: t.coverGradient || resolved.project?.coverGradient || 'pink',
         addedAt: t.modifiedAt || t.addedAt || '',
         streamable: Boolean(t.googleDriveFileId || t.cloudAudioUrl),

@@ -21,8 +21,10 @@ import type { MusicProject, ProjectKind } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { CheckCircle } from '../ui/CheckCircle';
-import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
+import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { getProjectTrackIndividualCovers } from '../../lib/trackCover';
+import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 
 interface ProjectAlbumModalProps {
   projectId: string | null;
@@ -181,7 +183,6 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
     setTodoInput('');
   };
 
-  const gradCls = getGradientClass(project.coverGradient);
   const artistName = (state.preferences.name || 'MOI').toUpperCase();
 
   return (
@@ -275,15 +276,12 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                 onClick={() => coverInputRef.current?.click()}
                 className="relative group w-full max-w-[300px] aspect-square rounded-[22px] overflow-hidden shadow-[0_18px_50px_-14px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_60px_-14px_rgba(0,0,0,0.85)] border border-slate-200/60 dark:border-zinc-800 cursor-pointer"
               >
-                {project.coverDataUrl ? (
-                  <img
-                    src={project.coverDataUrl}
-                    alt={project.title}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className={`h-full w-full bg-gradient-to-br ${gradCls}`} />
-                )}
+                <ProjectCoverArtwork
+                  title={project.title}
+                  projectCoverUrl={project.coverDataUrl}
+                  trackCoverUrls={getProjectTrackIndividualCovers(projectTracks)}
+                  gradientId={project.coverGradient}
+                />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 text-white flex flex-col items-center justify-center gap-1.5 text-xs font-medium transition">
                   <Camera size={20} />
                   Changer la pochette
@@ -328,13 +326,27 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                         />
                       ))}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => coverInputRef.current?.click()}
-                      className="text-xs font-semibold text-slate-700 dark:text-zinc-200 underline cursor-pointer"
-                    >
-                      Importer photo
-                    </button>
+                    <div className="flex items-center gap-2.5">
+                      {project.coverDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateMusicProject(project.id, { coverDataUrl: undefined });
+                            notify('Pochette du projet retirée (pochettes individuelles des sons actives)');
+                          }}
+                          className="text-xs font-medium text-rose-500 hover:underline cursor-pointer"
+                        >
+                          Retirer pochette
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => coverInputRef.current?.click()}
+                        className="text-xs font-semibold text-slate-700 dark:text-zinc-200 underline cursor-pointer"
+                      >
+                        Importer photo
+                      </button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
@@ -517,6 +529,14 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                               idx + 1
                             )}
                           </span>
+                          {/* Track Cover Thumbnail: project cover if set, otherwise each track's individual cover */}
+                          {(project.coverDataUrl || trk.coverDataUrl || trk.cloudCoverUrl) && (
+                            <img
+                              src={project.coverDataUrl || trk.coverDataUrl || trk.cloudCoverUrl}
+                              alt={trk.manualGroupTitle || trk.title}
+                              className="h-9 w-9 rounded-lg object-cover border border-slate-200/70 dark:border-zinc-800 shrink-0"
+                            />
+                          )}
                           <div className="min-w-0 flex-1">
                             <p
                               className={`text-sm font-semibold truncate ${
