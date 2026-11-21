@@ -391,6 +391,43 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
   }
   const cleanFpNotes = optStr(fp.notes, 2000);
   if (cleanFpNotes) cleanFitnessProfile.notes = cleanFpNotes;
+  if (Array.isArray(fp.progressPhotos) && fp.progressPhotos.length > 0) {
+    const validAngles = ['face', 'profil', 'dos'] as const;
+    const cleanPhotos = fp.progressPhotos
+      .filter(
+        (ph) =>
+          ph &&
+          typeof ph === 'object' &&
+          typeof ph.id === 'string' &&
+          typeof ph.date === 'string' &&
+          typeof ph.thumbDataUrl === 'string' &&
+          /^data:image\/(jpeg|jpg|png|webp);base64,/i.test(ph.thumbDataUrl) &&
+          ph.thumbDataUrl.length <= 55_000
+      )
+      .slice(-36)
+      .map((ph) => {
+        const entry: Record<string, unknown> = {
+          id: strOr(ph.id, 'ph', 80),
+          date: strOr(ph.date, '', 20),
+          label: strOr(ph.label, 'Check-in', 80),
+          angle: (validAngles as readonly string[]).includes(ph.angle) ? ph.angle : 'face',
+          thumbDataUrl: ph.thumbDataUrl,
+          createdAt: strOr(ph.createdAt, new Date().toISOString(), 40),
+        };
+        if (typeof ph.weightKg === 'number' && Number.isFinite(ph.weightKg) && ph.weightKg >= 20 && ph.weightKg <= 350) {
+          entry.weightKg = Math.round(ph.weightKg * 10) / 10;
+        }
+        const n = optStr(ph.note, 200);
+        if (n) entry.note = n;
+        const m = optStr(ph.mediaId, 100);
+        if (m) entry.mediaId = m;
+        if (ph.isBaseline) entry.isBaseline = true;
+        return entry;
+      });
+    if (cleanPhotos.length > 0) {
+      cleanFitnessProfile.progressPhotos = cleanPhotos;
+    }
+  }
 
   const ts =
     typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) && raw.updatedAt >= 1577836800000

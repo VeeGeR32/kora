@@ -189,6 +189,21 @@ export interface WorkoutRoutine {
   linkedTrackId?: string;
 }
 
+export type ProgressPhotoAngle = 'face' | 'profil' | 'dos';
+
+export interface ProgressPhoto {
+  id: string;
+  date: string; // YYYY-MM-DD
+  label: string; // e.g. "Photo initiale · Jour 1" or "Semaine 3"
+  angle: ProgressPhotoAngle;
+  weightKg?: number;
+  note?: string;
+  thumbDataUrl: string; // Compact JPEG synced across devices via Firestore
+  mediaId?: string; // Full-res local IndexedDB key
+  isBaseline?: boolean;
+  createdAt: string;
+}
+
 export interface FitnessProfile {
   goal: FitnessGoal;
   level: 'debutant' | 'intermediaire' | 'avance';
@@ -196,6 +211,7 @@ export interface FitnessProfile {
   equipment: string;
   heightCm?: number;
   notes?: string;
+  progressPhotos?: ProgressPhoto[];
 }
 
 export interface MealEntry {

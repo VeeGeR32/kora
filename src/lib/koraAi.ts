@@ -360,6 +360,97 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ ok: boolean; m
   }
 }
 
+export interface PhotoMealEstimate {
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  confidence: 'haute' | 'moyenne' | 'approx';
+  details: string;
+}
+
+/**
+ * Analyzes a meal photo via Gemini Vision and returns structured calories + macros in French.
+ */
+export async function estimateMealFromPhoto(
+  apiKey: string | undefined,
+  image: { mimeType: string; base64: string },
+  hint?: string
+): Promise<PhotoMealEstimate> {
+  const resolvedRaw =
+    apiKey?.trim() || (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) || '';
+  const resolvedKey = resolvedRaw ? sanitizeGeminiApiKey(resolvedRaw) : '';
+  if (!resolvedKey) {
+    throw new Error(
+      'Ajoute ta clé API Gemini gratuite dans Kora AI (bouton IA → ⚙) pour analyser des photos de repas.'
+    );
+  }
+
+  const promptText = [
+    'Analyse cette photo de repas comme un nutritionniste sportif expert.',
+    'Estime de façon réaliste les portions visibles, les calories (kcal) et les macronutriments (protéines, glucides, lipides en grammes).',
+    hint?.trim() ? `Précision de l'utilisateur : "${hint.trim()}".` : '',
+    'Réponds UNIQUEMENT en JSON conforme au schéma demandé, avec un nom de repas court en français et un détail concis des ingrédients estimés.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const { res } = await generateWithAutoRouting(resolvedKey, {
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: image.mimeType, data: image.base64 } },
+          { text: promptText },
+        ],
+      },
+    ],
+    config: {
+      temperature: 0.25,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING, description: 'Nom court du repas en français' },
+          calories: { type: Type.NUMBER, description: 'Total calories estimées (kcal)' },
+          protein: { type: Type.NUMBER, description: 'Protéines en grammes' },
+          carbs: { type: Type.NUMBER, description: 'Glucides en grammes' },
+          fat: { type: Type.NUMBER, description: 'Lipides en grammes' },
+          confidence: {
+            type: Type.STRING,
+            description: 'Niveau de confiance: haute | moyenne | approx',
+          },
+          details: {
+            type: Type.STRING,
+            description: 'Détail bref des aliments et quantités estimées (1-2 phrases max)',
+          },
+        },
+        required: ['name', 'calories', 'protein', 'carbs', 'fat', 'confidence', 'details'],
+      },
+    },
+  });
+
+  const rawText = (res.text || '').trim();
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+  const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawText) as Partial<PhotoMealEstimate>;
+
+  const conf =
+    parsed.confidence === 'haute' || parsed.confidence === 'moyenne'
+      ? parsed.confidence
+      : 'approx';
+
+  return {
+    name: String(parsed.name || 'Repas analysé').slice(0, 120),
+    calories: Math.max(0, Math.round(Number(parsed.calories) || 0)),
+    protein: Math.max(0, Math.round(Number(parsed.protein) || 0)),
+    carbs: Math.max(0, Math.round(Number(parsed.carbs) || 0)),
+    fat: Math.max(0, Math.round(Number(parsed.fat) || 0)),
+    confidence: conf,
+    details: String(parsed.details || '').slice(0, 320),
+  };
+}
+
 export async function runKoraAssistant(
   prompt: string,
   state: AppState,

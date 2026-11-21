@@ -149,7 +149,10 @@ interface AppContextValue {
 
   // Music Studio & LexCore
   addMusicTrack: (track: Omit<MusicTrack, 'id'>) => string;
-  syncMusicTracksBatch: (incoming: Omit<MusicTrack, 'id'>[]) => { added: number; updated: number };
+  syncMusicTracksBatch: (
+    incoming: Omit<MusicTrack, 'id'>[],
+    excludedDriveIds?: string[]
+  ) => { added: number; updated: number; removed: number };
   updateMusicTrack: (id: string, patch: Partial<MusicTrack>) => void;
   setTrackGroupFavorite: (trackIds: string[], isFavorite: boolean) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
@@ -1200,75 +1203,89 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
-  const syncMusicTracksBatch = useCallback((incoming: Omit<MusicTrack, 'id'>[]) => {
-    const currentTracks = latestStateRef.current.musicTracks;
-    const byDriveId = new Map<string, number>();
-    currentTracks.forEach((t, idx) => {
-      if (t.googleDriveFileId) byDriveId.set(t.googleDriveFileId, idx);
-    });
+  const syncMusicTracksBatch = useCallback(
+    (incoming: Omit<MusicTrack, 'id'>[], excludedDriveIds?: string[]) => {
+      const excludedSet = new Set(excludedDriveIds || []);
+      const currentTracks = latestStateRef.current.musicTracks;
+      const keptTracks =
+        excludedSet.size > 0
+          ? currentTracks.filter((t) => !t.googleDriveFileId || !excludedSet.has(t.googleDriveFileId))
+          : currentTracks;
+      const removed = currentTracks.length - keptTracks.length;
 
-    let added = 0;
-    let updated = 0;
-    const nextTracks = [...currentTracks];
-    const toPrepend: MusicTrack[] = [];
-
-    for (const item of incoming) {
-      const driveId = item.googleDriveFileId;
-      if (driveId && byDriveId.has(driveId)) {
-        const idx = byDriveId.get(driveId)!;
-        if (idx >= 0) {
-          const existing = nextTracks[idx];
-          const needsMetaUpdate =
-            (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
-            (item.modifiedAt && existing.modifiedAt !== item.modifiedAt);
-          if (needsMetaUpdate) {
-            nextTracks[idx] = {
-              ...existing,
-              sourceFilename: item.sourceFilename || existing.sourceFilename,
-              modifiedAt: item.modifiedAt || existing.modifiedAt,
-            };
-            updated++;
-          }
-        }
-      } else {
-        toPrepend.push({ ...item, id: uid('trk') });
-        if (driveId) byDriveId.set(driveId, -1);
-        added++;
-      }
-    }
-
-    if (added > 0 || updated > 0) {
-      touch((prev) => {
-        // Re-apply cleanly onto latest prev state
-        const prevMap = new Map<string, number>();
-        const merged = [...prev.musicTracks];
-        merged.forEach((t, i) => {
-          if (t.googleDriveFileId) prevMap.set(t.googleDriveFileId, i);
-        });
-        const freshNew: MusicTrack[] = [];
-        for (const item of incoming) {
-          const driveId = item.googleDriveFileId;
-          if (driveId && prevMap.has(driveId)) {
-            const i = prevMap.get(driveId)!;
-            if (i >= 0) {
-              const ex = merged[i];
-              merged[i] = {
-                ...ex,
-                sourceFilename: item.sourceFilename || ex.sourceFilename,
-                modifiedAt: item.modifiedAt || ex.modifiedAt,
-              };
-            }
-          } else {
-            freshNew.push({ ...item, id: uid('trk') });
-            if (driveId) prevMap.set(driveId, -1);
-          }
-        }
-        return { ...prev, musicTracks: [...freshNew, ...merged] };
+      const byDriveId = new Map<string, number>();
+      keptTracks.forEach((t, idx) => {
+        if (t.googleDriveFileId) byDriveId.set(t.googleDriveFileId, idx);
       });
-    }
 
-    return { added, updated };
-  }, []);
+      let added = 0;
+      let updated = 0;
+      const nextTracks = [...keptTracks];
+
+      for (const item of incoming) {
+        const driveId = item.googleDriveFileId;
+        if (driveId && excludedSet.has(driveId)) continue;
+        if (driveId && byDriveId.has(driveId)) {
+          const idx = byDriveId.get(driveId)!;
+          if (idx >= 0) {
+            const existing = nextTracks[idx];
+            const needsMetaUpdate =
+              (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
+              (item.modifiedAt && existing.modifiedAt !== item.modifiedAt);
+            if (needsMetaUpdate) {
+              nextTracks[idx] = {
+                ...existing,
+                sourceFilename: item.sourceFilename || existing.sourceFilename,
+                modifiedAt: item.modifiedAt || existing.modifiedAt,
+              };
+              updated++;
+            }
+          }
+        } else {
+          if (driveId) byDriveId.set(driveId, -1);
+          added++;
+        }
+      }
+
+      if (added > 0 || updated > 0 || removed > 0) {
+        touch((prev) => {
+          const merged =
+            excludedSet.size > 0
+              ? prev.musicTracks.filter(
+                  (t) => !t.googleDriveFileId || !excludedSet.has(t.googleDriveFileId)
+                )
+              : [...prev.musicTracks];
+          const prevMap = new Map<string, number>();
+          merged.forEach((t, i) => {
+            if (t.googleDriveFileId) prevMap.set(t.googleDriveFileId, i);
+          });
+          const freshNew: MusicTrack[] = [];
+          for (const item of incoming) {
+            const driveId = item.googleDriveFileId;
+            if (driveId && excludedSet.has(driveId)) continue;
+            if (driveId && prevMap.has(driveId)) {
+              const i = prevMap.get(driveId)!;
+              if (i >= 0) {
+                const ex = merged[i];
+                merged[i] = {
+                  ...ex,
+                  sourceFilename: item.sourceFilename || ex.sourceFilename,
+                  modifiedAt: item.modifiedAt || ex.modifiedAt,
+                };
+              }
+            } else {
+              freshNew.push({ ...item, id: uid('trk') });
+              if (driveId) prevMap.set(driveId, -1);
+            }
+          }
+          return { ...prev, musicTracks: [...freshNew, ...merged] };
+        });
+      }
+
+      return { added, updated, removed };
+    },
+    []
+  );
 
   const updateMusicTrack = useCallback((id: string, patch: Partial<MusicTrack>) => {
     touch((prev) => ({

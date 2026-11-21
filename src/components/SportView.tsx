@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
+  BarChart3,
   CalendarPlus,
+  Camera,
   Check,
   Clock,
   Disc3,
@@ -25,6 +27,9 @@ import { formatShortDateFR, todayISO, uid } from '../utils/dates';
 import { MEAL_SLOT_LABELS, WORKOUT_FOCUSES } from '../utils/theme';
 import { ProgressRing } from './ui/ProgressRing';
 import { WeightChart } from './ui/WeightSparkline';
+import { MealPhotoAnalyzerModal } from './sport/MealPhotoAnalyzerModal';
+import { BodyEvolutionSection } from './sport/BodyEvolutionSection';
+import { MonthlyShowcaseModal } from './sport/MonthlyShowcaseModal';
 import type { QuickAddContext } from './QuickAddModal';
 
 interface SportViewProps {
@@ -107,10 +112,39 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
   const [nutritionDate, setNutritionDate] = useState(today);
   const [freeMealText, setFreeMealText] = useState('');
   const [freeMealSlot, setFreeMealSlot] = useState<MealSlot>('dejeuner');
+  const [mealPhotoOpen, setMealPhotoOpen] = useState(false);
+
+  // Monthly Showcase modal
+  const [showcaseOpen, setShowcaseOpen] = useState(false);
 
   // Weight inline state
   const [weightInput, setWeightInput] = useState('');
   const [weightNote, setWeightNote] = useState('');
+
+  // Progress photos check-in status (Day 1 or weekly >= 7 days)
+  const photoPromptStatus = useMemo(() => {
+    const photos = [...(state.fitnessProfile.progressPhotos || [])].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    if (photos.length === 0) return { kind: 'initial' as const, week: 1 };
+    const baseline = photos.find((p) => p.isBaseline) || photos[0];
+    const latest = photos[photos.length - 1];
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const daysSinceLast = Math.round(
+      (new Date(`${today}T12:00:00`).getTime() - new Date(`${latest.date}T12:00:00`).getTime()) /
+        msPerDay
+    );
+    const week =
+      Math.floor(
+        Math.max(
+          0,
+          new Date(`${today}T12:00:00`).getTime() - new Date(`${baseline.date}T12:00:00`).getTime()
+        ) /
+          (7 * msPerDay)
+      ) + 1;
+    if (daysSinceLast >= 7) return { kind: 'weekly' as const, week, daysSinceLast };
+    return null;
+  }, [state.fitnessProfile.progressPhotos, today]);
 
   const dayMeals = useMemo(
     () => state.meals.filter((m) => m.date === nutritionDate),
@@ -247,53 +281,91 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Header + Sub-tabs */}
+      {/* Header + Sub-tabs + Monthly Showcase */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-zinc-50">
             Sport & Corps
           </h1>
           <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-            Live Workout façon Hevy, nutrition IA & poids
+            Live Workout, nutrition photo IA, évolution physique & showcase mensuel
           </p>
         </div>
 
-        <div className="inline-flex items-center rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-1 self-start sm:self-auto">
-          {(
-            [
-              ['gym', 'Gym', Dumbbell],
-              ['nutrition', 'Nutrition', Utensils],
-              ['poids', 'Poids', Scale],
-            ] as const
-          ).map(([id, label, Icon]) => {
-            const active = subTab === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setSubTab(id)}
-                className={`relative flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition cursor-pointer ${
-                  active
-                    ? 'text-white dark:text-zinc-950'
-                    : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
-                }`}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="sportSubTabPill"
-                    transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                    className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-zinc-100"
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-1.5">
-                  <Icon size={13} />
-                  {label}
-                </span>
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setShowcaseOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-2xl border border-emerald-300/80 dark:border-emerald-800/80 bg-emerald-500/10 hover:bg-emerald-500/18 text-emerald-700 dark:text-emerald-300 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+          >
+            <BarChart3 size={13} />
+            Showcase mensuel
+          </button>
+
+          <div className="inline-flex items-center rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-1">
+            {(
+              [
+                ['gym', 'Gym', Dumbbell],
+                ['nutrition', 'Nutrition', Utensils],
+                ['poids', 'Corps', Scale],
+              ] as const
+            ).map(([id, label, Icon]) => {
+              const active = subTab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSubTab(id)}
+                  className={`relative flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-medium transition cursor-pointer ${
+                    active
+                      ? 'text-white dark:text-zinc-950'
+                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="sportSubTabPill"
+                      transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                      className="absolute inset-0 rounded-xl bg-slate-900 dark:bg-zinc-100"
+                    />
+                  )}
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    <Icon size={13} />
+                    {label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
+
+      {/* Subtle Check-in Photo Prompt Banner (on Gym/Nutrition tabs when initial or weekly photo is due) */}
+      {photoPromptStatus && subTab !== 'poids' && (
+        <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/70 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-zinc-300">
+            <Camera size={14} className="text-emerald-500 shrink-0" />
+            <span>
+              {photoPromptStatus.kind === 'initial' ? (
+                <>
+                  <strong>Suivi physique :</strong> ajoute ta photo initiale (Jour 1) pour suivre ton évolution au fil des semaines.
+                </>
+              ) : (
+                <>
+                  <strong>Check-in Semaine {photoPromptStatus.week} :</strong> ta photo hebdo est prête pour le Showcase mensuel !
+                </>
+              )}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSubTab('poids')}
+            className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer shrink-0"
+          >
+            {photoPromptStatus.kind === 'initial' ? 'Ajouter photo Jour 1 →' : 'Faire le check-in →'}
+          </button>
+        </div>
+      )}
 
       {/* ================== GYM TAB (HEVY STYLE) ================== */}
       {subTab === 'gym' && (
@@ -627,7 +699,7 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
       {/* ================== NUTRITION TAB ================== */}
       {subTab === 'nutrition' && (
         <div className="space-y-5">
-          {/* Free-Text AI Meal Logger */}
+          {/* Free-Text + Photo AI Meal Logger */}
           <form
             onSubmit={handleFreeTextMeal}
             className="tempo-card rounded-2xl p-3.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
@@ -642,7 +714,14 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
                 className="w-full bg-transparent text-xs outline-none"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <button
+                type="button"
+                onClick={() => setMealPhotoOpen(true)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold hover:opacity-92 transition cursor-pointer whitespace-nowrap"
+              >
+                <Camera size={13} /> Photo IA
+              </button>
               <select
                 value={freeMealSlot}
                 onChange={(e) => setFreeMealSlot(e.target.value as MealSlot)}
@@ -896,9 +975,12 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
         </div>
       )}
 
-      {/* ================== POIDS TAB ================== */}
+      {/* ================== CORPS & POIDS TAB ================== */}
       {subTab === 'poids' && (
-        <div className="space-y-5">
+        <div className="space-y-6">
+          {/* Visual Body Evolution (Day 1 baseline + weekly check-ins + Avant/Après slider) */}
+          <BodyEvolutionSection />
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="tempo-card rounded-2xl p-4">
               <p className="text-[11px] text-slate-400">Actuel</p>
@@ -1047,6 +1129,21 @@ export function SportView({ onOpenQuickAdd, onRequestAI }: SportViewProps) {
           </div>
         </div>
       )}
+
+      {/* AI Meal Photo Analyzer Modal */}
+      <MealPhotoAnalyzerModal
+        open={mealPhotoOpen}
+        date={nutritionDate}
+        defaultSlot={freeMealSlot}
+        onClose={() => setMealPhotoOpen(false)}
+      />
+
+      {/* Monthly Showcase Modal (Training, Load Progression, Nutrition, Weight, Body Photos) */}
+      <MonthlyShowcaseModal
+        open={showcaseOpen}
+        onClose={() => setShowcaseOpen(false)}
+        onJumpToPhotos={() => setSubTab('poids')}
+      />
     </div>
   );
 }

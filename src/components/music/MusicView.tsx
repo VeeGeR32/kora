@@ -23,7 +23,10 @@ import {
 import type { MusicTrack, ProjectKind } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
-import { ensureGoogleDriveToken, listAllGoogleDriveAudioFiles } from '../../lib/googleDrive';
+import {
+  ensureGoogleDriveToken,
+  listAllGoogleDriveAudioFilesWithExclusions,
+} from '../../lib/googleDrive';
 import {
   getDeterministicGradientId,
   groupMusicTracks,
@@ -191,19 +194,23 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     );
   }, [detailTarget, trackGroups, flatTrackGroups]);
 
-  // 1-Click Full Google Drive MP3 Sync (loads ALL MP3 files across all pages in ~1-2s!)
+  // 1-Click Full Google Drive MP3 Sync (loads ALL MP3 files excluding drumkit folders!)
   const handleSyncAllDrive = async () => {
     if (syncingDrive) return;
     setSyncingDrive(true);
     setSyncProgressText('Connexion Drive…');
     try {
       const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
-      setSyncProgressText('Analyse des MP3…');
-      const allFiles = await listAllGoogleDriveAudioFiles(token, '', (count) => {
-        setSyncProgressText(`${count} MP3 trouvés…`);
-      });
+      setSyncProgressText('Analyse des MP3 (hors drumkit)…');
+      const { files: allFiles, excludedFileIds } = await listAllGoogleDriveAudioFilesWithExclusions(
+        token,
+        '',
+        (count) => {
+          setSyncProgressText(`${count} MP3 trouvés…`);
+        }
+      );
 
-      if (allFiles.length === 0) {
+      if (allFiles.length === 0 && excludedFileIds.length === 0) {
         notify('Aucun fichier MP3 trouvé sur ton Google Drive.');
         return;
       }
@@ -227,18 +234,25 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         };
       });
 
-      const { added, updated } = syncMusicTracksBatch(payload);
+      const { added, updated, removed } = syncMusicTracksBatch(payload, excludedFileIds);
       const uniqueProjects = new Set(
         allFiles.map((f) => parseTrackVersion({ title: f.name, sourceFilename: f.name }).groupKey)
       ).size;
 
-      if (added === 0 && updated === 0) {
-        notify(`Drive à jour (${allFiles.length} MP3 · ${uniqueProjects} projets) ✓`);
+      const drumkitNote =
+        removed > 0
+          ? ` · ${removed} sample${removed > 1 ? 's' : ''} drumkit retiré${removed > 1 ? 's' : ''}`
+          : excludedFileIds.length > 0
+          ? ` · dossier drumkit exclu`
+          : '';
+
+      if (added === 0 && updated === 0 && removed === 0) {
+        notify(`Drive à jour (${allFiles.length} MP3 · ${uniqueProjects} projets${drumkitNote}) ✓`);
       } else {
         notify(
           `${added} MP3 chargé${added > 1 ? 's' : ''}${
             updated > 0 ? ` · ${updated} mis à jour` : ''
-          } (${uniqueProjects} projets regroupés) ✓`
+          } (${uniqueProjects} projets${drumkitNote}) ✓`
         );
       }
     } catch (err) {
