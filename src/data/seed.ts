@@ -510,7 +510,7 @@ export function createSeedState(): AppState {
       weightGoalKg: 72.0,
       pronoteBridgeUrl: 'http://127.0.0.1:4789',
     },
-    updatedAt: Date.now(),
+    updatedAt: 0,
   };
 }
 

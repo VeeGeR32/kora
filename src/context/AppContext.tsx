@@ -28,6 +28,7 @@ import type {
 import { createEmptyState, createSeedState } from '../data/seed';
 import { uid } from '../utils/dates';
 import {
+  fetchCloudStateOnce,
   getEnvFirebaseConfig,
   listenAuthState,
   pushStateToCloud,
@@ -251,6 +252,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const toastTimer = useRef<number | null>(null);
   const cloudPushTimer = useRef<number | null>(null);
   const ignoreNextPushRef = useRef(false);
+  const cloudHydratedRef = useRef(false);
+  const latestStateRef = useRef(state);
+  latestStateRef.current = state;
 
   const resolvedFbConfig = state.preferences.firebaseConfig?.apiKey
     ? state.preferences.firebaseConfig
@@ -284,20 +288,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [cloudConfigured, resolvedFbConfig?.apiKey, resolvedFbConfig?.projectId]);
 
-  // Subscribe to remote Firestore state when authenticated
+  // Hydrate from Firestore FIRST on sign-in, then subscribe to live remote updates
   useEffect(() => {
+    cloudHydratedRef.current = false;
     if (!cloudUser || !cloudConfigured) return;
-    return subscribeCloudState(resolvedFbConfig, cloudUser.uid, (remote) => {
-      if ((remote.updatedAt || 0) > (state.updatedAt || 0)) {
-        ignoreNextPushRef.current = true;
-        setState(mergeWithSeed(remote));
+
+    let cancelled = false;
+    let unsub: (() => void) | null = null;
+
+    const hydrateAndSubscribe = async () => {
+      try {
+        setCloudSyncing(true);
+        const remote = await fetchCloudStateOnce(resolvedFbConfig, cloudUser.uid);
+        if (cancelled) return;
+
+        if (remote) {
+          // Always trust existing cloud data when signing in on a device!
+          ignoreNextPushRef.current = true;
+          setState(mergeWithSeed(remote));
+          setLastCloudSyncAt(Date.now());
+        } else {
+          // Brand new account in Firestore: seed initial state to cloud
+          await pushStateToCloud(resolvedFbConfig, cloudUser.uid, {
+            ...latestStateRef.current,
+            updatedAt: Date.now(),
+          });
+          setLastCloudSyncAt(Date.now());
+        }
+      } catch (err) {
+        console.error('[Kora Sync] Hydrate error:', err);
+      } finally {
+        if (!cancelled) {
+          cloudHydratedRef.current = true;
+          setCloudSyncing(false);
+          unsub = subscribeCloudState(resolvedFbConfig, cloudUser.uid, (remote) => {
+            const localTs = latestStateRef.current.updatedAt || 0;
+            if ((remote.updatedAt || 0) > localTs) {
+              ignoreNextPushRef.current = true;
+              setState(mergeWithSeed(remote));
+              setLastCloudSyncAt(Date.now());
+            }
+          });
+        }
       }
-    });
+    };
+
+    void hydrateAndSubscribe();
+
+    return () => {
+      cancelled = true;
+      if (unsub) unsub();
+    };
   }, [cloudUser?.uid, cloudConfigured]);
 
-  // Debounced push to Firestore when state changes
+  // Debounced push to Firestore ONLY after cloud hydration finished
   useEffect(() => {
-    if (!cloudUser || !cloudConfigured) return;
+    if (!cloudUser || !cloudConfigured || !cloudHydratedRef.current) return;
     if (ignoreNextPushRef.current) {
       ignoreNextPushRef.current = false;
       return;
@@ -313,7 +359,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } finally {
         setCloudSyncing(false);
       }
-    }, 1200);
+    }, 900);
     return () => {
       if (cloudPushTimer.current) window.clearTimeout(cloudPushTimer.current);
     };

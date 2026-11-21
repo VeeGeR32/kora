@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import {
   doc,
+  getDoc,
   initializeFirestore,
   getFirestore,
   onSnapshot,
@@ -161,6 +162,23 @@ export function listenAuthState(
   return onAuthStateChanged(bundle.auth, cb);
 }
 
+/** Deeply removes all `undefined` values because Firestore rejects `undefined` fields */
+function sanitizeForFirestore<T>(data: T): T {
+  return JSON.parse(JSON.stringify(data)) as T;
+}
+
+export async function fetchCloudStateOnce(
+  config: FirebaseUserConfig | null | undefined,
+  uid: string
+): Promise<AppState | null> {
+  const bundle = initFirebaseClient(config);
+  if (!bundle) return null;
+  const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
+  const snap = await getDoc(refDoc);
+  if (!snap.exists()) return null;
+  return snap.data() as AppState;
+}
+
 export async function pushStateToCloud(
   config: FirebaseUserConfig | null | undefined,
   uid: string,
@@ -169,7 +187,11 @@ export async function pushStateToCloud(
   const bundle = initFirebaseClient(config);
   if (!bundle) return;
   const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
-  await setDoc(refDoc, { ...state, updatedAt: Date.now() }, { merge: true });
+  const cleanPayload = sanitizeForFirestore({
+    ...state,
+    updatedAt: state.updatedAt || Date.now(),
+  });
+  await setDoc(refDoc, cleanPayload);
 }
 
 export function subscribeCloudState(
