@@ -242,6 +242,12 @@ export interface AudioMarker {
   label: string;
 }
 
+export interface MusicTrackTodo {
+  id: string;
+  label: string;
+  done: boolean;
+}
+
 export interface MusicTrack {
   id: string;
   title: string;
@@ -249,15 +255,22 @@ export interface MusicTrack {
   feat?: string;
   mediaId?: string; // IndexedDB audio blob key
   coverMediaId?: string; // IndexedDB cover image blob key
+  coverDataUrl?: string; // Optional compressed inline cover image
+  coverGradient?: string; // Optional gradient id
   cloudAudioUrl?: string;
   cloudCoverUrl?: string;
   googleDriveFileId?: string; // Google Drive file ID for cross-device MP3 sync
+  sourceFilename?: string; // Raw filename e.g. "Project_306_3.2.mp3" for version grouping
+  modifiedAt?: string; // Drive modifiedTime or last file edit ISO
   durationSec?: number;
   bpm?: number;
   musicalKey?: string;
   status: TrackStatus;
   tags: string[];
   markers: AudioMarker[];
+  isFavorite?: boolean;
+  description?: string;
+  todos?: MusicTrackTodo[];
   linkedLyricsId?: string;
   linkedProjectId?: string;
   addedAt: string;

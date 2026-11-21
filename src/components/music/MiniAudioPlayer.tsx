@@ -102,7 +102,9 @@ export function MiniAudioPlayer() {
 
   useEffect(() => {
     let active = true;
-    if (currentTrack?.coverMediaId) {
+    if (currentTrack?.coverDataUrl) {
+      setCoverUrl(currentTrack.coverDataUrl);
+    } else if (currentTrack?.coverMediaId) {
       getMediaObjectUrl(currentTrack.coverMediaId).then((url) => {
         if (active) setCoverUrl(url);
       });
@@ -121,6 +123,7 @@ export function MiniAudioPlayer() {
       active = false;
     };
   }, [
+    currentTrack?.coverDataUrl,
     currentTrack?.coverMediaId,
     currentTrack?.cloudCoverUrl,
     linkedProject?.coverDataUrl,
@@ -193,7 +196,7 @@ export function MiniAudioPlayer() {
     return () => window.cancelAnimationFrame(rafId);
   }, [currentTrack?.id, isPlaying, expanded, effectiveDuration, getLiveTime]);
 
-  const gradCls = getGradientClass(linkedProject?.coverGradient);
+  const gradCls = getGradientClass(currentTrack?.coverGradient || linkedProject?.coverGradient);
   const subtitle = [linkedProject?.title, currentTrack?.artist || state.preferences.name || 'Moi']
     .filter(Boolean)
     .join(' · ');

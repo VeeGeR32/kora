@@ -32,7 +32,7 @@ interface AudioPlayerContextValue {
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
 
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
-  const { state, notify } = useApp();
+  const { state, updateMusicTrack, notify } = useApp();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
   const [queue, setQueue] = useState<MusicTrack[]>([]);
@@ -89,12 +89,15 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       if (track.mediaId) {
         src = await getMediaObjectUrl(track.mediaId);
       }
+      if (!src && track.googleDriveFileId) {
+        src = await getMediaObjectUrl(`drive_${track.googleDriveFileId}`);
+      }
       if (!src && track.cloudAudioUrl) {
         src = track.cloudAudioUrl;
       }
       if (!src && track.googleDriveFileId) {
         try {
-          notify(`Téléchargement depuis Google Drive (« ${track.title} »)…`);
+          notify(`Chargement depuis Google Drive (« ${track.title} »)…`);
           const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
           const blob = await downloadGoogleDriveAudioBlob(token, track.googleDriveFileId);
           const cacheKey = track.mediaId || `drive_${track.googleDriveFileId}`;
@@ -184,7 +187,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
 
     const onLoadedMeta = () => {
-      if (isFinite(audio.duration)) setDuration(audio.duration);
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+        const cur = currentTrackRef.current;
+        if (cur && !cur.durationSec) {
+          updateMusicTrack(cur.id, { durationSec: Math.round(audio.duration) });
+        }
+      }
     };
 
     const onEnded = () => {

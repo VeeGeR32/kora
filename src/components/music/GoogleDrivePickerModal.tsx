@@ -18,9 +18,10 @@ import {
   downloadGoogleDriveAudioBlob,
   ensureGoogleDriveToken,
   getCachedDriveToken,
-  listGoogleDriveAudioFiles,
+  listAllGoogleDriveAudioFiles,
   type DriveAudioFile,
 } from '../../lib/googleDrive';
+import { getDeterministicGradientId, parseTrackVersion } from '../../lib/musicVersioning';
 import { saveMediaBlob } from '../../lib/mediaDb';
 import { useApp } from '../../context/AppContext';
 import { uid } from '../../utils/dates';
@@ -74,7 +75,7 @@ function readAudioDurationSafe(blob: Blob, timeoutMs = 2000): Promise<number> {
 }
 
 export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModalProps) {
-  const { state, addMusicTrack, notify } = useApp();
+  const { state, addMusicTrack, syncMusicTracksBatch, notify } = useApp();
 
   const [token, setToken] = useState<string | null>(() => getCachedDriveToken());
   const [files, setFiles] = useState<DriveAudioFile[]>([]);
@@ -114,7 +115,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
     setLoading(true);
     setError(null);
     try {
-      const list = await listGoogleDriveAudioFiles(activeToken, q);
+      const list = await listAllGoogleDriveAudioFiles(activeToken, q);
       setFiles(list);
     } catch (err) {
       setError((err as Error).message);
@@ -166,6 +167,39 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
     }
   };
 
+  const handleSyncAllInstant = () => {
+    if (files.length === 0 || importing) return;
+    const artist = state.preferences.name || 'Moi';
+    const nowIso = new Date().toISOString();
+    const payload = files.map((f) => {
+      const cleanTitle = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+      const parsed = parseTrackVersion({ title: cleanTitle, sourceFilename: f.name });
+      return {
+        title: cleanTitle || f.name,
+        artist,
+        googleDriveFileId: f.id,
+        sourceFilename: f.name,
+        modifiedAt: f.modifiedTime || nowIso,
+        coverGradient: getDeterministicGradientId(parsed.groupKey),
+        status: 'demo' as const,
+        tags: ['Google Drive'],
+        markers: [],
+        addedAt: f.modifiedTime || nowIso,
+      };
+    });
+    const { added, updated } = syncMusicTracksBatch(payload);
+    if (added === 0 && updated === 0) {
+      notify(`Tous tes ${files.length} MP3 Drive sont déjà synchronisés ✓`);
+    } else {
+      notify(
+        `${added} MP3 ajouté${added > 1 ? 's' : ''}${
+          updated > 0 ? ` · ${updated} mis à jour` : ''
+        } (versions groupées automatiquement) ✓`
+      );
+    }
+    onClose();
+  };
+
   const handleImportSelected = async () => {
     if (!token || selectedIds.size === 0 || importing) return;
     const chosen = sortedFiles.filter((f) => selectedIds.has(f.id));
@@ -183,17 +217,21 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
         await saveMediaBlob(mediaId, blob, file.name);
         const durationSec = await readAudioDurationSafe(blob);
 
-        const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
+        const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+        const parsed = parseTrackVersion({ title: cleanTitle, sourceFilename: file.name });
         addMusicTrack({
           title: cleanTitle,
           artist: state.preferences.name || 'Moi',
           mediaId,
           googleDriveFileId: file.id,
+          sourceFilename: file.name,
+          modifiedAt: file.modifiedTime || new Date().toISOString(),
+          coverGradient: getDeterministicGradientId(parsed.groupKey),
           durationSec: durationSec || undefined,
           status: 'demo',
           tags: ['Google Drive'],
           markers: [],
-          addedAt: new Date().toISOString(),
+          addedAt: file.modifiedTime || new Date().toISOString(),
         });
         importedCount++;
         setImportProgress({ done: importedCount, total: chosen.length, label: file.name });
@@ -425,13 +463,26 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
             </div>
 
             {token && (
-              <div className="px-5 py-3.5 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-2 bg-slate-50/60 dark:bg-zinc-950/40">
+              <div className="px-5 py-3.5 border-t border-slate-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2 bg-slate-50/60 dark:bg-zinc-950/40">
                 <span className="text-[11px] text-slate-500 truncate min-w-0">
                   {importProgress
                     ? `Import ${importProgress.done}/${importProgress.total} · ${importProgress.label}`
-                    : `${selectedIds.size} sélectionné${selectedIds.size > 1 ? 's' : ''}`}
+                    : selectedIds.size > 0
+                    ? `${selectedIds.size} sélectionné${selectedIds.size > 1 ? 's' : ''}`
+                    : `${sortedFiles.length} MP3 détectés`}
                 </span>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {sortedFiles.length > 0 && selectedIds.size === 0 && (
+                    <button
+                      type="button"
+                      disabled={importing || loading}
+                      onClick={handleSyncAllInstant}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-3.5 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer transition"
+                    >
+                      <CloudDownload size={13} />
+                      Tout charger ({sortedFiles.length})
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={onClose}
@@ -440,15 +491,17 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                   >
                     Fermer
                   </button>
-                  <button
-                    type="button"
-                    disabled={selectedIds.size === 0 || importing}
-                    onClick={() => void handleImportSelected()}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
-                  >
-                    {importing ? <Loader2 size={13} className="animate-spin" /> : <CloudDownload size={13} />}
-                    Importer
-                  </button>
+                  {selectedIds.size > 0 && (
+                    <button
+                      type="button"
+                      disabled={importing}
+                      onClick={() => void handleImportSelected()}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
+                    >
+                      {importing ? <Loader2 size={13} className="animate-spin" /> : <CloudDownload size={13} />}
+                      Importer ({selectedIds.size})
+                    </button>
+                  )}
                 </div>
               </div>
             )}

@@ -149,7 +149,12 @@ interface AppContextValue {
 
   // Music Studio & LexCore
   addMusicTrack: (track: Omit<MusicTrack, 'id'>) => string;
+  syncMusicTracksBatch: (incoming: Omit<MusicTrack, 'id'>[]) => { added: number; updated: number };
   updateMusicTrack: (id: string, patch: Partial<MusicTrack>) => void;
+  setTrackGroupFavorite: (trackIds: string[], isFavorite: boolean) => void;
+  addMusicTrackTodo: (trackId: string, label: string) => void;
+  toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
+  deleteMusicTrackTodo: (trackId: string, todoId: string) => void;
   addTrackMarker: (trackId: string, marker: Omit<AudioMarker, 'id'>) => void;
   deleteTrackMarker: (trackId: string, markerId: string) => void;
   deleteMusicTrack: (id: string) => void;
@@ -1195,10 +1200,130 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
+  const syncMusicTracksBatch = useCallback((incoming: Omit<MusicTrack, 'id'>[]) => {
+    const currentTracks = latestStateRef.current.musicTracks;
+    const byDriveId = new Map<string, number>();
+    currentTracks.forEach((t, idx) => {
+      if (t.googleDriveFileId) byDriveId.set(t.googleDriveFileId, idx);
+    });
+
+    let added = 0;
+    let updated = 0;
+    const nextTracks = [...currentTracks];
+    const toPrepend: MusicTrack[] = [];
+
+    for (const item of incoming) {
+      const driveId = item.googleDriveFileId;
+      if (driveId && byDriveId.has(driveId)) {
+        const idx = byDriveId.get(driveId)!;
+        if (idx >= 0) {
+          const existing = nextTracks[idx];
+          const needsMetaUpdate =
+            (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
+            (item.modifiedAt && existing.modifiedAt !== item.modifiedAt);
+          if (needsMetaUpdate) {
+            nextTracks[idx] = {
+              ...existing,
+              sourceFilename: item.sourceFilename || existing.sourceFilename,
+              modifiedAt: item.modifiedAt || existing.modifiedAt,
+            };
+            updated++;
+          }
+        }
+      } else {
+        toPrepend.push({ ...item, id: uid('trk') });
+        if (driveId) byDriveId.set(driveId, -1);
+        added++;
+      }
+    }
+
+    if (added > 0 || updated > 0) {
+      touch((prev) => {
+        // Re-apply cleanly onto latest prev state
+        const prevMap = new Map<string, number>();
+        const merged = [...prev.musicTracks];
+        merged.forEach((t, i) => {
+          if (t.googleDriveFileId) prevMap.set(t.googleDriveFileId, i);
+        });
+        const freshNew: MusicTrack[] = [];
+        for (const item of incoming) {
+          const driveId = item.googleDriveFileId;
+          if (driveId && prevMap.has(driveId)) {
+            const i = prevMap.get(driveId)!;
+            if (i >= 0) {
+              const ex = merged[i];
+              merged[i] = {
+                ...ex,
+                sourceFilename: item.sourceFilename || ex.sourceFilename,
+                modifiedAt: item.modifiedAt || ex.modifiedAt,
+              };
+            }
+          } else {
+            freshNew.push({ ...item, id: uid('trk') });
+            if (driveId) prevMap.set(driveId, -1);
+          }
+        }
+        return { ...prev, musicTracks: [...freshNew, ...merged] };
+      });
+    }
+
+    return { added, updated };
+  }, []);
+
   const updateMusicTrack = useCallback((id: string, patch: Partial<MusicTrack>) => {
     touch((prev) => ({
       ...prev,
       musicTracks: prev.musicTracks.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+    }));
+  }, []);
+
+  const setTrackGroupFavorite = useCallback((trackIds: string[], isFavorite: boolean) => {
+    const idSet = new Set(trackIds);
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        idSet.has(t.id) ? { ...t, isFavorite } : t
+      ),
+    }));
+  }, []);
+
+  const addMusicTrackTodo = useCallback((trackId: string, label: string) => {
+    const clean = label.trim();
+    if (!clean) return;
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        t.id === trackId
+          ? { ...t, todos: [...(t.todos || []), { id: uid('ttd'), label: clean, done: false }] }
+          : t
+      ),
+    }));
+  }, []);
+
+  const toggleMusicTrackTodo = useCallback((trackId: string, todoId: string) => {
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        t.id === trackId
+          ? {
+              ...t,
+              todos: (t.todos || []).map((td) =>
+                td.id === todoId ? { ...td, done: !td.done } : td
+              ),
+            }
+          : t
+      ),
+    }));
+  }, []);
+
+  const deleteMusicTrackTodo = useCallback((trackId: string, todoId: string) => {
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        t.id === trackId
+          ? { ...t, todos: (t.todos || []).filter((td) => td.id !== todoId) }
+          : t
+      ),
     }));
   }, []);
 
@@ -1663,7 +1788,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addWeight,
         deleteWeight,
         addMusicTrack,
+        syncMusicTracksBatch,
         updateMusicTrack,
+        setTrackGroupFavorite,
+        addMusicTrackTodo,
+        toggleMusicTrackTodo,
+        deleteMusicTrackTodo,
         addTrackMarker,
         deleteTrackMarker,
         deleteMusicTrack,
