@@ -43,7 +43,7 @@ function fmtAddedDate(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 async function resizeProjectCover(file: File, maxSize = 520): Promise<string> {
@@ -548,7 +548,7 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                               {trk.manualGroupTitle || trk.title}
                             </p>
                             <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-                              {fmtAddedDate(trk.addedAt) || trk.artist}
+                              {fmtAddedDate(trk.modifiedAt || trk.addedAt) || trk.artist}
                               {trk.bpm ? ` · ${trk.bpm} BPM` : ''}
                             </p>
                           </div>

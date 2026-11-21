@@ -54,7 +54,7 @@ function fmtDate(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: '2-digit' });
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 export function TrackDetailModal({
@@ -559,6 +559,15 @@ export function TrackDetailModal({
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
                       >
                         <span className="font-mono font-semibold">{v.versionLabel}</span>
+                        {(v.track.modifiedAt || v.track.addedAt) && (
+                          <span
+                            className={`font-mono text-[10px] ${
+                              selected ? 'opacity-70' : 'text-slate-400 dark:text-zinc-500'
+                            }`}
+                          >
+                            {fmtDate(v.track.modifiedAt || v.track.addedAt)}
+                          </span>
+                        )}
                         {v.isLatest && (
                           <span
                             className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
