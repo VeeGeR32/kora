@@ -247,7 +247,12 @@ function buildContextSummary(state: AppState): string {
 }
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
-const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.0-flash', 'gemini-2.5-flash'];
+const FALLBACK_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.8-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash-lite',
+];
 
 /** Cleans accidental whitespace/quotes while supporting BOTH legacy AIza... and new AQ.... keys */
 export function sanitizeGeminiApiKey(raw: string): string {
@@ -262,10 +267,10 @@ async function generateWithAutoRouting(
   const attempts: { vertexai: boolean; model: string }[] = [];
 
   if (cleanKey.startsWith('AQ.')) {
-    // New AQ. keys can belong to Vertex Express Mode OR Gemini Developer API
+    // New AQ. keys: try Express Mode first, then Developer API, across fallback models
     for (const model of FALLBACK_MODELS) {
-      attempts.push({ vertexai: false, model });
       attempts.push({ vertexai: true, model });
+      attempts.push({ vertexai: false, model });
     }
   } else {
     for (const model of FALLBACK_MODELS) {
@@ -291,6 +296,11 @@ async function generateWithAutoRouting(
         msg.includes('API_KEY_INVALID') ||
         msg.includes('NOT_FOUND') ||
         msg.includes('404') ||
+        msg.includes('503') ||
+        msg.includes('UNAVAILABLE') ||
+        msg.includes('high demand') ||
+        msg.includes('429') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
         msg.includes('UNAUTHENTICATED') ||
         msg.includes('not available');
       if (!isRetryable) throw err;
@@ -315,6 +325,13 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ ok: boolean; m
     return { ok: false, message: 'Réponse vide de Gemini' };
   } catch (err) {
     const rawMsg = (err as Error).message || 'Erreur Gemini';
+    if (rawMsg.includes('503') || rawMsg.includes('UNAVAILABLE') || rawMsg.includes('high demand')) {
+      return {
+        ok: true,
+        message:
+          'Clé reconnue par Google ✓ — pic de trafic temporaire (503) sur leurs serveurs, réessaie dans quelques secondes.',
+      };
+    }
     if (rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')) {
       return {
         ok: false,
