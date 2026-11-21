@@ -8,9 +8,12 @@ import {
   Pause,
   Play,
   Repeat,
+  Repeat1,
   Share2,
+  Shuffle,
   SkipBack,
   SkipForward,
+  Star,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -50,14 +53,15 @@ const MINI_BAR_STEP_PX = 3.5;
 const MINI_TAPE_PX = MINI_BAR_COUNT * MINI_BAR_STEP_PX;
 
 export function MiniAudioPlayer() {
-  const { state, notify } = useApp();
+  const { state, setTrackGroupFavorite, notify } = useApp();
   const {
     currentTrack,
     queue,
     isPlaying,
     currentTime,
     duration,
-    loop,
+    repeatMode,
+    shuffle,
     expanded,
     hasNext,
     hasPrev,
@@ -67,7 +71,8 @@ export function MiniAudioPlayer() {
     playPrev,
     togglePlay,
     seek,
-    setLoop,
+    cycleRepeatMode,
+    toggleShuffle,
     setExpanded,
     closePlayer,
   } = useAudioPlayer();
@@ -632,8 +637,28 @@ export function MiniAudioPlayer() {
                   )}
                 </div>
 
-                {/* Transport Row (Prev · Play/Pause · Next · Loop) */}
-                <div className="w-full flex items-center justify-around px-2 pt-1">
+                {/* Transport Row (Shuffle · Prev · Play/Pause · Next · Repeat Off/All/1) */}
+                <div className="w-full flex items-center justify-between px-1 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toggleShuffle();
+                      triggerHapticTick(10);
+                    }}
+                    title={shuffle ? 'Aléatoire activé' : 'Activer la lecture aléatoire'}
+                    aria-label="Aléatoire"
+                    className={`relative h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
+                      shuffle
+                        ? 'bg-white/15 text-amber-300'
+                        : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <Shuffle size={16} />
+                    {shuffle && (
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-300" />
+                    )}
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -680,17 +705,27 @@ export function MiniAudioPlayer() {
                   <button
                     type="button"
                     onClick={() => {
-                      setLoop(!loop);
+                      cycleRepeatMode();
                       triggerHapticTick(10);
                     }}
-                    title="Boucle"
-                    className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
-                      loop
-                        ? 'bg-white/16 text-amber-300'
+                    title={
+                      repeatMode === 'off'
+                        ? 'Pas de boucle (cliquer pour boucler la file / le projet)'
+                        : repeatMode === 'all'
+                        ? 'Boucle file / projet (cliquer pour boucler 1 morceau)'
+                        : 'Boucle 1 morceau (cliquer pour désactiver)'
+                    }
+                    aria-label="Mode boucle"
+                    className={`relative h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
+                      repeatMode !== 'off'
+                        ? 'bg-white/15 text-amber-300'
                         : 'text-zinc-400 hover:text-white hover:bg-white/10'
                     }`}
                   >
-                    <Repeat size={17} />
+                    {repeatMode === 'one' ? <Repeat1 size={17} /> : <Repeat size={17} />}
+                    {repeatMode !== 'off' && (
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-300" />
+                    )}
                   </button>
                 </div>
 
@@ -757,6 +792,39 @@ export function MiniAudioPlayer() {
                   >
                     <ListMusic size={15} />
                     <span>{queue.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const ids =
+                        currentGroup && currentGroup.allTrackIds.length > 0
+                          ? currentGroup.allTrackIds
+                          : [currentTrack.id];
+                      const nextFav = !(currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite));
+                      setTrackGroupFavorite(ids, nextFav);
+                      triggerHapticTick(10);
+                      notify(nextFav ? 'Ajouté aux favoris ★' : 'Retiré des favoris');
+                    }}
+                    title={
+                      (currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite))
+                        ? 'Retirer des favoris'
+                        : 'Ajouter aux favoris'
+                    }
+                    aria-label="Favori"
+                    className={`h-9 w-9 rounded-full inline-flex items-center justify-center transition cursor-pointer ${
+                      (currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite))
+                        ? 'text-amber-400 bg-amber-400/15'
+                        : 'text-white/85 hover:text-white hover:bg-white/12'
+                    }`}
+                  >
+                    <Star
+                      size={15}
+                      fill={
+                        (currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite))
+                          ? 'currentColor'
+                          : 'none'
+                      }
+                    />
                   </button>
                   <button
                     type="button"

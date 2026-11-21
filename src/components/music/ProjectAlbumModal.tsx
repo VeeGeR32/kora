@@ -511,11 +511,16 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                       <div className="flex items-center justify-between gap-3">
                         <button
                           type="button"
-                          onClick={() =>
-                            isCur
-                              ? player.togglePlay()
-                              : void player.playTrack(trk, 0, projectTracks)
-                          }
+                          onClick={() => {
+                            const sameQueue =
+                              player.queue.length === projectTracks.length &&
+                              player.queue.every((q, i) => q.id === projectTracks[i].id);
+                            if (isCur && sameQueue) {
+                              player.togglePlay();
+                            } else {
+                              void player.playTrack(trk, 0, projectTracks);
+                            }
+                          }}
                           className="flex items-center gap-4 min-w-0 flex-1 text-left cursor-pointer"
                         >
                           <span className="w-5 text-center font-mono text-xs text-slate-400 dark:text-zinc-500 shrink-0">

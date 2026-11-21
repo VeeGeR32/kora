@@ -17,6 +17,8 @@ function shuffleTracksFisherYates(tracks: MusicTrack[], avoidFirstId?: string): 
   return arr;
 }
 
+export type RepeatMode = 'off' | 'all' | 'one';
+
 interface AudioPlayerContextValue {
   currentTrack: MusicTrack | null;
   queue: MusicTrack[];
@@ -24,6 +26,8 @@ interface AudioPlayerContextValue {
   currentTime: number;
   duration: number;
   loop: boolean;
+  repeatMode: RepeatMode;
+  shuffle: boolean;
   expanded: boolean;
   abLoop: { start: number | null; end: number | null };
   hasNext: boolean;
@@ -38,6 +42,9 @@ interface AudioPlayerContextValue {
   pause: () => void;
   seek: (sec: number) => void;
   setLoop: (v: boolean) => void;
+  setRepeatMode: (mode: RepeatMode) => void;
+  cycleRepeatMode: () => void;
+  toggleShuffle: () => void;
   setExpanded: (v: boolean) => void;
   setAbLoop: (ab: { start: number | null; end: number | null }) => void;
   closePlayer: () => void;
@@ -55,26 +62,40 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [loop, setLoop] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
+  const [shuffle, setShuffle] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [abLoop, setAbLoop] = useState<{ start: number | null; end: number | null }>({
     start: null,
     end: null,
   });
 
-  const loopRef = useRef(loop);
+  const loop = repeatMode !== 'off';
+  const setLoop = useCallback((v: boolean) => {
+    setRepeatMode(v ? 'one' : 'off');
+  }, []);
+
+  const cycleRepeatMode = useCallback(() => {
+    setRepeatMode((prev) => (prev === 'off' ? 'all' : prev === 'all' ? 'one' : 'off'));
+  }, []);
+
+  const repeatModeRef = useRef<RepeatMode>(repeatMode);
+  const shuffleRef = useRef(shuffle);
   const abLoopRef = useRef(abLoop);
   const currentTrackRef = useRef(currentTrack);
   const queueRef = useRef(queue);
-  const isShuffledRef = useRef(false);
+  const baseQueueRef = useRef<MusicTrack[]>([]);
   const playRequestIdRef = useRef(0);
   const lastReportedSecRef = useRef(-1);
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    loopRef.current = loop;
-  }, [loop]);
+    repeatModeRef.current = repeatMode;
+  }, [repeatMode]);
+  useEffect(() => {
+    shuffleRef.current = shuffle;
+  }, [shuffle]);
   useEffect(() => {
     abLoopRef.current = abLoop;
   }, [abLoop]);
@@ -90,7 +111,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const currentIdx = currentTrack
     ? effectiveQueue.findIndex((t) => t.id === currentTrack.id)
     : -1;
-  const hasNext = effectiveQueue.length > 1 && currentIdx >= 0;
+  const hasNext =
+    (effectiveQueue.length > 1 && currentIdx >= 0) || state.musicTracks.length > 1;
   const hasPrev = effectiveQueue.length > 1 && currentIdx >= 0;
 
   const playTrack = useCallback(
@@ -98,22 +120,44 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       track: MusicTrack,
       startAtSec?: number,
       customQueue?: MusicTrack[],
-      keepShuffleMode = false
+      internalQueueSwap = false
     ) => {
       const audio = audioRef.current;
       if (!audio) return;
 
       const reqId = ++playRequestIdRef.current;
-      if (!keepShuffleMode && customQueue) {
-        isShuffledRef.current = false;
-      }
 
       if (customQueue && customQueue.length > 0) {
-        queueRef.current = customQueue;
-        setQueue(customQueue);
+        if (!internalQueueSwap) {
+          baseQueueRef.current = customQueue;
+          if (shuffleRef.current && customQueue.length > 1) {
+            const rest = shuffleTracksFisherYates(
+              customQueue.filter((t) => t.id !== track.id)
+            );
+            const nextQ = [track, ...rest];
+            queueRef.current = nextQ;
+            setQueue(nextQ);
+          } else {
+            queueRef.current = customQueue;
+            setQueue(customQueue);
+          }
+        } else {
+          queueRef.current = customQueue;
+          setQueue(customQueue);
+        }
       } else if (queueRef.current.length === 0 || !queueRef.current.some((t) => t.id === track.id)) {
-        queueRef.current = state.musicTracks;
-        setQueue(state.musicTracks);
+        baseQueueRef.current = state.musicTracks;
+        if (shuffleRef.current && state.musicTracks.length > 1) {
+          const rest = shuffleTracksFisherYates(
+            state.musicTracks.filter((t) => t.id !== track.id)
+          );
+          const nextQ = [track, ...rest];
+          queueRef.current = nextQ;
+          setQueue(nextQ);
+        } else {
+          queueRef.current = state.musicTracks;
+          setQueue(state.musicTracks);
+        }
       }
 
       // Immediately reflect track selection for zero-lag UI feedback
@@ -190,12 +234,36 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const playShuffled = useCallback(
     async (tracks: MusicTrack[]) => {
       if (tracks.length === 0) return;
+      baseQueueRef.current = tracks;
       const shuffled = shuffleTracksFisherYates(tracks, currentTrackRef.current?.id);
-      isShuffledRef.current = true;
+      shuffleRef.current = true;
+      setShuffle(true);
       await playTrack(shuffled[0], 0, shuffled, true);
     },
     [playTrack]
   );
+
+  const toggleShuffle = useCallback(() => {
+    const nextShuffle = !shuffleRef.current;
+    shuffleRef.current = nextShuffle;
+    setShuffle(nextShuffle);
+
+    const cur = currentTrackRef.current;
+    const base = baseQueueRef.current.length > 0 ? baseQueueRef.current : queueRef.current;
+    if (base.length <= 1) return;
+
+    if (nextShuffle) {
+      const rest = cur
+        ? shuffleTracksFisherYates(base.filter((t) => t.id !== cur.id))
+        : shuffleTracksFisherYates(base);
+      const nextQ = cur ? [cur, ...rest] : rest;
+      queueRef.current = nextQ;
+      setQueue(nextQ);
+    } else {
+      queueRef.current = base;
+      setQueue(base);
+    }
+  }, []);
 
   const restoreTrack = useCallback(
     (track: MusicTrack, startAtSec = 0, shouldExpand = false) => {
@@ -218,17 +286,37 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   const playNext = useCallback(() => {
     const activeQ = queueRef.current.length > 0 ? queueRef.current : state.musicTracks;
-    if (activeQ.length === 0) return;
     const cur = currentTrackRef.current;
     const idx = cur ? activeQ.findIndex((t) => t.id === cur.id) : -1;
-    // If we reached the end of a shuffled queue, reshuffle cleanly without repeating the last track
-    if (isShuffledRef.current && idx >= activeQ.length - 1 && activeQ.length > 1) {
-      const reshuffled = shuffleTracksFisherYates(activeQ, cur?.id);
-      void playTrack(reshuffled[0], 0, reshuffled, true);
+
+    // 1. More tracks remain in the current queue (e.g. next song in project)
+    if (idx >= 0 && idx < activeQ.length - 1) {
+      void playTrack(activeQ[idx + 1], 0, activeQ, true);
       return;
     }
-    const nextIdx = idx >= 0 ? (idx + 1) % activeQ.length : 0;
-    void playTrack(activeQ[nextIdx], 0, activeQ, isShuffledRef.current);
+
+    // 2. End of queue reached:
+    // If repeatMode === 'all', loop the current queue/project cleanly!
+    if (repeatModeRef.current === 'all' && activeQ.length > 0) {
+      if (shuffleRef.current && activeQ.length > 1) {
+        const base = baseQueueRef.current.length > 0 ? baseQueueRef.current : activeQ;
+        const reshuffled = shuffleTracksFisherYates(base, cur?.id);
+        void playTrack(reshuffled[0], 0, reshuffled, true);
+      } else {
+        void playTrack(activeQ[0], 0, activeQ, true);
+      }
+      return;
+    }
+
+    // 3. No more tracks in queue (and not looping the project) -> play randomly from library without repeating!
+    const playableLibrary = state.musicTracks.filter(
+      (t) => Boolean(t.mediaId || t.cloudAudioUrl || t.googleDriveFileId)
+    );
+    const pool = playableLibrary.length > 0 ? playableLibrary : state.musicTracks;
+    if (pool.length === 0) return;
+    baseQueueRef.current = pool;
+    const randomQueue = shuffleTracksFisherYates(pool, cur?.id);
+    void playTrack(randomQueue[0], 0, randomQueue, true);
   }, [state.musicTracks, playTrack]);
 
   const playPrev = useCallback(() => {
@@ -244,7 +332,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const cur = currentTrackRef.current;
     const idx = cur ? activeQ.findIndex((t) => t.id === cur.id) : 0;
     const prevIdx = idx > 0 ? idx - 1 : activeQ.length - 1;
-    void playTrack(activeQ[prevIdx], 0, activeQ, isShuffledRef.current);
+    void playTrack(activeQ[prevIdx], 0, activeQ, true);
   }, [state.musicTracks, playTrack]);
 
   useEffect(() => {
@@ -266,7 +354,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       }
       const { start, end } = abLoopRef.current;
       if (end !== null && t >= end) {
-        if (loopRef.current) {
+        if (repeatModeRef.current !== 'off') {
           audio.currentTime = start ?? 0;
           void audio.play().catch(() => {});
         } else {
@@ -287,16 +375,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
 
     const onEnded = () => {
-      if (loopRef.current) {
+      if (repeatModeRef.current === 'one') {
         audio.currentTime = abLoopRef.current.start ?? 0;
         void audio.play().catch(() => {});
       } else {
-        const activeQ = queueRef.current;
-        if (activeQ.length > 1) {
-          playNextRef.current();
-        } else {
-          setIsPlaying(false);
-        }
+        playNextRef.current();
       }
     };
 
@@ -473,6 +556,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       currentTime,
       duration,
       loop,
+      repeatMode,
+      shuffle,
       expanded,
       abLoop,
       hasNext,
@@ -487,6 +572,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       pause,
       seek,
       setLoop,
+      setRepeatMode,
+      cycleRepeatMode,
+      toggleShuffle,
       setExpanded: setExpandedSynced,
       setAbLoop,
       closePlayer,
@@ -499,6 +587,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       currentTime,
       duration,
       loop,
+      repeatMode,
+      shuffle,
       expanded,
       abLoop,
       hasNext,
@@ -512,6 +602,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       togglePlay,
       pause,
       seek,
+      setLoop,
+      cycleRepeatMode,
+      toggleShuffle,
       setExpandedSynced,
       closePlayer,
       syncTrackMetadata,
