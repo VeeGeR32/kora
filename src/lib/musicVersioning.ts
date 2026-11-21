@@ -414,12 +414,14 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
     // 1) explicit manualGroupTitle if set on any track in the group
     // 2) auto-parsed baseTitle of a track whose natural groupKey matches this bucket (so manually attached tracks inherit the target song's title!)
     // 3) latest entry's parsed baseTitle
-    const manualTitleTrack = entries.find((e) => Boolean(e.track.manualGroupTitle));
+    const manualTitle =
+      latest.track.manualGroupTitle?.trim() ||
+      entries.find((e) => Boolean(e.track.manualGroupTitle?.trim()))?.track.manualGroupTitle?.trim();
     const nativeOwner = entries.find(
       (e) => !e.track.manualGroupKey || e.track.manualGroupKey === groupKey
     );
     const baseTitle =
-      manualTitleTrack?.track.manualGroupTitle ||
+      manualTitle ||
       nativeOwner?.parsed.baseTitle ||
       latest.parsed.baseTitle;
 

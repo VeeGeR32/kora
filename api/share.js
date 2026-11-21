@@ -403,7 +403,7 @@ export default async function handler(req, res) {
       const ownerName = state.preferences?.name || 'Artiste';
       const publicTracks = resolved.tracks.map((t) => ({
         id: t.id,
-        title: t.title,
+        title: t.manualGroupTitle || t.title,
         artist: t.artist || ownerName,
         durationSec: t.durationSec || 0,
         coverDataUrl: t.coverDataUrl || t.cloudCoverUrl || null,

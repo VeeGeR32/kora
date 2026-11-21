@@ -255,12 +255,22 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
   }, []);
 
+  // Keep currentTrack metadata live-synced when renamed/favorited/edited in AppContext
+  useEffect(() => {
+    setCurrentTrack((prev) => {
+      if (!prev) return prev;
+      const latest = state.musicTracks.find((t) => t.id === prev.id);
+      if (!latest || latest === prev) return prev;
+      return latest;
+    });
+  }, [state.musicTracks]);
+
   // Native iOS Lock Screen & AirPods MediaSession integration
   useEffect(() => {
     if (!currentTrack || typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.title,
+        title: currentTrack.manualGroupTitle || currentTrack.title,
         artist: currentTrack.artist || 'Kora Music',
       });
       navigator.mediaSession.setActionHandler('play', () => void audioRef.current?.play().catch(() => {}));

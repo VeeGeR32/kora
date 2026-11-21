@@ -3,6 +3,7 @@ import {
   Check,
   ChevronRight,
   Disc3,
+  Edit3,
   FileText,
   FolderKanban,
   GitBranch,
@@ -59,6 +60,7 @@ export function TrackContextMenu({
 }: TrackContextMenuProps) {
   const {
     state,
+    renameTrackGroup,
     setTrackGroupFavorite,
     updateMusicTrack,
     updateMusicProject,
@@ -67,10 +69,12 @@ export function TrackContextMenu({
   } = useApp();
   const player = useAudioPlayer();
 
-  const [openSection, setOpenSection] = useState<'versions' | 'projects' | null>(null);
+  const [openSection, setOpenSection] = useState<'versions' | 'projects' | 'rename' | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
 
   useEffect(() => {
     setOpenSection(menu?.initialSection ?? null);
+    setRenameDraft(menu?.group.baseTitle || '');
   }, [menu]);
 
   useEffect(() => {
@@ -182,6 +186,48 @@ export function TrackContextMenu({
             )}
             <span className="font-medium">{isPlaying ? 'Mettre en pause' : 'Écouter'}</span>
           </button>
+
+          {/* Rename Song (without touching version names!) */}
+          <div>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenSection((s) => (s === 'rename' ? null : 'rename'))
+              }
+              className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+            >
+              <Edit3 size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
+              <span className="font-medium">Renommer le son</span>
+            </button>
+            {openSection === 'rename' && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const clean = renameDraft.trim();
+                  if (!clean) return;
+                  renameTrackGroup(allIds, clean);
+                  notify(`Son renommé en « ${clean} » (versions conservées) ✓`);
+                  onClose();
+                }}
+                className="mt-0.5 mb-1 mx-1 flex items-center gap-1 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 p-1"
+              >
+                <input
+                  autoFocus
+                  type="text"
+                  value={renameDraft}
+                  onChange={(e) => setRenameDraft(e.target.value)}
+                  placeholder="Nouveau nom du son…"
+                  className="flex-1 min-w-0 bg-transparent px-2 py-1 text-xs text-slate-900 dark:text-zinc-100 outline-none"
+                />
+                <button
+                  type="submit"
+                  className="h-6 px-2 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 text-[10px] font-semibold cursor-pointer shrink-0"
+                >
+                  OK
+                </button>
+              </form>
+            )}
+          </div>
 
           {/* Public Share Link (zero login for recipient!) */}
           <button

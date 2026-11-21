@@ -468,7 +468,9 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                         >
                           <span className="flex items-center gap-2 min-w-0">
                             <Music2 size={13} className="text-fuchsia-500 shrink-0" />
-                            <span className="text-xs font-medium truncate">{t.title}</span>
+                            <span className="text-xs font-medium truncate">
+                              {t.manualGroupTitle || t.title}
+                            </span>
                           </span>
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300 shrink-0">
                             <Plus size={12} /> Ajouter
@@ -523,7 +525,7 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
                                   : 'text-slate-900 dark:text-zinc-100'
                               }`}
                             >
-                              {trk.title}
+                              {trk.manualGroupTitle || trk.title}
                             </p>
                             <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
                               {fmtAddedDate(trk.addedAt) || trk.artist}

@@ -17,6 +17,7 @@ import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { triggerHapticTick } from '../../lib/haptics';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { parseTrackVersion } from '../../lib/musicVersioning';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
   { id: 'pink', label: 'Untitled Pink', css: 'from-pink-300 via-fuchsia-400 to-fuchsia-600' },
@@ -199,7 +200,19 @@ export function MiniAudioPlayer() {
   }, [currentTrack?.id, isPlaying, expanded, effectiveDuration, getLiveTime]);
 
   const gradCls = getGradientClass(currentTrack?.coverGradient || linkedProject?.coverGradient);
-  const subtitle = [linkedProject?.title, currentTrack?.artist || state.preferences.name || 'Moi']
+  const parsedCurrent = useMemo(
+    () => (currentTrack ? parseTrackVersion(currentTrack) : null),
+    [currentTrack]
+  );
+  const displayTrackTitle =
+    currentTrack?.manualGroupTitle || parsedCurrent?.baseTitle || currentTrack?.title || '';
+  const versionSuffix =
+    parsedCurrent && parsedCurrent.versionLabel !== 'Original' ? parsedCurrent.versionLabel : '';
+  const subtitle = [
+    versionSuffix,
+    linkedProject?.title,
+    currentTrack?.artist || state.preferences.name || 'Moi',
+  ]
     .filter(Boolean)
     .join(' · ');
   const canPlay = Boolean(
@@ -356,7 +369,7 @@ export function MiniAudioPlayer() {
 
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-white truncate leading-tight">
-                    {currentTrack.title}
+                    {displayTrackTitle}
                   </p>
                   <p className="text-[10px] text-zinc-400 truncate mt-0.5">{subtitle}</p>
                 </div>
@@ -462,7 +475,7 @@ export function MiniAudioPlayer() {
                 {/* Title & Subtitle */}
                 <div className="w-full text-center space-y-0.5 px-2">
                   <h2 className="text-[15px] font-semibold tracking-tight text-white truncate">
-                    {currentTrack.title}
+                    {displayTrackTitle}
                   </h2>
                   <p className="text-xs text-zinc-400 truncate">{subtitle}</p>
                 </div>
@@ -664,7 +677,9 @@ export function MiniAudioPlayer() {
                                 <span className="font-mono text-[10px] opacity-60 w-4">
                                   {String(i + 1).padStart(2, '0')}
                                 </span>
-                                <span className="text-xs font-medium truncate">{t.title}</span>
+                                <span className="text-xs font-medium truncate">
+                                  {t.manualGroupTitle || t.title}
+                                </span>
                               </span>
                               {t.durationSec ? (
                                 <span className="font-mono text-[10px] opacity-60 shrink-0">

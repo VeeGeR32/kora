@@ -89,6 +89,7 @@ export function TrackDetailModal({
   const {
     state,
     updateMusicTrack,
+    renameTrackGroup,
     setTrackGroupFavorite,
     addMusicTrackTodo,
     toggleMusicTrackTodo,
@@ -105,6 +106,11 @@ export function TrackDetailModal({
   const [todoInput, setTodoInput] = useState('');
   const [markerLabel, setMarkerLabel] = useState('');
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [songTitleDraft, setSongTitleDraft] = useState('');
+
+  useEffect(() => {
+    setSongTitleDraft(group?.baseTitle || '');
+  }, [group?.groupKey, group?.baseTitle]);
 
   const activeEntry = useMemo(() => {
     if (!group) return null;
@@ -281,12 +287,19 @@ export function TrackDetailModal({
                 <div>
                   <input
                     type="text"
-                    value={track.title}
-                    onChange={(e) => updateMusicTrack(track.id, { title: e.target.value })}
+                    value={songTitleDraft}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSongTitleDraft(val);
+                      renameTrackGroup(allGroupTrackIds, val);
+                    }}
+                    placeholder="Nom du son…"
+                    title="Renomme le son sans modifier le nom de ses versions"
                     className="w-full bg-transparent text-lg font-bold tracking-tight text-slate-900 dark:text-zinc-50 outline-none border-b border-transparent focus:border-slate-300 dark:focus:border-zinc-700 pb-0.5 text-center sm:text-left"
                   />
                   <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 truncate">
-                    {group.baseTitle}
+                    Version : <span className="font-mono text-slate-600 dark:text-zinc-300">{activeEntry.versionLabel}</span>
+                    {track.sourceFilename ? ` · ${track.sourceFilename}` : ''}
                     {track.durationSec ? ` · ${fmt(track.durationSec)}` : ''}
                     {track.modifiedAt || track.addedAt
                       ? ` · ${fmtDate(track.modifiedAt || track.addedAt)}`

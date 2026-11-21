@@ -157,6 +157,7 @@ interface AppContextValue {
     excludedDriveIds?: string[]
   ) => { added: number; updated: number; removed: number };
   updateMusicTrack: (id: string, patch: Partial<MusicTrack>) => void;
+  renameTrackGroup: (trackIds: string[], newTitle: string) => void;
   setTrackGroupFavorite: (trackIds: string[], isFavorite: boolean) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
@@ -1299,6 +1300,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const renameTrackGroup = useCallback((trackIds: string[], newTitle: string) => {
+    const idSet = new Set(trackIds);
+    const clean = newTitle.trim();
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        idSet.has(t.id) ? { ...t, manualGroupTitle: clean || undefined } : t
+      ),
+    }));
+  }, []);
+
   const setTrackGroupFavorite = useCallback((trackIds: string[], isFavorite: boolean) => {
     const idSet = new Set(trackIds);
     touch((prev) => ({
@@ -1898,6 +1910,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addMusicTrack,
         syncMusicTracksBatch,
         updateMusicTrack,
+        renameTrackGroup,
         setTrackGroupFavorite,
         addMusicTrackTodo,
         toggleMusicTrackTodo,
