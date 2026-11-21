@@ -8,6 +8,8 @@ export interface ParsedTrackVersion {
   numericParts: number[] | null;
   /** True when the track has no suffix at all */
   isBaseOriginal: boolean;
+  /** True when this file is the song's instrumental/prod (e.g. "Project_306_prod.mp3") */
+  isProd: boolean;
   /** Composite version score used when timestamps are close (same upload batch) */
   versionScore: number;
 }
@@ -26,6 +28,13 @@ export interface TrackGroup {
   latestTrack: MusicTrack;
   latestVersionLabel: string;
   versions: TrackVersionEntry[];
+  /** Dedicated linked prod/instrumental track (e.g. "Project_306_prod.mp3") when available */
+  prodTrack: MusicTrack | null;
+  prodTracks: TrackVersionEntry[];
+  /** Every track ID in this group (vocal versions + prod tracks) */
+  allTrackIds: string[];
+  /** Detected Google Drive year/season folder e.g. "2024/2025" */
+  yearFolder?: string;
   isFavorite: boolean;
   latestTimestampMs: number;
   hasMultipleVersions: boolean;
@@ -82,6 +91,13 @@ const SEPARATED_NUM_RE = /[\s_-]+(\d{1,2}(?:\.\d+)*)$/;
 const ATTACHED_NUM_RE = /^(.+?[a-zA-ZÀ-ÿ]{2,})(\d{1,2}(?:\.\d+)?)$/;
 
 const ATTACHED_NUM_IGNORE = /(?:mp3|mp4|wav|m4a|3d|4k|808|909)$/i;
+
+const SONG_PROD_SUFFIX_RE =
+  /(?:^|[\s_-])(?:prod|instru|instrumental)(?:[\s._-]*(?:v?\d+(?:\.\d+)?))?$|[\(\[]\s*(?:prod|instru|instrumental)\s*[\)\]]$/i;
+
+export function isProdSuffixText(text: string): boolean {
+  return SONG_PROD_SUFFIX_RE.test((text || '').trim());
+}
 
 function stripAudioExtension(raw: string): string {
   return raw.replace(/\.(mp3|wav|m4a|flac|aac|ogg)$/i, '').trim();
@@ -157,9 +173,11 @@ export function parseTrackVersion(
     let versionLabel = isCopy ? 'Copie' : 'Original';
     let numericParts: number[] | null = [0];
     let versionScore = isCopy ? 5 : 10;
+    let isProd = false;
 
     if (suffix) {
       const cleanedSuffix = normalizeDisplayTitle(suffix);
+      isProd = isProdSuffixText(cleanedSuffix);
       const exactNum = parseNumericTuple(cleanedSuffix);
       if (exactNum) {
         versionLabel = `v${exactNum.join('.')}${isCopy ? ' (copie)' : ''}`;
@@ -185,6 +203,7 @@ export function parseTrackVersion(
       versionLabel,
       numericParts,
       isBaseOriginal: !suffix && !isCopy,
+      isProd,
       versionScore,
     });
   }
@@ -297,6 +316,10 @@ export function parseTrackVersion(
     versionLabel = `${versionLabel} (copie)`;
   }
 
+  const isProd = peeledTokens.some((tok) =>
+    /^\(?\s*(?:prod|instru|instrumental)\s*\)?$/i.test(tok.trim())
+  );
+
   const versionScore = isBaseOriginal
     ? 10
     : isCopy && peeledTokens.length === 0
@@ -309,6 +332,7 @@ export function parseTrackVersion(
     versionLabel,
     numericParts: isBaseOriginal ? [0] : numericParts,
     isBaseOriginal,
+    isProd,
     versionScore,
   });
 }
@@ -405,14 +429,22 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
 
   for (const [groupKey, entries] of buckets.entries()) {
     entries.sort(compareVersionsDesc);
-    if (entries.length > 0) {
-      entries[0].isLatest = true;
+
+    const songEntries = entries.filter((e) => !e.parsed.isProd);
+    const prodEntries = entries.filter((e) => e.parsed.isProd);
+    const activeVersions = songEntries.length > 0 ? songEntries : prodEntries;
+
+    if (activeVersions.length > 0) {
+      activeVersions[0].isLatest = true;
     }
 
-    const latest = entries[0];
+    const latest = activeVersions[0];
+    const prodTrack = prodEntries[0]?.track || null;
+    const allTrackIds = entries.map((e) => e.track.id);
+
     // Pick the cleanest display title for the group:
     // 1) explicit manualGroupTitle if set on any track in the group
-    // 2) auto-parsed baseTitle of a track whose natural groupKey matches this bucket (so manually attached tracks inherit the target song's title!)
+    // 2) auto-parsed baseTitle of a track whose natural groupKey matches this bucket
     // 3) latest entry's parsed baseTitle
     const manualTitle =
       latest.track.manualGroupTitle?.trim() ||
@@ -424,6 +456,11 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
       manualTitle ||
       nativeOwner?.parsed.baseTitle ||
       latest.parsed.baseTitle;
+
+    const yearFolder =
+      latest.track.driveYearFolder ||
+      entries.find((e) => Boolean(e.track.driveYearFolder))?.track.driveYearFolder ||
+      undefined;
 
     const isFavorite = entries.some((e) => Boolean(e.track.isFavorite));
     const latestTimestampMs = entries.reduce((max, e) => Math.max(max, e.timestampMs), 0);
@@ -441,10 +478,14 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
       baseTitle,
       latestTrack: latest.track,
       latestVersionLabel: latest.versionLabel,
-      versions: entries,
+      versions: activeVersions,
+      prodTrack,
+      prodTracks: prodEntries,
+      allTrackIds,
+      yearFolder,
       isFavorite,
       latestTimestampMs,
-      hasMultipleVersions: entries.length > 1,
+      hasMultipleVersions: activeVersions.length > 1,
       todoDone,
       todoTotal,
       description,

@@ -1273,7 +1273,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const existing = nextTracks[idx];
             const needsMetaUpdate =
               (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
-              (item.modifiedAt && existing.modifiedAt !== item.modifiedAt);
+              (item.modifiedAt && existing.modifiedAt !== item.modifiedAt) ||
+              (item.driveYearFolder && existing.driveYearFolder !== item.driveYearFolder);
             if (needsMetaUpdate) {
               const oldAutoTitle = (existing.sourceFilename || '')
                 .replace(/\.[^/.]+$/, '')
@@ -1286,6 +1287,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 ...existing,
                 ...(shouldUpdateTitle ? { title: item.title } : {}),
                 sourceFilename: item.sourceFilename || existing.sourceFilename,
+                driveYearFolder: item.driveYearFolder || existing.driveYearFolder,
                 modifiedAt: item.modifiedAt || existing.modifiedAt,
               };
               updated++;
@@ -1323,6 +1325,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   ...ex,
                   ...(shouldUpdateTitle ? { title: item.title } : {}),
                   sourceFilename: item.sourceFilename || ex.sourceFilename,
+                  driveYearFolder: item.driveYearFolder || ex.driveYearFolder,
                   modifiedAt: item.modifiedAt || ex.modifiedAt,
                 };
               }
@@ -1373,6 +1376,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             artist,
             googleDriveFileId: f.id,
             sourceFilename: f.name,
+            driveYearFolder: f.yearFolder,
             modifiedAt: f.modifiedTime || nowIso,
             coverGradient: getDeterministicGradientId(parsed.groupKey),
             status: 'demo' as const,

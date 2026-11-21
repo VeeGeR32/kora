@@ -10,6 +10,7 @@ import {
   ImagePlus,
   Link2,
   ListChecks,
+  Music2,
   Pause,
   Play,
   Share2,
@@ -111,7 +112,9 @@ export function TrackContextMenu({
 
   const isCurrent = player.currentTrack?.id === track.id;
   const isPlaying = isCurrent && player.isPlaying;
-  const allIds = group.versions.map((v) => v.track.id);
+  const isCurrentProd = Boolean(group.prodTrack && player.currentTrack?.id === group.prodTrack.id);
+  const isPlayingProd = isCurrentProd && player.isPlaying;
+  const allIds = group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
   const todos = track.todos || [];
   const todoDone = todos.filter((t) => t.done).length;
 
@@ -190,6 +193,28 @@ export function TrackContextMenu({
             )}
             <span className="font-medium">{isPlaying ? 'Mettre en pause' : 'Écouter'}</span>
           </button>
+
+          {/* Play Linked Prod (when a *_prod file exists for this song!) */}
+          {group.prodTrack && group.prodTrack.id !== track.id && (
+            <button
+              type="button"
+              onClick={() => {
+                if (isCurrentProd) player.togglePlay();
+                else void player.playTrack(group.prodTrack!, 0, [track, group.prodTrack!]);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
+            >
+              {isPlayingProd ? (
+                <Pause size={14} className="shrink-0" />
+              ) : (
+                <Music2 size={14} className="shrink-0" />
+              )}
+              <span className="font-semibold">
+                {isPlayingProd ? 'Pause (Prod)' : 'Lancer la prod (instru)'}
+              </span>
+            </button>
+          )}
 
           {/* Rename Song (without touching version names!) */}
           <div>

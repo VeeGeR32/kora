@@ -8,6 +8,7 @@ export interface DriveAudioFile {
   sizeBytes: number;
   modifiedTime: string;
   parents?: string[];
+  yearFolder?: string; // e.g. "2024/2025" from Drive folder "24/25"
 }
 
 export interface PermanentDriveInfo {
@@ -176,12 +177,14 @@ export async function ensureGoogleDriveToken(
 const EXCLUDED_FOLDER_REGEX =
   /(?:drum[\s_-]*kits?|\bprods?\b|\binstrus?\b|\binstrumentals?\b|\bbeats?\b|\btype[\s_-]*beats?\b|\bsamples?\b)/i;
 
+// Excludes downloaded YouTube type beats / free beats / generic instrumentals,
+// while KEEPING song-specific `*_prod.mp3` files (e.g. "Project_306_prod.mp3", "FOLIE_prod.mp3")
+// so the user can launch a track's linked prod directly!
 const EXCLUDED_PROD_FILENAME_REGEX =
-  /(?:ytmp3(?:free)?|y2mate|notube|mp3juice|ssyoutube|savefrom|type[\s_-]*beat|free[\s_-]+(?:for[\s_-]+profit|beat)|\[[\s]*free[\s]*\]|\([\s]*free[\s]*\)|^free[\s_-]+|\b(?:instrumental|instru)\b|(?:^|[\s_-])prods?(?:\.mp3|\b))/i;
+  /(?:ytmp3(?:free)?|y2mate|notube|mp3juice|ssyoutube|savefrom|type[\s_-]*beat|free[\s_-]+(?:for[\s_-]+profit|beat)|\[[\s]*free[\s]*\]|\([\s]*free[\s]*\)|^free[\s_-]+)/i;
 
 /**
- * Returns true if a filename or track title looks like a downloaded prod / type beat / instrumental
- * (e.g. "ytmp3free.cc free ...", "... type beat ...", "..._prod.mp3").
+ * Returns true if a filename or track title looks like a downloaded YouTube type beat / free beat.
  */
 export function isExcludedProdName(raw: string): boolean {
   if (!raw) return false;
@@ -189,10 +192,39 @@ export function isExcludedProdName(raw: string): boolean {
 }
 
 /**
- * Finds all Google Drive folder IDs named "drumkit" or "prod(s)" / "instru(s)" / "beats" (case-insensitive)
- * plus every nested subfolder inside them so samples & prods are excluded from Music.
+ * Parses Google Drive year/season folder names like:
+ * - "23/24", "24/25", "25/26", "26/27" -> "2023/2024", "2024/2025", "2025/2026", "2026/2027"
+ * - "2024/2025", "2024-2025" -> "2024/2025"
+ * - "2024", "2025" -> "2024", "2025"
  */
-async function getExcludedDrumkitFolderIds(token: string): Promise<Set<string>> {
+export function parseDriveYearFolderName(folderName: string): string | null {
+  const clean = (folderName || '').trim();
+  const rangeMatch = clean.match(/^(?:20)?(\d{2})\s*[/\-_]\s*(?:20)?(\d{2})$/);
+  if (rangeMatch) {
+    const y1 = 2000 + parseInt(rangeMatch[1], 10);
+    const y2 = 2000 + parseInt(rangeMatch[2], 10);
+    if (y1 >= 2010 && y1 <= 2099 && y2 >= y1 && y2 <= y1 + 2) {
+      return `${y1}/${y2}`;
+    }
+  }
+  const singleMatch = clean.match(/^(20\d{2})$/);
+  if (singleMatch) {
+    return singleMatch[1];
+  }
+  return null;
+}
+
+interface DriveFolderIndex {
+  excludedFolders: Set<string>;
+  yearByFolderId: Map<string, string>;
+}
+
+/**
+ * Indexes all Google Drive folders to:
+ * 1) Exclude drumkit / prods / beats / instrus folders + all their subfolders.
+ * 2) Map every folder (and its nested subfolders) to its ancestor year/season folder (e.g. "24/25" -> "2024/2025").
+ */
+async function buildDriveFolderIndex(token: string): Promise<DriveFolderIndex> {
   const allFolders: { id: string; name: string; parents?: string[] }[] = [];
   let nextPageToken: string | undefined;
 
@@ -217,12 +249,17 @@ async function getExcludedDrumkitFolderIds(token: string): Promise<Set<string>> 
     nextPageToken = data.nextPageToken;
   }
 
-  const excluded = new Set<string>();
+  const excludedFolders = new Set<string>();
+  const yearByFolderId = new Map<string, string>();
   const childrenByParent = new Map<string, string[]>();
 
   for (const folder of allFolders) {
     if (EXCLUDED_FOLDER_REGEX.test(folder.name || '')) {
-      excluded.add(folder.id);
+      excludedFolders.add(folder.id);
+    }
+    const yearLabel = parseDriveYearFolderName(folder.name || '');
+    if (yearLabel) {
+      yearByFolderId.set(folder.id, yearLabel);
     }
     if (folder.parents) {
       for (const pid of folder.parents) {
@@ -233,21 +270,47 @@ async function getExcludedDrumkitFolderIds(token: string): Promise<Set<string>> 
     }
   }
 
-  // BFS to include every subfolder nested inside any drumkit folder
-  const queue = Array.from(excluded);
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
+  // BFS to propagate exclusions to all nested subfolders
+  const exclQueue = Array.from(excludedFolders);
+  while (exclQueue.length > 0) {
+    const cur = exclQueue.shift()!;
     const kids = childrenByParent.get(cur);
     if (!kids) continue;
     for (const kid of kids) {
-      if (!excluded.has(kid)) {
-        excluded.add(kid);
-        queue.push(kid);
+      if (!excludedFolders.has(kid)) {
+        excludedFolders.add(kid);
+        exclQueue.push(kid);
       }
     }
   }
 
-  return excluded;
+  // BFS to propagate year/season label to all nested subfolders inside "24/25", "25/26", etc.
+  const yearQueue = Array.from(yearByFolderId.entries());
+  while (yearQueue.length > 0) {
+    const [curId, label] = yearQueue.shift()!;
+    const kids = childrenByParent.get(curId);
+    if (!kids) continue;
+    for (const kid of kids) {
+      if (!yearByFolderId.has(kid)) {
+        yearByFolderId.set(kid, label);
+        yearQueue.push([kid, label]);
+      }
+    }
+  }
+
+  return { excludedFolders, yearByFolderId };
+}
+
+function resolveFileYearFolder(
+  parents: string[] | undefined,
+  yearByFolderId: Map<string, string>
+): string | undefined {
+  if (!parents) return undefined;
+  for (const pid of parents) {
+    const found = yearByFolderId.get(pid);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 export async function listGoogleDriveAudioFiles(
@@ -255,15 +318,20 @@ export async function listGoogleDriveAudioFiles(
   searchQuery = '',
   pageToken?: string
 ): Promise<DriveAudioFile[]> {
-  const [excludedFolders, page] = await Promise.all([
-    getExcludedDrumkitFolderIds(token),
+  const [folderIdx, page] = await Promise.all([
+    buildDriveFolderIndex(token),
     fetchGoogleDriveAudioPage(token, searchQuery, pageToken, 100),
   ]);
-  return page.files.filter(
-    (f) =>
-      !f.parents?.some((pid) => excludedFolders.has(pid)) &&
-      !isExcludedProdName(f.name)
-  );
+  return page.files
+    .filter(
+      (f) =>
+        !f.parents?.some((pid) => folderIdx.excludedFolders.has(pid)) &&
+        !isExcludedProdName(f.name)
+    )
+    .map((f) => ({
+      ...f,
+      yearFolder: resolveFileYearFolder(f.parents, folderIdx.yearByFolderId),
+    }));
 }
 
 async function fetchGoogleDriveAudioPage(
@@ -361,7 +429,7 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
   onPageLoaded?: (totalSoFar: number) => void,
   maxPages = 10
 ): Promise<{ files: DriveAudioFile[]; excludedFileIds: string[] }> {
-  const excludedFolders = await getExcludedDrumkitFolderIds(token);
+  const { excludedFolders, yearByFolderId } = await buildDriveFolderIndex(token);
   const all: DriveAudioFile[] = [];
   const excludedFileIds: string[] = [];
   const seen = new Set<string>();
@@ -375,7 +443,10 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
       if (f.parents?.some((pid) => excludedFolders.has(pid)) || isExcludedProdName(f.name)) {
         excludedFileIds.push(f.id);
       } else {
-        all.push(f);
+        all.push({
+          ...f,
+          yearFolder: resolveFileYearFolder(f.parents, yearByFolderId),
+        });
       }
     }
     onPageLoaded?.(all.length);

@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Disc3,
   ListMusic,
+  Music2,
   Pause,
   Play,
   Repeat,
@@ -17,7 +18,7 @@ import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { triggerHapticTick } from '../../lib/haptics';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
-import { parseTrackVersion } from '../../lib/musicVersioning';
+import { groupMusicTracks, parseTrackVersion } from '../../lib/musicVersioning';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
   { id: 'pink', label: 'Untitled Pink', css: 'from-pink-300 via-fuchsia-400 to-fuchsia-600' },
@@ -206,6 +207,19 @@ export function MiniAudioPlayer() {
     () => (currentTrack ? parseTrackVersion(currentTrack) : null),
     [currentTrack]
   );
+
+  // Find sibling Prod / Song track so user can switch Son <-> Prod in 1 tap right inside the player!
+  const alternateProdOrSong = useMemo(() => {
+    if (!currentTrack || !parsedCurrent) return null;
+    const allGroups = groupMusicTracks(state.musicTracks);
+    const grp = allGroups.find((g) => g.allTrackIds.includes(currentTrack.id));
+    if (!grp || !grp.prodTrack) return null;
+    if (parsedCurrent.isProd) {
+      if (grp.latestTrack.id === currentTrack.id) return null;
+      return { target: grp.latestTrack, label: 'Son', isCurrentlyProd: true };
+    }
+    return { target: grp.prodTrack, label: 'Prod', isCurrentlyProd: false };
+  }, [currentTrack, parsedCurrent, state.musicTracks]);
   const displayTrackTitle =
     currentTrack?.manualGroupTitle || parsedCurrent?.baseTitle || currentTrack?.title || '';
   const versionSuffix =
@@ -474,12 +488,33 @@ export function MiniAudioPlayer() {
             >
               {/* Main Obsidian Card */}
               <div className="w-full rounded-[32px] bg-[#0b0b0d] text-white border border-white/10 shadow-[0_32px_90px_-14px_rgba(0,0,0,0.88)] px-6 pt-6 pb-6 flex flex-col items-center space-y-5">
-                {/* Title & Subtitle */}
-                <div className="w-full text-center space-y-0.5 px-2">
+                {/* Title & Subtitle (+ 1-Tap Son/Prod Switcher when linked prod exists!) */}
+                <div className="w-full text-center space-y-1 px-2">
                   <h2 className="text-[15px] font-semibold tracking-tight text-white truncate">
                     {displayTrackTitle}
                   </h2>
                   <p className="text-xs text-zinc-400 truncate">{subtitle}</p>
+                  {alternateProdOrSong && (
+                    <div className="pt-1 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void playTrack(alternateProdOrSong.target, 0, queue);
+                          triggerHapticTick(10);
+                        }}
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                          alternateProdOrSong.isCurrentlyProd
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/30'
+                            : 'bg-white/10 text-zinc-200 border border-white/15 hover:bg-white/20'
+                        }`}
+                      >
+                        <Music2 size={11} />
+                        {alternateProdOrSong.isCurrentlyProd
+                          ? 'Prod en cours · Passer au son'
+                          : 'Écouter la prod'}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Large Spinning Vinyl Disc (60/120fps direct GPU transform) */}

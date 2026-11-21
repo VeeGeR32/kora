@@ -5,6 +5,7 @@ import {
   GitBranch,
   ListChecks,
   MoreHorizontal,
+  Music2,
   Pause,
   Play,
   Star,
@@ -22,7 +23,9 @@ interface TrackCardProps {
   selectedTrackId?: string;
   isCurrentTrack: boolean;
   isPlaying: boolean;
+  isPlayingProd?: boolean;
   onPlay: (track: MusicTrack) => void;
+  onPlayProd?: (prodTrack: MusicTrack) => void;
   onToggleFavorite: (group: TrackGroup) => void;
   onOpenDetails: (group: TrackGroup, trackId: string) => void;
   onOpenContextMenu: (
@@ -53,7 +56,9 @@ export function TrackCard({
   selectedTrackId,
   isCurrentTrack,
   isPlaying,
+  isPlayingProd = false,
   onPlay,
+  onPlayProd,
   onToggleFavorite,
   onOpenDetails,
   onOpenContextMenu,
@@ -230,6 +235,29 @@ export function TrackCard({
               {TRACK_STATUS_META[track.status].label}
             </span>
 
+            {group.prodTrack && group.prodTrack.id !== track.id && onPlayProd && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPlayProd(group.prodTrack!);
+                }}
+                title="Lancer la prod (instru) de ce morceau"
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer ${
+                  isPlayingProd
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/22'
+                }`}
+              >
+                {isPlayingProd ? (
+                  <Pause size={9} fill="currentColor" />
+                ) : (
+                  <Music2 size={9} />
+                )}
+                <span>Prod</span>
+              </button>
+            )}
+
             {track.durationSec ? (
               <span className="font-mono text-[10px] text-slate-400">
                 {fmtDuration(track.durationSec)}
@@ -246,15 +274,22 @@ export function TrackCard({
         </p>
       )}
 
-      {/* Footer: Date + TODO chip + Details link */}
+      {/* Footer: Year / Date + TODO chip + Details link */}
       <div
         className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-zinc-800/70"
         onClick={(e) => e.stopPropagation()}
       >
-        <span className="font-mono text-[10px] text-slate-400 truncate">
-          {fmtShortDate(track.modifiedAt || track.addedAt) || 'Drive'}
-          {!activeEntry.isLatest && group.hasMultipleVersions ? ' · ancienne ver.' : ''}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {group.yearFolder && (
+            <span className="rounded-md bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-600 dark:text-zinc-300 shrink-0">
+              {group.yearFolder}
+            </span>
+          )}
+          <span className="font-mono text-[10px] text-slate-400 truncate">
+            {fmtShortDate(track.modifiedAt || track.addedAt) || 'Drive'}
+            {!activeEntry.isLatest && group.hasMultipleVersions ? ' · ancienne ver.' : ''}
+          </span>
+        </div>
 
         <button
           type="button"

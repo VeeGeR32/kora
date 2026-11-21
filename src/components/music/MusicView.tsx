@@ -123,11 +123,12 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     };
   }, [state.preferences.firebaseConfig]);
 
-  // Library search / filter / sort / grouping toggle
+  // Library search / filter / sort / grouping / year filter
   const [libSearch, setLibSearch] = useState('');
   const [libFilter, setLibFilter] = useState<LibraryFilter>('all');
   const [libSort, setLibSort] = useState<LibrarySort>('recent');
   const [groupVersions, setGroupVersions] = useState(true);
+  const [yearFilter, setYearFilter] = useState<string>('all');
 
   // New project quick modal inline
   const [showNewProj, setShowNewProj] = useState(false);
@@ -159,6 +160,19 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   // Grouped tracks (deduplicated by project/base name, latest version promoted to front!)
   const trackGroups = useMemo(() => groupMusicTracks(state.musicTracks), [state.musicTracks]);
 
+  // Available Drive year/season folders (e.g. 2026/2027, 2025/2026, 2024/2025, 2023/2024) sorted newest first
+  const availableYears = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const g of trackGroups) {
+      if (g.yearFolder) {
+        counts.set(g.yearFolder, (counts.get(g.yearFolder) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[0].localeCompare(a[0], 'fr', { numeric: true }))
+      .map(([year, count]) => ({ year, count }));
+  }, [trackGroups]);
+
   // Flat individual pseudo-groups when user toggles "Toutes les versions" in library
   const flatTrackGroups = useMemo<TrackGroup[]>(() => {
     return [...state.musicTracks]
@@ -173,7 +187,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         const todos = t.todos || [];
         return {
           groupKey: `single_${t.id}`,
-          baseTitle: t.title,
+          baseTitle: t.manualGroupTitle || t.title,
           latestTrack: t,
           latestVersionLabel: parsed.versionLabel,
           versions: [
@@ -185,6 +199,10 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               timestampMs: ts,
             },
           ],
+          prodTrack: parsed.isProd ? t : null,
+          prodTracks: [],
+          allTrackIds: [t.id],
+          yearFolder: t.driveYearFolder,
           isFavorite: Boolean(t.isFavorite),
           latestTimestampMs: ts,
           hasMultipleVersions: false,
@@ -195,23 +213,33 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       });
   }, [state.musicTracks]);
 
-  const favoriteGroups = useMemo(
-    () => trackGroups.filter((g) => g.isFavorite),
-    [trackGroups]
+  const yearFilteredGroups = useMemo(
+    () =>
+      yearFilter === 'all'
+        ? trackGroups
+        : trackGroups.filter((g) => g.yearFolder === yearFilter),
+    [trackGroups, yearFilter]
   );
 
-  const recentGroups = useMemo(() => trackGroups.slice(0, 12), [trackGroups]);
+  const favoriteGroups = useMemo(
+    () => yearFilteredGroups.filter((g) => g.isFavorite),
+    [yearFilteredGroups]
+  );
+
+  const recentGroups = useMemo(() => yearFilteredGroups.slice(0, 12), [yearFilteredGroups]);
 
   const filteredLibraryGroups = useMemo(() => {
     const baseList = groupVersions ? trackGroups : flatTrackGroups;
     const q = libSearch.trim().toLowerCase();
 
     const filtered = baseList.filter((g) => {
+      if (yearFilter !== 'all' && g.yearFolder !== yearFilter) return false;
       if (libFilter === 'favorites' && !g.isFavorite) return false;
       if (libFilter === 'todo' && g.todoTotal === 0) return false;
       if (!q) return true;
       return (
         g.baseTitle.toLowerCase().includes(q) ||
+        (g.yearFolder && g.yearFolder.toLowerCase().includes(q)) ||
         (g.description && g.description.toLowerCase().includes(q)) ||
         g.versions.some(
           (v) =>
@@ -232,7 +260,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       }
       return b.latestTimestampMs - a.latestTimestampMs;
     });
-  }, [groupVersions, trackGroups, flatTrackGroups, libSearch, libFilter, libSort]);
+  }, [groupVersions, trackGroups, flatTrackGroups, libSearch, libFilter, libSort, yearFilter]);
 
   const getActiveTrackForGroup = (group: TrackGroup): MusicTrack => {
     const overrideId = selectedVersionByGroup[group.groupKey];
@@ -286,6 +314,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
           artist,
           googleDriveFileId: f.id,
           sourceFilename: f.name,
+          driveYearFolder: f.yearFolder,
           modifiedAt: f.modifiedTime || nowIso,
           coverGradient: getDeterministicGradientId(parsed.groupKey),
           status: 'demo' as const,
@@ -399,7 +428,8 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   };
 
   const handleToggleFavorite = (group: TrackGroup) => {
-    const allIds = group.versions.map((v) => v.track.id);
+    const allIds =
+      group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
     const nextFav = !group.isFavorite;
     setTrackGroupFavorite(allIds, nextFav);
     notify(
@@ -407,6 +437,14 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         ? `« ${group.baseTitle} » ajouté aux favoris ★`
         : `« ${group.baseTitle} » retiré des favoris`
     );
+  };
+
+  const handlePlayProd = (prodTrack: MusicTrack, parentTrack: MusicTrack) => {
+    if (player.currentTrack?.id === prodTrack.id) {
+      player.togglePlay();
+    } else {
+      void player.playTrack(prodTrack, 0, [parentTrack, prodTrack]);
+    }
   };
 
   const handleSelectVersion = (groupKey: string, trackId: string, autoPlay = false) => {
@@ -640,6 +678,40 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
             </div>
           </div>
 
+          {/* Year / Saison Filter Bar (automatically detected from Drive folders 23/24, 24/25, 25/26, 26/27!) */}
+          {availableYears.length > 0 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1 shrink-0">
+                <Calendar size={12} /> Année :
+              </span>
+              <button
+                type="button"
+                onClick={() => setYearFilter('all')}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition cursor-pointer shrink-0 ${
+                  yearFilter === 'all'
+                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                    : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
+                }`}
+              >
+                Toutes ({trackGroups.length})
+              </button>
+              {availableYears.map(({ year, count }) => (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
+                  className={`rounded-full px-3 py-1 font-mono text-xs font-semibold transition cursor-pointer shrink-0 ${
+                    yearFilter === year
+                      ? 'bg-fuchsia-600 text-white shadow-xs'
+                      : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-fuchsia-400'
+                  }`}
+                >
+                  {year} <span className="opacity-65">({count})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Quick Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="tempo-card rounded-2xl p-4">
@@ -716,6 +788,11 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                 {favoriteGroups.map((group) => {
                   const activeTrack = getActiveTrackForGroup(group);
                   const isCurrent = player.currentTrack?.id === activeTrack.id;
+                  const isPlayingProd = Boolean(
+                    group.prodTrack &&
+                      player.currentTrack?.id === group.prodTrack.id &&
+                      player.isPlaying
+                  );
                   const favQueue = favoriteGroups.map(getActiveTrackForGroup);
                   return (
                     <TrackCard
@@ -724,11 +801,13 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                       selectedTrackId={activeTrack.id}
                       isCurrentTrack={isCurrent}
                       isPlaying={isCurrent && player.isPlaying}
+                      isPlayingProd={isPlayingProd}
                       onPlay={(trk) =>
                         player.currentTrack?.id === trk.id
                           ? player.togglePlay()
                           : void player.playTrack(trk, 0, favQueue)
                       }
+                      onPlayProd={(pt) => handlePlayProd(pt, activeTrack)}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(g, tid) =>
                         setDetailTarget({ groupKey: g.groupKey, trackId: tid })
@@ -791,6 +870,11 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                 {recentGroups.map((group) => {
                   const activeTrack = getActiveTrackForGroup(group);
                   const isCurrent = player.currentTrack?.id === activeTrack.id;
+                  const isPlayingProd = Boolean(
+                    group.prodTrack &&
+                      player.currentTrack?.id === group.prodTrack.id &&
+                      player.isPlaying
+                  );
                   const recentQueue = recentGroups.map(getActiveTrackForGroup);
                   return (
                     <TrackCard
@@ -799,11 +883,13 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                       selectedTrackId={activeTrack.id}
                       isCurrentTrack={isCurrent}
                       isPlaying={isCurrent && player.isPlaying}
+                      isPlayingProd={isPlayingProd}
                       onPlay={(trk) =>
                         player.currentTrack?.id === trk.id
                           ? player.togglePlay()
                           : void player.playTrack(trk, 0, recentQueue)
                       }
+                      onPlayProd={(pt) => handlePlayProd(pt, activeTrack)}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(g, tid) =>
                         setDetailTarget({ groupKey: g.groupKey, trackId: tid })
@@ -1138,6 +1224,39 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                 )}
               </div>
             </div>
+            {/* Year / Saison Filter Strip inside Library */}
+            {availableYears.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-zinc-800/70">
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mr-0.5">
+                  <Calendar size={11} /> Année :
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setYearFilter('all')}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    yearFilter === 'all'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                  }`}
+                >
+                  Toutes
+                </button>
+                {availableYears.map(({ year, count }) => (
+                  <button
+                    key={year}
+                    type="button"
+                    onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
+                    className={`rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold transition cursor-pointer ${
+                      yearFilter === year
+                        ? 'bg-fuchsia-600 text-white'
+                        : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300 hover:bg-fuchsia-500/15'
+                    }`}
+                  >
+                    {year} <span className="opacity-65">({count})</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Clickable Cards Grid */}
@@ -1154,6 +1273,11 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               {filteredLibraryGroups.map((group) => {
                 const activeTrack = getActiveTrackForGroup(group);
                 const isCurrent = player.currentTrack?.id === activeTrack.id;
+                const isPlayingProd = Boolean(
+                  group.prodTrack &&
+                    player.currentTrack?.id === group.prodTrack.id &&
+                    player.isPlaying
+                );
                 return (
                   <TrackCard
                     key={group.groupKey}
@@ -1161,11 +1285,13 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                     selectedTrackId={activeTrack.id}
                     isCurrentTrack={isCurrent}
                     isPlaying={isCurrent && player.isPlaying}
+                    isPlayingProd={isPlayingProd}
                     onPlay={(trk) =>
                       player.currentTrack?.id === trk.id
                         ? player.togglePlay()
                         : void player.playTrack(trk, 0, activeQueueTracks)
                     }
+                    onPlayProd={(pt) => handlePlayProd(pt, activeTrack)}
                     onToggleFavorite={handleToggleFavorite}
                     onOpenDetails={(g, tid) =>
                       setDetailTarget({ groupKey: g.groupKey, trackId: tid })

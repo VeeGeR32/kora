@@ -8,6 +8,7 @@ import {
   GitBranch,
   Link2,
   ListChecks,
+  Music2,
   Pause,
   Play,
   Plus,
@@ -150,7 +151,10 @@ export function TrackDetailModal({
   const gradCls = getGradientClass(
     effectiveCover?.gradientId || track.coverGradient || getDeterministicGradientId(group.groupKey)
   );
-  const allGroupTrackIds = group.versions.map((v) => v.track.id);
+  const allGroupTrackIds =
+    group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
+  const isCurrentProd = Boolean(group.prodTrack && player.currentTrack?.id === group.prodTrack.id);
+  const isPlayingProd = isCurrentProd && player.isPlaying;
 
   const handleUploadCover = async (file: File | undefined) => {
     if (!file) return;
@@ -369,6 +373,32 @@ export function TrackDetailModal({
                       </>
                     )}
                   </button>
+
+                  {group.prodTrack && group.prodTrack.id !== track.id && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        isCurrentProd
+                          ? player.togglePlay()
+                          : void player.playTrack(group.prodTrack!, 0, [track, group.prodTrack!])
+                      }
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer ${
+                        isPlayingProd
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-emerald-500/14 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/24'
+                      }`}
+                    >
+                      {isPlayingProd ? (
+                        <>
+                          <Pause size={13} fill="currentColor" /> Pause Prod
+                        </>
+                      ) : (
+                        <>
+                          <Music2 size={13} /> Lancer la prod
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   <button
                     type="button"
