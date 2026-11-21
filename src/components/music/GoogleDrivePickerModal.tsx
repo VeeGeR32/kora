@@ -127,20 +127,39 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
 
   useEffect(() => {
     if (!open) return;
-    const cached = getCachedDriveToken();
-    setToken(cached);
     setSelectedIds(new Set());
     setError(null);
+    const cached = getCachedDriveToken();
     if (cached) {
+      setToken(cached);
       void loadFiles(cached, '');
+      return;
     }
+    // Try silent permanent zero-popup Drive access automatically on modal open!
+    setLoading(true);
+    void ensureGoogleDriveToken(state.preferences.firebaseConfig, false, false)
+      .then((permToken) => {
+        setToken(permToken);
+        return loadFiles(permToken, '');
+      })
+      .catch((err) => {
+        setToken(null);
+        setLoading(false);
+        if (err instanceof Error && err.name === 'DrivePermanentSetupRequiredError') {
+          setError(err.message);
+        }
+      });
   }, [open]);
 
   const handleConnectDrive = async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      const newToken = await ensureGoogleDriveToken(state.preferences.firebaseConfig, forceRefresh);
+      const newToken = await ensureGoogleDriveToken(
+        state.preferences.firebaseConfig,
+        forceRefresh,
+        false
+      );
       setToken(newToken);
       await loadFiles(newToken, search);
     } catch (err) {

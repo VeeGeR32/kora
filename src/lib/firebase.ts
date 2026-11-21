@@ -156,6 +156,19 @@ export async function completeGoogleRedirectIfPending(
   }
 }
 
+export async function getCurrentFirebaseIdToken(
+  config?: FirebaseUserConfig | null
+): Promise<string | null> {
+  const bundle = initFirebaseClient(config);
+  const user = bundle?.auth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+}
+
 /** Requests a read-only Google Drive OAuth access token via Google Sign-In popup */
 export async function requestGoogleDriveAccessToken(
   config?: FirebaseUserConfig | null

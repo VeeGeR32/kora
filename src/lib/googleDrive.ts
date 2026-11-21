@@ -1,5 +1,5 @@
 import type { FirebaseUserConfig } from '../types';
-import { requestGoogleDriveAccessToken } from './firebase';
+import { getCurrentFirebaseIdToken, requestGoogleDriveAccessToken } from './firebase';
 
 export interface DriveAudioFile {
   id: string;
@@ -10,7 +10,25 @@ export interface DriveAudioFile {
   parents?: string[];
 }
 
-let cachedDriveToken: { token: string; expiresAt: number } | null = null;
+export interface PermanentDriveInfo {
+  configured: boolean;
+  serviceAccountEmail: string | null;
+  hasSharedFiles: boolean;
+}
+
+export class DrivePermanentSetupRequiredError extends Error {
+  serviceAccountEmail: string;
+  constructor(email: string) {
+    super(
+      `Partage ton dossier MP3 sur Google Drive avec ${email} (une seule fois) pour ne plus jamais te reconnecter.`
+    );
+    this.name = 'DrivePermanentSetupRequiredError';
+    this.serviceAccountEmail = email;
+  }
+}
+
+let cachedDriveToken: { token: string; expiresAt: number; permanent: boolean } | null = null;
+let cachedPermanentInfo: PermanentDriveInfo | null = null;
 
 export function getCachedDriveToken(): string | null {
   if (!cachedDriveToken) return null;
@@ -21,23 +39,136 @@ export function getCachedDriveToken(): string | null {
   return cachedDriveToken.token;
 }
 
+export function getCachedPermanentDriveInfo(): PermanentDriveInfo | null {
+  return cachedPermanentInfo;
+}
+
 export function clearCachedDriveToken(): void {
   cachedDriveToken = null;
 }
 
+export async function fetchPermanentDriveSession(
+  config?: FirebaseUserConfig | null
+): Promise<{
+  available: boolean;
+  configured: boolean;
+  serviceAccountEmail: string | null;
+  hasSharedFiles: boolean;
+  accessToken: string | null;
+  expiresIn: number;
+  error?: string;
+}> {
+  const idToken = await getCurrentFirebaseIdToken(config);
+  if (!idToken) {
+    return {
+      available: false,
+      configured: false,
+      serviceAccountEmail: null,
+      hasSharedFiles: false,
+      accessToken: null,
+      expiresIn: 0,
+    };
+  }
+
+  try {
+    const res = await fetch('/api/drive', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      return {
+        available: false,
+        configured: false,
+        serviceAccountEmail: null,
+        hasSharedFiles: false,
+        accessToken: null,
+        expiresIn: 0,
+      };
+    }
+    const data = (await res.json()) as {
+      ok?: boolean;
+      configured?: boolean;
+      serviceAccountEmail?: string;
+      hasSharedFiles?: boolean;
+      accessToken?: string;
+      expiresIn?: number;
+      error?: string;
+    };
+
+    if (!res.ok || !data.ok) {
+      return {
+        available: res.status !== 404 && res.status !== 503,
+        configured: Boolean(data.configured),
+        serviceAccountEmail: data.serviceAccountEmail || null,
+        hasSharedFiles: false,
+        accessToken: null,
+        expiresIn: 0,
+        error: data.error,
+      };
+    }
+
+    cachedPermanentInfo = {
+      configured: true,
+      serviceAccountEmail: data.serviceAccountEmail || null,
+      hasSharedFiles: Boolean(data.hasSharedFiles),
+    };
+
+    return {
+      available: true,
+      configured: true,
+      serviceAccountEmail: data.serviceAccountEmail || null,
+      hasSharedFiles: Boolean(data.hasSharedFiles),
+      accessToken: data.accessToken || null,
+      expiresIn: Number(data.expiresIn) || 3000,
+    };
+  } catch {
+    return {
+      available: false,
+      configured: false,
+      serviceAccountEmail: null,
+      hasSharedFiles: false,
+      accessToken: null,
+      expiresIn: 0,
+    };
+  }
+}
+
 export async function ensureGoogleDriveToken(
   config?: FirebaseUserConfig | null,
-  forceRefresh = false
+  forceRefresh = false,
+  allowLegacyPopupFallback = false
 ): Promise<string> {
   if (!forceRefresh) {
     const existing = getCachedDriveToken();
     if (existing) return existing;
   }
+
+  // 1. Always try Permanent Zero-Popup Drive Access first (works forever on all devices!)
+  const perm = await fetchPermanentDriveSession(config);
+  if (perm.configured && perm.hasSharedFiles && perm.accessToken) {
+    cachedDriveToken = {
+      token: perm.accessToken,
+      expiresAt: Date.now() + Math.max(300, perm.expiresIn - 60) * 1000,
+      permanent: true,
+    };
+    return perm.accessToken;
+  }
+
+  if (perm.configured && !perm.hasSharedFiles && perm.serviceAccountEmail && !allowLegacyPopupFallback) {
+    throw new DrivePermanentSetupRequiredError(perm.serviceAccountEmail);
+  }
+
+  if (perm.available && perm.error && !allowLegacyPopupFallback) {
+    throw new Error(perm.error);
+  }
+
+  // 2. Fallback to legacy OAuth popup only in local dev or when explicitly requested
   const token = await requestGoogleDriveAccessToken(config);
-  // Google OAuth access tokens typically last 60 minutes; cache conservatively for 50 min
   cachedDriveToken = {
     token,
     expiresAt: Date.now() + 50 * 60 * 1000,
+    permanent: false,
   };
   return token;
 }

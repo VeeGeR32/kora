@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowDownAZ,
@@ -24,9 +24,12 @@ import type { MusicTrack, ProjectKind } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import {
+  DrivePermanentSetupRequiredError,
   ensureGoogleDriveToken,
+  fetchPermanentDriveSession,
   listAllGoogleDriveAudioFilesWithExclusions,
 } from '../../lib/googleDrive';
+import { DrivePermanentSetupModal } from './DrivePermanentSetupModal';
 import {
   getDeterministicGradientId,
   groupMusicTracks,
@@ -79,10 +82,26 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   );
   const [linkModal, setLinkModal] = useState<LinkVersionModalState | null>(null);
 
-  // Google Drive Full Sync state
+  // Google Drive Full Sync & Permanent Zero-Popup Setup state
   const [syncingDrive, setSyncingDrive] = useState(false);
   const [syncProgressText, setSyncProgressText] = useState('');
   const [drivePickerOpen, setDrivePickerOpen] = useState(false);
+  const [permanentDriveEmail, setPermanentDriveEmail] = useState<string | null>(null);
+  const [permanentDriveReady, setPermanentDriveReady] = useState(false);
+  const [permanentSetupOpen, setPermanentSetupOpen] = useState(false);
+
+  // Silently check permanent Drive access on mount (zero popups!)
+  useEffect(() => {
+    let active = true;
+    void fetchPermanentDriveSession(state.preferences.firebaseConfig).then((res) => {
+      if (!active || !res.configured) return;
+      setPermanentDriveEmail(res.serviceAccountEmail);
+      setPermanentDriveReady(res.hasSharedFiles);
+    });
+    return () => {
+      active = false;
+    };
+  }, [state.preferences.firebaseConfig]);
 
   // Library search / filter / sort / grouping toggle
   const [libSearch, setLibSearch] = useState('');
@@ -196,13 +215,15 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     );
   }, [detailTarget, trackGroups, flatTrackGroups]);
 
-  // 1-Click Full Google Drive MP3 Sync (loads ALL MP3 files excluding drumkit folders!)
-  const handleSyncAllDrive = async () => {
+  // 1-Click Full Google Drive MP3 Sync (permanent zero-popup token first, excludes drumkit!)
+  const handleSyncAllDrive = async (forceRefresh = false) => {
     if (syncingDrive) return;
     setSyncingDrive(true);
     setSyncProgressText('Connexion Drive…');
     try {
-      const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
+      const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig, forceRefresh);
+      setPermanentDriveReady(true);
+      setPermanentSetupOpen(false);
       setSyncProgressText('Analyse des MP3 (hors drumkit)…');
       const { files: allFiles, excludedFileIds } = await listAllGoogleDriveAudioFilesWithExclusions(
         token,
@@ -213,7 +234,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       );
 
       if (allFiles.length === 0 && excludedFileIds.length === 0) {
-        notify('Aucun fichier MP3 trouvé sur ton Google Drive.');
+        notify('Aucun fichier MP3 trouvé dans le dossier partagé.');
         return;
       }
 
@@ -258,7 +279,13 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         );
       }
     } catch (err) {
-      notify(`Google Drive : ${(err as Error).message}`);
+      if (err instanceof DrivePermanentSetupRequiredError) {
+        setPermanentDriveEmail(err.serviceAccountEmail);
+        setPermanentDriveReady(false);
+        setPermanentSetupOpen(true);
+      } else {
+        notify(`Google Drive : ${(err as Error).message}`);
+      }
     } finally {
       setSyncingDrive(false);
       setSyncProgressText('');
@@ -505,16 +532,36 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                 <HardDrive size={16} />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                  Google Drive · Synchronisation automatique
+                <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate flex items-center gap-1.5">
+                  <span>Google Drive · Synchronisation automatique</span>
+                  {permanentDriveReady && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-semibold">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Permanent
+                    </span>
+                  )}
                 </p>
                 <p className="text-[11px] text-slate-400 truncate">
-                  Charge tous tes MP3 et regroupe tes versions (ex. Project 306 → v3.2)
+                  {permanentDriveReady
+                    ? 'Accès permanent actif sur tous tes appareils · zéro reconnexion Google'
+                    : permanentDriveEmail
+                    ? 'Partage ton dossier MP3 1 seule fois pour ne plus jamais te reconnecter'
+                    : 'Charge tous tes MP3 et regroupe tes versions (ex. Project 306 → v3.2)'}
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {permanentDriveEmail && !permanentDriveReady && (
+                <button
+                  type="button"
+                  onClick={() => setPermanentSetupOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+                >
+                  Configurer accès permanent (1×)
+                </button>
+              )}
+
               <button
                 type="button"
                 disabled={syncingDrive}
@@ -1134,6 +1181,14 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         allGroups={trackGroups}
         onClose={() => setLinkModal(null)}
         onConfirmLink={handleConfirmManualLink}
+      />
+
+      <DrivePermanentSetupModal
+        open={permanentSetupOpen}
+        serviceAccountEmail={permanentDriveEmail}
+        syncing={syncingDrive}
+        onVerifyAndSync={() => handleSyncAllDrive(true)}
+        onClose={() => setPermanentSetupOpen(false)}
       />
     </div>
   );
