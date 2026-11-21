@@ -22,12 +22,14 @@ import {
   Sparkles,
   Trash2,
   Undo,
+  Upload,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { YoutubeBeatPlayer } from './YoutubeBeatPlayer';
 import { LexCoreInspirationWidget, MetronomeWidget } from './LexCoreTools';
+import { LexCoreImportModal } from './LexCoreImportModal';
 
 interface LyricsStudioProps {
   initialDocId?: string | null;
@@ -76,6 +78,7 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
     parentId?: string | null;
   } | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -427,6 +430,14 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
               LEXCORE · TEXTES
             </span>
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(true)}
+                title="Importer / Exporter backup LexCore (JSON MongoDB)"
+                className="p-1.5 rounded-lg text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/12 cursor-pointer"
+              >
+                <Upload size={14} />
+              </button>
               <button
                 type="button"
                 onClick={() => handleCreateDoc(null)}
@@ -860,16 +871,39 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
             <p className="text-sm font-medium text-slate-500 dark:text-zinc-400">
               Ouvre un texte ou crée une nouvelle page blanche
             </p>
-            <button
-              type="button"
-              onClick={() => handleCreateDoc(null)}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
-            >
-              <Plus size={14} /> Nouveau texte
-            </button>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleCreateDoc(null)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
+              >
+                <Plus size={14} /> Nouveau texte
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-zinc-800 px-4 py-2 text-xs font-semibold text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/10 cursor-pointer"
+              >
+                <Upload size={14} /> Importer backup JSON
+              </button>
+            </div>
           </div>
         )}
       </div>
+
+      <LexCoreImportModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImported={(firstDocId, newFolderIds) => {
+          if (newFolderIds.length > 0) {
+            setExpandedFolders((prev) => Array.from(new Set([...prev, ...newFolderIds])));
+          }
+          if (firstDocId) {
+            setActiveDocId(firstDocId);
+            setTreeView('explorer');
+          }
+        }}
+      />
     </div>
   );
 }

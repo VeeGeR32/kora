@@ -16,6 +16,7 @@ import type {
   HomeworkItem,
   LastSessionState,
   LyricsDoc,
+  LyricsFolder,
   MealEntry,
   MealPreset,
   MusicProject,
@@ -175,6 +176,10 @@ interface AppContextValue {
   restoreLyricsDoc: (id: string) => void;
   permanentDeleteLyricsDoc: (id: string) => void;
   emptyLyricsTrash: () => void;
+  importLexCoreBackup: (
+    folders: LyricsFolder[],
+    docs: LyricsDoc[]
+  ) => { foldersAdded: number; docsAdded: number; skipped: number };
 
   addMusicProject: (project: Omit<MusicProject, 'id'>) => string;
   updateMusicProject: (id: string, patch: Partial<MusicProject>) => void;
@@ -1493,6 +1498,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     notify('Corbeille vidée');
   }, [notify]);
 
+  const importLexCoreBackup = useCallback(
+    (incomingFolders: LyricsFolder[], incomingDocs: LyricsDoc[]) => {
+      const existingFolders = latestStateRef.current.lyricsFolders;
+      const existingDocs = latestStateRef.current.lyricsDocs;
+
+      // Map duplicate folder names under same parent to existing folder ID
+      const folderRemap = new Map<string, string>();
+      const foldersToAdd: LyricsFolder[] = [];
+
+      for (const f of incomingFolders) {
+        const mappedParent = f.parentId ? folderRemap.get(f.parentId) || f.parentId : null;
+        const match = existingFolders.find(
+          (ef) =>
+            ef.parentId === mappedParent &&
+            ef.name.trim().toLowerCase() === f.name.trim().toLowerCase()
+        );
+        if (match) {
+          folderRemap.set(f.id, match.id);
+        } else {
+          foldersToAdd.push({ ...f, parentId: mappedParent });
+        }
+      }
+
+      const existingDocSig = new Set(
+        existingDocs.map(
+          (d) => `${d.title.trim().toLowerCase()}::${(d.content || '').trim().slice(0, 160)}`
+        )
+      );
+
+      const docsToAdd: LyricsDoc[] = [];
+      let skipped = 0;
+
+      for (const d of incomingDocs) {
+        const sig = `${d.title.trim().toLowerCase()}::${(d.content || '').trim().slice(0, 160)}`;
+        if (existingDocSig.has(sig)) {
+          skipped++;
+          continue;
+        }
+        existingDocSig.add(sig);
+        const mappedFolder = d.folderId ? folderRemap.get(d.folderId) || d.folderId : null;
+        docsToAdd.push({ ...d, folderId: mappedFolder });
+      }
+
+      if (foldersToAdd.length > 0 || docsToAdd.length > 0) {
+        touch((prev) => ({
+          ...prev,
+          lyricsFolders: [...prev.lyricsFolders, ...foldersToAdd],
+          lyricsDocs: [...docsToAdd, ...prev.lyricsDocs],
+        }));
+      }
+
+      return {
+        foldersAdded: foldersToAdd.length,
+        docsAdded: docsToAdd.length,
+        skipped,
+      };
+    },
+    []
+  );
+
   // Music Projects
   const addMusicProject = useCallback(
     (project: Omit<MusicProject, 'id'>) => {
@@ -1850,6 +1915,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         restoreLyricsDoc,
         permanentDeleteLyricsDoc,
         emptyLyricsTrash,
+        importLexCoreBackup,
         addMusicProject,
         updateMusicProject,
         toggleMusicProjectStep,
