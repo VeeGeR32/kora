@@ -246,17 +246,28 @@ function buildContextSummary(state: AppState): string {
   ].join('\n');
 }
 
-export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
-const FALLBACK_MODELS = [
-  'gemini-3.8-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3.5-flash',
-  'gemini-3.8-pro',
-];
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash-lite';
+const FALLBACK_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
 /** Cleans accidental whitespace/quotes while supporting BOTH legacy AIza... and new AQ.... keys */
 export function sanitizeGeminiApiKey(raw: string): string {
   return raw.trim().replace(/^["']|["']$/g, '').replace(/\s+/g, '');
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(`Timeout (${Math.round(ms / 1000)}s) sur ${label}`)), ms);
+    promise.then(
+      (val) => {
+        window.clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        window.clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
 }
 
 async function generateWithAutoRouting(
@@ -264,21 +275,31 @@ async function generateWithAutoRouting(
   params: Omit<Parameters<GoogleGenAI['models']['generateContent']>[0], 'model'>
 ) {
   const cleanKey = sanitizeGeminiApiKey(apiKey);
-  const ai = new GoogleGenAI({ apiKey: cleanKey });
+  const ai = new GoogleGenAI({ apiKey: cleanKey, httpOptions: { timeout: 12_000 } });
 
   let lastError: unknown = null;
   let lastTransientError: unknown = null;
   for (const model of FALLBACK_MODELS) {
     try {
-      const res = await ai.models.generateContent({
-        model,
-        ...params,
-      });
+      const res = await withTimeout(
+        ai.models.generateContent({
+          model,
+          ...params,
+        }),
+        14_000,
+        model
+      );
       return { res, model, vertexai: false };
     } catch (err) {
       lastError = err;
       const msg = String((err as Error)?.message || err);
-      if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand') || msg.includes('429')) {
+      if (
+        msg.includes('503') ||
+        msg.includes('UNAVAILABLE') ||
+        msg.includes('high demand') ||
+        msg.includes('429') ||
+        msg.includes('Timeout')
+      ) {
         lastTransientError = err;
       }
       const isRetryable =
@@ -289,6 +310,7 @@ async function generateWithAutoRouting(
         msg.includes('high demand') ||
         msg.includes('429') ||
         msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('Timeout') ||
         msg.includes('not available');
       if (!isRetryable) throw err;
     }
