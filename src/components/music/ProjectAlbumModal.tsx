@@ -5,7 +5,9 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
+  Link2,
   ListChecks,
+  Loader2,
   MoreHorizontal,
   Music2,
   Pause,
@@ -20,6 +22,7 @@ import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { CheckCircle } from '../ui/CheckCircle';
 import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
+import { shareOrCopyPublicLink } from '../../lib/publicShare';
 
 interface ProjectAlbumModalProps {
   projectId: string | null;
@@ -82,6 +85,7 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [showEditMeta, setShowEditMeta] = useState(false);
   const [openTrackMenuId, setOpenTrackMenuId] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
 
   const project: MusicProject | null = useMemo(
     () => (projectId ? state.musicProjects.find((p) => p.id === projectId) || null : null),
@@ -203,6 +207,34 @@ export function ProjectAlbumModal({ projectId, onClose }: ProjectAlbumModalProps
             </button>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={sharing}
+                onClick={async () => {
+                  setSharing(true);
+                  try {
+                    const res = await shareOrCopyPublicLink({
+                      kind: 'project',
+                      id: project.id,
+                      title: project.title,
+                      firebaseConfig: state.preferences.firebaseConfig,
+                    });
+                    notify(
+                      res.method === 'native'
+                        ? `Projet « ${project.title} » partagé ✓`
+                        : `Lien public du projet copié ✓ (écoute sans compte)`
+                    );
+                  } catch (err) {
+                    notify(`Partage : ${(err as Error).message}`);
+                  } finally {
+                    setSharing(false);
+                  }
+                }}
+                title="Partager ce projet (lien d’écoute publique sans compte)"
+                className="h-10 w-10 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 flex items-center justify-center hover:bg-slate-200/80 dark:hover:bg-zinc-800 disabled:opacity-50 transition cursor-pointer"
+              >
+                {sharing ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={16} />}
+              </button>
               <button
                 type="button"
                 onClick={() => todoSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}

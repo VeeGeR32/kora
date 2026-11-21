@@ -21,6 +21,7 @@ import { AIPreviewBar } from './components/AIPreviewBar';
 import { FocusModal } from './components/FocusModal';
 import { LiveWorkoutModal } from './components/sport/LiveWorkoutModal';
 import { WeeklyReviewModal } from './components/WeeklyReviewModal';
+import { PublicSharePage } from './components/music/PublicSharePage';
 import { sendKoraNotification } from './lib/notifications';
 
 function tabToDomain(tab: ActiveTab): AIDomain {
@@ -385,6 +386,16 @@ function KoraApp() {
 }
 
 export default function App() {
+  const shareToken =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('share')?.trim() || ''
+      : '';
+
+  // Public listener link: zero login, zero Firebase Auth, instant playback!
+  if (shareToken) {
+    return <PublicSharePage token={shareToken} />;
+  }
+
   return (
     <AppProvider>
       <AudioPlayerProvider>

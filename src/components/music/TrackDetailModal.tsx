@@ -11,6 +11,7 @@ import {
   Pause,
   Play,
   Plus,
+  Share2,
   Star,
   Tag,
   Trash2,
@@ -21,6 +22,7 @@ import type { MusicTrack, TrackStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
+import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { getDeterministicGradientId } from '../../lib/musicVersioning';
 import { TRACK_STATUS_META } from '../../utils/theme';
@@ -351,6 +353,35 @@ export function TrackDetailModal({
                   >
                     <FileText size={13} className="text-fuchsia-500" />
                     {track.linkedLyricsId ? 'Ouvrir texte' : '+ Texte LexCore'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!track.googleDriveFileId && !track.cloudAudioUrl) {
+                        notify('Ce son est local uniquement — importe-le depuis Drive pour le partager.');
+                        return;
+                      }
+                      try {
+                        const res = await shareOrCopyPublicLink({
+                          kind: 'track',
+                          id: track.id,
+                          title: group.baseTitle,
+                          firebaseConfig: state.preferences.firebaseConfig,
+                        });
+                        notify(
+                          res.method === 'native'
+                            ? 'Lien public partagé ✓'
+                            : 'Lien public copié ✓ (écoute sans compte)'
+                        );
+                      } catch (err) {
+                        notify(`Partage : ${(err as Error).message}`);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
+                  >
+                    <Share2 size={13} className="text-emerald-500" />
+                    Partager
                   </button>
                 </div>
               </div>

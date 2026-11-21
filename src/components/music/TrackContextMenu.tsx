@@ -10,6 +10,7 @@ import {
   ListChecks,
   Pause,
   Play,
+  Share2,
   Star,
   Trash2,
   Unlink,
@@ -18,6 +19,7 @@ import type { MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import type { TrackGroup } from '../../lib/musicVersioning';
+import { shareOrCopyPublicLink } from '../../lib/publicShare';
 
 export interface TrackContextMenuState {
   group: TrackGroup;
@@ -179,6 +181,37 @@ export function TrackContextMenu({
               <Play size={14} className="text-fuchsia-500 shrink-0" />
             )}
             <span className="font-medium">{isPlaying ? 'Mettre en pause' : 'Écouter'}</span>
+          </button>
+
+          {/* Public Share Link (zero login for recipient!) */}
+          <button
+            type="button"
+            onClick={async () => {
+              onClose();
+              if (!track.googleDriveFileId && !track.cloudAudioUrl) {
+                notify('Ce son est uniquement local — synchronise-le via Google Drive pour le partager par lien.');
+                return;
+              }
+              try {
+                const res = await shareOrCopyPublicLink({
+                  kind: 'track',
+                  id: track.id,
+                  title: group.baseTitle,
+                  firebaseConfig: state.preferences.firebaseConfig,
+                });
+                notify(
+                  res.method === 'native'
+                    ? `Lien public partagé ✓`
+                    : `Lien public copié ✓ (écoute sans compte)`
+                );
+              } catch (err) {
+                notify(`Partage : ${(err as Error).message}`);
+              }
+            }}
+            className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+          >
+            <Share2 size={14} className="text-emerald-500 shrink-0" />
+            <span className="font-medium">Partager le lien public</span>
           </button>
 
           {/* Toggle Favorite */}

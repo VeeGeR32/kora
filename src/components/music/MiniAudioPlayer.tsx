@@ -7,6 +7,7 @@ import {
   Pause,
   Play,
   Repeat,
+  Share2,
   SkipBack,
   SkipForward,
   X,
@@ -15,6 +16,7 @@ import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { triggerHapticTick } from '../../lib/haptics';
+import { shareOrCopyPublicLink } from '../../lib/publicShare';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
   { id: 'pink', label: 'Untitled Pink', css: 'from-pink-300 via-fuchsia-400 to-fuchsia-600' },
@@ -45,7 +47,7 @@ const MINI_BAR_STEP_PX = 3.5;
 const MINI_TAPE_PX = MINI_BAR_COUNT * MINI_BAR_STEP_PX;
 
 export function MiniAudioPlayer() {
-  const { state } = useApp();
+  const { state, notify } = useApp();
   const {
     currentTrack,
     queue,
@@ -690,6 +692,34 @@ export function MiniAudioPlayer() {
                   >
                     <ListMusic size={15} />
                     <span>{queue.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!currentTrack.googleDriveFileId && !currentTrack.cloudAudioUrl) {
+                        notify('Ce son est uniquement local — synchronise-le via Drive pour le partager.');
+                        return;
+                      }
+                      try {
+                        const res = await shareOrCopyPublicLink({
+                          kind: 'track',
+                          id: currentTrack.id,
+                          title: currentTrack.title,
+                          firebaseConfig: state.preferences.firebaseConfig,
+                        });
+                        notify(
+                          res.method === 'native'
+                            ? 'Lien public partagé ✓'
+                            : 'Lien public copié ✓ (écoute sans compte)'
+                        );
+                      } catch (err) {
+                        notify(`Partage : ${(err as Error).message}`);
+                      }
+                    }}
+                    title="Partager ce son (lien public sans compte)"
+                    className="h-9 w-9 rounded-full inline-flex items-center justify-center text-white/85 hover:text-white hover:bg-white/12 transition cursor-pointer"
+                  >
+                    <Share2 size={15} />
                   </button>
                   <button
                     type="button"
