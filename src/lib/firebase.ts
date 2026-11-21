@@ -320,7 +320,7 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     };
   }
   if (p.notifications && typeof p.notifications === 'object') {
-    cleanPreferences.notifications = {
+    const cleanNotif: Record<string, unknown> = {
       enabled: Boolean(p.notifications.enabled),
       eventsBeforeMin: numOr(p.notifications.eventsBeforeMin, 15, 0, 120),
       homeworkAndExams: Boolean(p.notifications.homeworkAndExams),
@@ -329,6 +329,17 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
       dailyBriefing: Boolean(p.notifications.dailyBriefing),
       morningHour: strOr(p.notifications.morningHour, '07:45', 10),
     };
+    const sub = p.notifications.pushSubscription;
+    if (sub && typeof sub.endpoint === 'string' && sub.keys?.p256dh && sub.keys?.auth) {
+      cleanNotif.pushSubscription = {
+        endpoint: strOr(sub.endpoint, '', 2048),
+        keys: {
+          p256dh: strOr(sub.keys.p256dh, '', 512),
+          auth: strOr(sub.keys.auth, '', 512),
+        },
+      };
+    }
+    cleanPreferences.notifications = cleanNotif;
   }
 
   const ap = raw.academicProfile || ({} as AppState['academicProfile']);

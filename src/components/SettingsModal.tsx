@@ -27,6 +27,8 @@ import {
   getNotificationEnvironment,
   requestKoraNotificationPermission,
   sendKoraNotification,
+  subscribeWebPush,
+  triggerServerClosedAppPush,
 } from '../lib/notifications';
 
 interface SettingsModalProps {
@@ -87,6 +89,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [avatarUrl, setAvatarUrl] = useState('');
   const [notifCfg, setNotifCfg] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [notifStatusMsg, setNotifStatusMsg] = useState<string | null>(null);
+  const [testingClosedPush, setTestingClosedPush] = useState(false);
   const [savedPulse, setSavedPulse] = useState(false);
 
   const notifEnv = getNotificationEnvironment();
@@ -113,7 +116,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     const res = await requestKoraNotificationPermission();
     setNotifStatusMsg(res.message);
     if (res.ok) {
-      const next = { ...notifCfg, enabled: true };
+      const next: NotificationSettings = {
+        ...notifCfg,
+        enabled: true,
+        pushSubscription: res.subscription || notifCfg.pushSubscription,
+      };
       setNotifCfg(next);
       await forceSaveCloud({ notifications: next });
       await sendKoraNotification({
@@ -121,6 +128,35 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         body: 'Tu recevras tes rappels de cours, chronos gym & focus et briefings du jour.',
         tag: 'kora-welcome-notif',
       });
+    }
+  };
+
+  const handleTestClosedAppPush = async () => {
+    setTestingClosedPush(true);
+    setNotifStatusMsg(
+      'Envoi programmé dans 10 secondes… Ferme Kora et verrouille ton iPhone maintenant !'
+    );
+    try {
+      let sub = notifCfg.pushSubscription || (await subscribeWebPush());
+      if (!sub) {
+        const resPerm = await requestKoraNotificationPermission();
+        sub = resPerm.subscription || null;
+      }
+      if (!sub) {
+        setNotifStatusMsg(
+          'Abonnement Push indisponible sur cet appareil (sur iPhone, ouvre Kora depuis l’icône sur ton écran d’accueil).'
+        );
+        return;
+      }
+      if (!notifCfg.pushSubscription || notifCfg.pushSubscription.endpoint !== sub.endpoint) {
+        const next = { ...notifCfg, enabled: true, pushSubscription: sub };
+        setNotifCfg(next);
+        void forceSaveCloud({ notifications: next });
+      }
+      const result = await triggerServerClosedAppPush(sub, { delaySec: 10 });
+      setNotifStatusMsg(result.message);
+    } finally {
+      setTestingClosedPush(false);
     }
   };
 
@@ -407,6 +443,15 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                         className="rounded-lg border border-slate-200 dark:border-zinc-700 px-2 py-1 text-[10px] font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
                       >
                         Tester
+                      </button>
+                      <button
+                        type="button"
+                        disabled={testingClosedPush}
+                        onClick={() => void handleTestClosedAppPush()}
+                        title="Envoie une vraie push Apple/Web dans 10s pour tester app fermée"
+                        className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2 py-1 text-[10px] font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                      >
+                        {testingClosedPush ? '10s…' : 'App fermée (10s)'}
                       </button>
                       <input
                         type="checkbox"

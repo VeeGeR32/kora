@@ -1,5 +1,9 @@
-import type { AppState, NotificationSettings } from '../types';
+import type { AppState, NotificationSettings, StoredPushSubscription } from '../types';
 import { addDays, getOccurrencesForDate, timeToMinutes, todayISO } from '../utils/dates';
+
+export const VAPID_PUBLIC_KEY =
+  (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined) ||
+  'BEF3EQDd5Hvm-3NmLYmA0hZtJ1Jw9v0ikEmvfzOABSDRqKdI40jeV-zK50Q0dB9IzGTaF1BLOPy_lq4MEZZMObM';
 
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   enabled: false,
@@ -67,9 +71,77 @@ export function registerKoraServiceWorker(): Promise<ServiceWorkerRegistration |
   return swRegPromise;
 }
 
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+export async function subscribeWebPush(): Promise<StoredPushSubscription | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return null;
+  }
+  try {
+    const reg = (await registerKoraServiceWorker()) || (await navigator.serviceWorker.ready);
+    if (!reg?.pushManager) return null;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY) as BufferSource,
+      });
+    }
+    const json = sub.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return null;
+    return {
+      endpoint: json.endpoint,
+      keys: {
+        p256dh: json.keys.p256dh,
+        auth: json.keys.auth,
+      },
+    };
+  } catch (err) {
+    console.warn('[Kora Push] Subscribe error:', err);
+    return null;
+  }
+}
+
+export async function triggerServerClosedAppPush(
+  subscription: StoredPushSubscription,
+  options?: { title?: string; body?: string; delaySec?: number }
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetch('/api/push-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription,
+        title: options?.title || 'Kora · Push reçu (app fermée) ✓',
+        body:
+          options?.body ||
+          'Top ! Ton iPhone reçoit bien les notifications push même quand Kora est fermé.',
+        delaySec: options?.delaySec ?? 10,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) {
+      return { ok: false, message: data.error || `Erreur serveur Push (HTTP ${res.status})` };
+    }
+    return { ok: true, message: 'Push serveur envoyé ✓' };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+}
+
 export async function requestKoraNotificationPermission(): Promise<{
   ok: boolean;
   message: string;
+  subscription?: StoredPushSubscription | null;
 }> {
   const env = getNotificationEnvironment();
   if (env.needsHomeScreenInstall) {
@@ -97,7 +169,14 @@ export async function requestKoraNotificationPermission(): Promise<{
           : 'Autorisation non accordée.',
     };
   }
-  return { ok: true, message: 'Notifications activées ✓' };
+  const subscription = await subscribeWebPush();
+  return {
+    ok: true,
+    subscription,
+    message: subscription
+      ? 'Push iPhone/Web activé (compatible app fermée) ✓'
+      : 'Notifications locales activées ✓',
+  };
 }
 
 export async function sendKoraNotification(payload: {

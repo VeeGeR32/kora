@@ -335,6 +335,14 @@ export interface FirebaseUserConfig {
   appId: string;
 }
 
+export interface StoredPushSubscription {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
 export interface NotificationSettings {
   enabled: boolean;
   eventsBeforeMin: number; // 0 = off, default 15
@@ -343,6 +351,7 @@ export interface NotificationSettings {
   hydrationAndMacros: boolean;
   dailyBriefing: boolean;
   morningHour: string; // HH:mm e.g. "07:45"
+  pushSubscription?: StoredPushSubscription;
 }
 
 export interface UserPreferences {
