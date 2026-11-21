@@ -15,6 +15,7 @@ interface AudioPlayerContextValue {
   abLoop: { start: number | null; end: number | null };
   hasNext: boolean;
   hasPrev: boolean;
+  getLiveTime: () => number;
   playTrack: (track: MusicTrack, startAtSec?: number, customQueue?: MusicTrack[]) => Promise<void>;
   playNext: () => void;
   playPrev: () => void;
@@ -271,6 +272,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setAbLoop({ start: null, end: null });
   }, []);
 
+  const getLiveTime = useCallback(() => {
+    const a = audioRef.current;
+    return a && isFinite(a.currentTime) ? a.currentTime : 0;
+  }, []);
+
   const syncTrackMetadata = useCallback((track: MusicTrack) => {
     setCurrentTrack((prev) => (prev && prev.id === track.id ? track : prev));
   }, []);
@@ -288,6 +294,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         abLoop,
         hasNext,
         hasPrev,
+        getLiveTime,
         playTrack,
         playNext,
         playPrev,

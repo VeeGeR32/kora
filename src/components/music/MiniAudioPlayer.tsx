@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronDown,
@@ -36,9 +36,13 @@ function fmt(sec: number) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-const BAR_COUNT = 96;
-const BAR_STEP_PX = 5.5; // bar width + gap = crisp dense [untitled] waveform tape
+const BAR_COUNT = 110;
+const BAR_STEP_PX = 4.5; // crisp dense [untitled] tape bars
 const TOTAL_TAPE_PX = BAR_COUNT * BAR_STEP_PX;
+
+const MINI_BAR_COUNT = 44;
+const MINI_BAR_STEP_PX = 3.5;
+const MINI_TAPE_PX = MINI_BAR_COUNT * MINI_BAR_STEP_PX;
 
 export function MiniAudioPlayer() {
   const { state } = useApp();
@@ -52,6 +56,7 @@ export function MiniAudioPlayer() {
     expanded,
     hasNext,
     hasPrev,
+    getLiveTime,
     playTrack,
     playNext,
     playPrev,
@@ -64,10 +69,20 @@ export function MiniAudioPlayer() {
 
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [showQueue, setShowQueue] = useState(false);
-
-  // Tape-reel drag scrubbing state (fixed yellow center needle + scrolling waveform + haptics!)
   const [scrubbing, setScrubbing] = useState(false);
-  const [scrubTime, setScrubTime] = useState(0);
+
+  // Direct GPU DOM refs updated via 60/120fps requestAnimationFrame (ZERO React re-renders per frame!)
+  const discRef = useRef<HTMLDivElement>(null);
+  const miniDiscRef = useRef<HTMLDivElement>(null);
+  const tapePlayedRef = useRef<HTMLDivElement>(null);
+  const tapeUnplayedRef = useRef<HTMLDivElement>(null);
+  const miniTapePlayedRef = useRef<HTMLDivElement>(null);
+  const miniTapeUnplayedRef = useRef<HTMLDivElement>(null);
+  const timeTextRef = useRef<HTMLParagraphElement>(null);
+  const scrubPillTextRef = useRef<HTMLSpanElement>(null);
+
+  const scrubTimeRef = useRef(0);
+  const scrubbingRef = useRef(false);
   const dragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -112,26 +127,71 @@ export function MiniAudioPlayer() {
     linkedProject?.coverMediaId,
   ]);
 
-  // Dense deterministic waveform bars (matching [untitled] tape reel)
+  // Deterministic waveform bars (memoized once per track)
   const bars = useMemo(() => {
     if (!currentTrack) return [];
     let seed = currentTrack.id.split('').reduce((a, c) => a + c.charCodeAt(0), 31);
     return Array.from({ length: BAR_COUNT }, (_, idx) => {
       seed = (seed * 9301 + 49297) % 233280;
-      const base = 16 + Math.round((seed / 233280) * 84);
-      // Slight natural intro/outro taper
-      const edge = Math.min(1, Math.min(idx + 3, BAR_COUNT - idx + 2) / 8);
-      return Math.max(14, Math.round(base * (0.45 + 0.55 * edge)));
+      const base = 18 + Math.round((seed / 233280) * 82);
+      const edge = Math.min(1, Math.min(idx + 3, BAR_COUNT - idx + 2) / 7);
+      return Math.max(14, Math.round(base * (0.5 + 0.5 * edge)));
     });
   }, [currentTrack?.id]);
 
+  const miniBars = useMemo(() => {
+    if (bars.length === 0) return [];
+    return Array.from({ length: MINI_BAR_COUNT }, (_, i) => {
+      const srcIdx = Math.min(bars.length - 1, Math.floor((i / MINI_BAR_COUNT) * bars.length));
+      return bars[srcIdx];
+    });
+  }, [bars]);
+
   const effectiveDuration = duration || currentTrack?.durationSec || 0;
-  const displayTime = scrubbing ? scrubTime : currentTime;
-  const ratio = effectiveDuration > 0 ? Math.min(1, Math.max(0, displayTime / effectiveDuration)) : 0;
-  const pct = ratio * 100;
-  const tapeOffsetPx = -ratio * TOTAL_TAPE_PX;
-  // Vinyl disc rotation directly driven by playback & finger scrub!
-  const discRotationDeg = displayTime * 22;
+
+  // Helper that paints exact GPU transforms & clock text directly to the DOM at 60/120fps
+  const applyVisualFrame = (t: number, dur: number) => {
+    const r = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
+    const tx = -r * TOTAL_TAPE_PX;
+    const miniTx = -r * MINI_TAPE_PX;
+    const rot = t * 24; // smooth 24 deg/s vinyl spin synced directly to audio time
+
+    const tapeTransform = `translate3d(${tx}px, 0, 0)`;
+    if (tapePlayedRef.current) tapePlayedRef.current.style.transform = tapeTransform;
+    if (tapeUnplayedRef.current) tapeUnplayedRef.current.style.transform = tapeTransform;
+
+    const miniTransform = `translate3d(${miniTx}px, 0, 0)`;
+    if (miniTapePlayedRef.current) miniTapePlayedRef.current.style.transform = miniTransform;
+    if (miniTapeUnplayedRef.current) miniTapeUnplayedRef.current.style.transform = miniTransform;
+
+    const discTransform = `rotate(${rot}deg)`;
+    if (discRef.current) discRef.current.style.transform = discTransform;
+    if (miniDiscRef.current) miniDiscRef.current.style.transform = discTransform;
+
+    const label = `${fmt(t)} / ${fmt(dur)}`;
+    if (timeTextRef.current) timeTextRef.current.textContent = label;
+    if (scrubPillTextRef.current) scrubPillTextRef.current.textContent = label;
+  };
+
+  // Sync visual frame synchronously before paint on mount / track change / seek / expand toggle
+  useLayoutEffect(() => {
+    if (!currentTrack) return;
+    applyVisualFrame(scrubbingRef.current ? scrubTimeRef.current : getLiveTime(), effectiveDuration);
+  }, [currentTrack?.id, expanded, effectiveDuration, currentTime, getLiveTime]);
+
+  // Smooth 60/120fps requestAnimationFrame loop while playing!
+  useEffect(() => {
+    if (!currentTrack || !isPlaying) return;
+    let rafId = 0;
+    const tick = () => {
+      if (!scrubbingRef.current) {
+        applyVisualFrame(getLiveTime(), effectiveDuration);
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [currentTrack?.id, isPlaying, expanded, effectiveDuration, getLiveTime]);
 
   const gradCls = getGradientClass(linkedProject?.coverGradient);
   const subtitle = [linkedProject?.title, currentTrack?.artist || state.preferences.name || 'Moi']
@@ -141,35 +201,38 @@ export function MiniAudioPlayer() {
     currentTrack?.mediaId || currentTrack?.cloudAudioUrl || currentTrack?.googleDriveFileId
   );
 
-  // Pointer drag handlers for the horizontal scrolling waveform tape with haptic ticks
+  // Zero-lag GPU drag scrubbing with haptic ticks!
   const handleTapePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!effectiveDuration) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const startBar = Math.floor(ratio * BAR_COUNT);
+    const liveT = getLiveTime();
+    const startBar = Math.floor((liveT / effectiveDuration) * BAR_COUNT);
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
-      startTime: currentTime,
+      startTime: liveT,
       lastTickBar: startBar,
     };
-    setScrubTime(currentTime);
+    scrubTimeRef.current = liveT;
+    scrubbingRef.current = true;
     setScrubbing(true);
+    applyVisualFrame(liveT, effectiveDuration);
     triggerHapticTick(10);
   };
 
   const handleTapePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId || !effectiveDuration) return;
-    // Dragging finger LEFT advances forward in the track (exact [untitled] tape reel physics!)
     const dx = drag.startX - e.clientX;
     const deltaSec = (dx / TOTAL_TAPE_PX) * effectiveDuration;
     const nextSec = Math.max(0, Math.min(effectiveDuration, drag.startTime + deltaSec));
-    setScrubTime(nextSec);
+    scrubTimeRef.current = nextSec;
+    applyVisualFrame(nextSec, effectiveDuration);
 
     const barIndex = Math.floor((nextSec / effectiveDuration) * BAR_COUNT);
     if (barIndex !== drag.lastTickBar) {
       drag.lastTickBar = barIndex;
-      triggerHapticTick(26);
+      triggerHapticTick(24);
     }
   };
 
@@ -180,10 +243,70 @@ export function MiniAudioPlayer() {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    seek(scrubTime);
+    const targetSec = scrubTimeRef.current;
+    scrubbingRef.current = false;
     setScrubbing(false);
+    seek(targetSec);
+    applyVisualFrame(targetSec, effectiveDuration);
     triggerHapticTick(10);
   };
+
+  // Pre-rendered static bar rows (never re-rendered on playback frames!)
+  const playedBarsEl = useMemo(
+    () =>
+      bars.map((h, i) => (
+        <div
+          key={i}
+          style={{ width: `${BAR_STEP_PX}px` }}
+          className="h-full flex items-center justify-center shrink-0"
+        >
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-white" />
+        </div>
+      )),
+    [bars]
+  );
+
+  const unplayedBarsEl = useMemo(
+    () =>
+      bars.map((h, i) => (
+        <div
+          key={i}
+          style={{ width: `${BAR_STEP_PX}px` }}
+          className="h-full flex items-center justify-center shrink-0"
+        >
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-white/25" />
+        </div>
+      )),
+    [bars]
+  );
+
+  const miniPlayedBarsEl = useMemo(
+    () =>
+      miniBars.map((h, i) => (
+        <div
+          key={i}
+          style={{ width: `${MINI_BAR_STEP_PX}px` }}
+          className="h-full flex items-center justify-center shrink-0"
+        >
+          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-white/95" />
+        </div>
+      )),
+    [miniBars]
+  );
+
+  const miniUnplayedBarsEl = useMemo(
+    () =>
+      miniBars.map((h, i) => (
+        <div
+          key={i}
+          style={{ width: `${MINI_BAR_STEP_PX}px` }}
+          className="h-full flex items-center justify-center shrink-0"
+        >
+          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-white/25" />
+        </div>
+      )),
+    [miniBars]
+  );
 
   return (
     <>
@@ -208,8 +331,8 @@ export function MiniAudioPlayer() {
                 title="Cliquer pour agrandir le lecteur"
               >
                 <div
-                  style={{ transform: `rotate(${discRotationDeg}deg)` }}
-                  className="relative h-10 w-10 rounded-full overflow-hidden border border-white/15 shrink-0 transition-transform duration-100"
+                  ref={miniDiscRef}
+                  className="relative h-10 w-10 rounded-full overflow-hidden border border-white/15 shrink-0 will-change-transform"
                 >
                   {coverUrl ? (
                     <img
@@ -234,24 +357,28 @@ export function MiniAudioPlayer() {
                 </div>
               </button>
 
-              {/* Mini Tape Preview (center-right on sm+) */}
+              {/* Smooth 60fps Mini Tape Preview (center-right on sm+) */}
               <div
                 onClick={() => setExpanded(true)}
-                className="hidden sm:flex relative w-24 h-7 items-center overflow-hidden cursor-pointer shrink-0"
+                className="hidden sm:block relative w-24 h-7 overflow-hidden cursor-pointer shrink-0"
               >
-                <div
-                  style={{ transform: `translateX(calc(50% + ${tapeOffsetPx * 0.22}px))` }}
-                  className="flex items-center gap-[1.5px] h-6"
-                >
-                  {bars.slice(0, 36).map((h, i) => (
-                    <div
-                      key={i}
-                      style={{ height: `${h}%` }}
-                      className={`w-[2px] rounded-full ${
-                        (i / 36) * 100 <= pct ? 'bg-white/90' : 'bg-white/25'
-                      }`}
-                    />
-                  ))}
+                <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
+                  <div
+                    ref={miniTapePlayedRef}
+                    style={{ width: `${MINI_TAPE_PX}px` }}
+                    className="absolute inset-y-0 left-full flex items-center will-change-transform"
+                  >
+                    {miniPlayedBarsEl}
+                  </div>
+                </div>
+                <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 overflow-hidden">
+                  <div
+                    ref={miniTapeUnplayedRef}
+                    style={{ width: `${MINI_TAPE_PX}px` }}
+                    className="absolute inset-y-0 left-0 flex items-center will-change-transform"
+                  >
+                    {miniUnplayedBarsEl}
+                  </div>
                 </div>
                 <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-300" />
               </div>
@@ -306,7 +433,7 @@ export function MiniAudioPlayer() {
         )}
       </AnimatePresence>
 
-      {/* ================= EXPANDED [UNTITLED]-STYLE SCROLLING TAPE PLAYER ================= */}
+      {/* ================= EXPANDED 60/120FPS [UNTITLED]-STYLE TAPE PLAYER ================= */}
       <AnimatePresence>
         {currentTrack && expanded && (
           <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-4 sm:p-6">
@@ -325,7 +452,7 @@ export function MiniAudioPlayer() {
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
               className="relative z-10 w-full max-w-[356px] flex flex-col items-center gap-4"
             >
-              {/* Main Obsidian Card (exact [untitled] video card!) */}
+              {/* Main Obsidian Card */}
               <div className="w-full rounded-[32px] bg-[#0b0b0d] text-white border border-white/10 shadow-[0_32px_90px_-14px_rgba(0,0,0,0.88)] px-6 pt-6 pb-6 flex flex-col items-center space-y-5">
                 {/* Title & Subtitle */}
                 <div className="w-full text-center space-y-0.5 px-2">
@@ -335,10 +462,10 @@ export function MiniAudioPlayer() {
                   <p className="text-xs text-zinc-400 truncate">{subtitle}</p>
                 </div>
 
-                {/* Large Spinning Vinyl Disc (rotates smoothly with playback & finger scrub!) */}
+                {/* Large Spinning Vinyl Disc (60/120fps direct GPU transform) */}
                 <div className="py-1">
                   <div
-                    style={{ transform: `rotate(${discRotationDeg}deg)` }}
+                    ref={discRef}
                     className={`h-52 w-52 sm:h-56 sm:w-56 rounded-full overflow-hidden border border-white/15 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.9)] will-change-transform ${
                       coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
                     }`}
@@ -358,25 +485,19 @@ export function MiniAudioPlayer() {
                   </div>
                 </div>
 
-                {/* [untitled] Scrolling Tape-Reel Waveform + Fixed Center Yellow Playhead + Haptics */}
+                {/* 60/120fps Dual-Clip Scrolling Tape-Reel Waveform + Fixed Center Yellow Needle */}
                 <div className="w-full space-y-2.5">
-                  {/* Floating Yellow Time Pill (always crisp above needle while scrubbing!) */}
+                  {/* Floating Yellow Time Pill (pure DOM text updates — zero flicker while scrubbing) */}
                   <div className="h-6 flex items-center justify-center">
-                    <AnimatePresence>
-                      {scrubbing && (
-                        <motion.span
-                          initial={{ opacity: 0, y: 4, scale: 0.92 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 4, scale: 0.92 }}
-                          className="rounded-full bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums shadow-md"
-                        >
-                          {fmt(displayTime)} / {fmt(effectiveDuration)}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
+                    <span
+                      ref={scrubPillTextRef}
+                      className={`rounded-full bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums shadow-md transition-all duration-150 ${
+                        scrubbing ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
+                      }`}
+                    />
                   </div>
 
-                  {/* Interactive Horizontal Tape Reel (Drag Left/Right with Haptic Feedback!) */}
+                  {/* Interactive Horizontal Tape Reel (Zero-Offset Split Halves, Native GPU Compositing) */}
                   <div
                     onPointerDown={handleTapePointerDown}
                     onPointerMove={handleTapePointerMove}
@@ -387,45 +508,40 @@ export function MiniAudioPlayer() {
                     title="Glisser horizontalement pour naviguer dans le son"
                   >
                     {/* Edge fade masks */}
-                    <div className="pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[#0b0b0d] to-transparent z-10" />
-                    <div className="pointer-events-none absolute inset-y-0 right-0 w-7 bg-gradient-to-l from-[#0b0b0d] to-transparent z-10" />
+                    <div className="pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[#0b0b0d] to-transparent z-20" />
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-7 bg-gradient-to-l from-[#0b0b0d] to-transparent z-20" />
 
-                    {/* Sliding Bars Track anchored to center (50%) */}
-                    <div
-                      style={{
-                        transform: `translate3d(calc(50% + ${tapeOffsetPx}px), 0, 0)`,
-                        width: `${TOTAL_TAPE_PX}px`,
-                      }}
-                      className="absolute inset-y-0 left-0 flex items-center will-change-transform"
-                    >
-                      {bars.map((h, i) => {
-                        const barRatio = i / BAR_COUNT;
-                        const played = barRatio <= ratio;
-                        return (
-                          <div
-                            key={i}
-                            style={{ width: `${BAR_STEP_PX}px` }}
-                            className="h-full flex items-center justify-center shrink-0"
-                          >
-                            <div
-                              style={{ height: `${h}%` }}
-                              className={`w-[2.5px] rounded-full transition-colors duration-75 ${
-                                played ? 'bg-white' : 'bg-white/25'
-                              }`}
-                            />
-                          </div>
-                        );
-                      })}
+                    {/* Left Half (Played = Crisp White, ends pixel-exact at 50% center) */}
+                    <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
+                      <div
+                        ref={tapePlayedRef}
+                        style={{ width: `${TOTAL_TAPE_PX}px` }}
+                        className="absolute inset-y-0 left-full flex items-center will-change-transform"
+                      >
+                        {playedBarsEl}
+                      </div>
+                    </div>
+
+                    {/* Right Half (Unplayed = Muted Gray, starts pixel-exact at 50% center) */}
+                    <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 overflow-hidden">
+                      <div
+                        ref={tapeUnplayedRef}
+                        style={{ width: `${TOTAL_TAPE_PX}px` }}
+                        className="absolute inset-y-0 left-0 flex items-center will-change-transform"
+                      >
+                        {unplayedBarsEl}
+                      </div>
                     </div>
 
                     {/* Fixed Center Yellow Playhead Needle */}
-                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.85)] z-20" />
+                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.85)] z-30" />
                   </div>
 
-                  {/* Time Readout below tape */}
-                  <p className="text-center font-mono text-xs text-zinc-400 tabular-nums">
-                    {fmt(displayTime)} <span className="opacity-50">/</span> {fmt(effectiveDuration)}
-                  </p>
+                  {/* Time Readout below tape (pure DOM updated at 60/120fps) */}
+                  <p
+                    ref={timeTextRef}
+                    className="text-center font-mono text-xs text-zinc-400 tabular-nums min-h-[1rem]"
+                  />
 
                   {/* Timestamped Markers (if any) */}
                   {currentTrack.markers.length > 0 && (
@@ -436,6 +552,7 @@ export function MiniAudioPlayer() {
                           type="button"
                           onClick={() => {
                             seek(mk.timeSec);
+                            applyVisualFrame(mk.timeSec, effectiveDuration);
                             triggerHapticTick(10);
                           }}
                           className="rounded-full bg-white/10 hover:bg-white/20 px-2.5 py-0.5 font-mono text-[10px] text-zinc-200 transition cursor-pointer"
