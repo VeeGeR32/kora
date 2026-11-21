@@ -828,7 +828,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   Sons récents · Dernière version
                 </h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Clic gauche pour écouter · Clic droit (ou ⋯) pour versions, favoris, description & TODO
+                  Clic sur ▶ pour écouter · Clic sur la carte pour ouvrir la page du morceau · Clic droit (ou ⋯) pour options
                 </p>
               </div>
               <div className="flex items-center gap-2">

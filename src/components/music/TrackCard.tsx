@@ -113,29 +113,36 @@ export function TrackCard({
     <div
       role="button"
       tabIndex={0}
-      onClick={() => onPlay(track)}
+      onClick={() => onOpenDetails(group, track.id)}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onPlay(track);
+          onOpenDetails(group, track.id);
         }
       }}
       onContextMenu={(e) => {
         e.preventDefault();
         onOpenContextMenu(e, group, track.id, null);
       }}
-      title="Clic gauche pour écouter · Clic droit pour les options"
+      title="Clic sur la carte pour ouvrir la page du morceau · Clic sur ▶ pour lire · Clic droit pour options"
       className={`group relative rounded-2xl border p-3.5 transition-all cursor-pointer select-none flex flex-col justify-between gap-3 ${
         isCurrentTrack
           ? 'border-fuchsia-400/90 dark:border-fuchsia-500/70 bg-fuchsia-50/45 dark:bg-fuchsia-950/20 shadow-[0_10px_30px_-14px_rgba(217,70,239,0.45)]'
           : 'border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#131317] hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md'
       }`}
     >
-      {/* Top Row: Cover + Title + Star / Context Menu Trigger */}
+      {/* Top Row: Playable Cover + Title + Star / Context Menu Trigger */}
       <div className="flex items-start gap-3">
-        {/* Square Cover with Play Overlay */}
-        <div
-          className={`relative shrink-0 rounded-xl overflow-hidden border border-slate-200/70 dark:border-zinc-800 shadow-xs ${
+        {/* Square Cover = Dedicated Play/Pause Button (stops propagation so card click opens song page!) */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlay(track);
+          }}
+          aria-label={isPlaying ? `Mettre en pause ${group.baseTitle}` : `Lire ${group.baseTitle}`}
+          title={isPlaying ? 'Pause' : 'Lire ce morceau'}
+          className={`relative group/play shrink-0 rounded-xl overflow-hidden border border-slate-200/70 dark:border-zinc-800 shadow-xs cursor-pointer active:scale-95 transition ${
             compact ? 'h-12 w-12' : 'h-14 w-14'
           }`}
         >
@@ -153,10 +160,12 @@ export function TrackCard({
             </div>
           )}
 
-          {/* Hover / Active Play Overlay */}
-          <div
+          {/* Always-clear Play/Pause overlay (crisp pill on mobile, full overlay on hover/playing) */}
+          <span
             className={`absolute inset-0 bg-black/45 text-white flex items-center justify-center transition ${
-              isCurrentTrack ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              isCurrentTrack
+                ? 'opacity-100'
+                : 'opacity-0 group-hover/play:opacity-100 group-hover:opacity-90'
             }`}
           >
             {isPlaying ? (
@@ -164,8 +173,13 @@ export function TrackCard({
             ) : (
               <Play size={18} fill="currentColor" className="ml-0.5" />
             )}
-          </div>
-        </div>
+          </span>
+          {!isCurrentTrack && (
+            <span className="sm:hidden absolute bottom-1 right-1 h-5 w-5 rounded-full bg-black/70 text-white flex items-center justify-center backdrop-blur-xs">
+              <Play size={10} fill="currentColor" className="ml-0.5" />
+            </span>
+          )}
+        </button>
 
         {/* Title + Meta */}
         <div className="min-w-0 flex-1">

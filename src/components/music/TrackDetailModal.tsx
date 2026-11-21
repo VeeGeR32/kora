@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Camera,
+  ChevronLeft,
   Disc3,
   FileText,
   FolderKanban,
@@ -141,10 +142,26 @@ export function TrackDetailModal({
     effectiveCover?.cloudCoverUrl,
   ]);
 
+  const waveformBars = useMemo(() => {
+    const id = track?.id || 'kora';
+    let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 23);
+    return Array.from({ length: 56 }, (_, idx) => {
+      seed = (seed * 9301 + 49297) % 233280;
+      const base = 20 + Math.round((seed / 233280) * 80);
+      const edge = Math.min(1, Math.min(idx + 3, 56 - idx + 2) / 6);
+      return Math.max(16, Math.round(base * (0.55 + 0.45 * edge)));
+    });
+  }, [track?.id]);
+
   if (!group || !activeEntry || !track) return null;
 
   const isCurrent = player.currentTrack?.id === track.id;
   const isPlaying = isCurrent && player.isPlaying;
+  const effectiveDuration = (isCurrent && player.duration > 0 ? player.duration : track.durationSec) || 0;
+  const progressPct =
+    isCurrent && effectiveDuration > 0
+      ? Math.min(100, Math.max(0, (player.currentTime / effectiveDuration) * 100))
+      : 0;
   const todos = track.todos || [];
   const doneTodos = todos.filter((td) => td.done).length;
   const todoPct = todos.length > 0 ? Math.round((doneTodos / todos.length) * 100) : 0;
@@ -195,36 +212,38 @@ export function TrackDetailModal({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 bg-slate-950/45 dark:bg-black/75 backdrop-blur-xs"
-        />
-
-        <motion.div
-          initial={{ opacity: 0, y: 24, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 18, scale: 0.97 }}
-          transition={{ type: 'spring', stiffness: 390, damping: 32 }}
-          className="relative z-10 w-full sm:max-w-xl rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#111114] border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
-        >
-          {/* Top Bar */}
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-zinc-800/80 shrink-0">
+      {/* Full-Screen Editorial Song Page (sits cleanly at z-40 below MiniAudioPlayer z-50!) */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 16 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        className="fixed inset-0 z-40 bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
+      >
+        {/* Minimalist Top Bar (safe-area aware on iPhone PWA!) */}
+        <header className="shrink-0 pt-[calc(env(safe-area-inset-top)+10px)] pb-3 px-4 sm:px-6 border-b border-slate-100 dark:border-zinc-900 bg-white dark:bg-[#0c0c0f]">
+          <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-200">
-                <GitBranch size={11} />
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Retour"
+                className="h-9 px-3 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+              >
+                <ChevronLeft size={16} /> Retour
+              </button>
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
+                <GitBranch size={11} className="text-fuchsia-500 shrink-0" />
                 {activeEntry.versionLabel}
               </span>
-              {activeEntry.isLatest && group.hasMultipleVersions && (
-                <span className="rounded-full bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-2 py-0.5 text-[10px] font-semibold">
-                  Dernière version
+              {group.yearFolder && (
+                <span className="hidden sm:inline-flex rounded-full bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-2.5 py-1 font-mono text-[10px] font-semibold shrink-0">
+                  {group.yearFolder}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -236,32 +255,42 @@ export function TrackDetailModal({
                   );
                 }}
                 title={group.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-                className={`h-8 w-8 rounded-full flex items-center justify-center transition cursor-pointer ${
+                className={`h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer ${
                   group.isFavorite
-                    ? 'text-amber-400 bg-amber-400/12'
-                    : 'text-slate-400 hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                    ? 'text-amber-400 bg-amber-400/14'
+                    : 'bg-slate-100 dark:bg-zinc-900 text-slate-500 hover:text-amber-400'
                 }`}
               >
                 <Star size={16} fill={group.isFavorite ? 'currentColor' : 'none'} />
               </button>
               <button
                 type="button"
-                onClick={onClose}
-                className="h-8 w-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
+                onClick={() => {
+                  deleteMusicTrack(track.id);
+                  if (group.versions.length <= 1) onClose();
+                }}
+                title={`Supprimer ${group.hasMultipleVersions ? activeEntry.versionLabel : 'ce son'}`}
+                className="h-9 w-9 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center transition cursor-pointer"
               >
-                <X size={16} />
+                <Trash2 size={15} />
               </button>
             </div>
           </div>
+        </header>
 
-          {/* Scrollable Body */}
-          <div className="p-5 overflow-y-auto space-y-6 flex-1">
+        {/* Scrollable Full Song Page Body */}
+        <div
+          className={`flex-1 overflow-y-auto px-4 sm:px-6 pt-5 ${
+            player.currentTrack ? 'pb-48' : 'pb-16'
+          }`}
+        >
+          <div className="max-w-2xl mx-auto space-y-6">
             {/* Hero Cover + Title + Play */}
-            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
               <div className="relative group shrink-0">
-                <div className="h-32 w-32 rounded-[22px] overflow-hidden shadow-lg border border-slate-200/70 dark:border-zinc-800">
+                <div className="h-40 w-40 sm:h-36 sm:w-36 rounded-[24px] overflow-hidden shadow-xl border border-slate-200/70 dark:border-zinc-800">
                   {coverUrl ? (
-                    <img src={coverUrl} alt={track.title} className="h-full w-full object-cover" />
+                    <img src={coverUrl} alt={group.baseTitle} className="h-full w-full object-cover" />
                   ) : (
                     <div
                       className={`h-full w-full bg-gradient-to-br ${gradCls} flex items-center justify-center`}
@@ -443,6 +472,41 @@ export function TrackDetailModal({
                 </div>
               </div>
             </div>
+
+            {/* Interactive Page Waveform (click anywhere to play / seek!) */}
+            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/70 dark:bg-zinc-900/45 p-3.5 space-y-2">
+              <div
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                  const targetSec = ratio * (effectiveDuration || 180);
+                  if (isCurrent) player.seek(targetSec);
+                  else void player.playTrack(track, targetSec, group.versions.map((v) => v.track));
+                }}
+                className="h-11 flex items-center gap-[2.5px] cursor-pointer select-none"
+                title="Cliquer pour avancer dans le morceau"
+              >
+                {waveformBars.map((h, i) => {
+                  const barPct = ((i + 0.5) / waveformBars.length) * 100;
+                  const played = isCurrent && barPct <= progressPct;
+                  return (
+                    <div
+                      key={i}
+                      style={{ height: `${h}%` }}
+                      className={`flex-1 rounded-full transition-colors ${
+                        played
+                          ? 'bg-fuchsia-600 dark:bg-fuchsia-400'
+                          : 'bg-slate-300/80 dark:bg-zinc-700 hover:bg-slate-400 dark:hover:bg-zinc-600'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between font-mono text-[10px] text-slate-400">
+                <span>{isCurrent ? fmt(player.currentTime) : '0:00'}</span>
+                <span>{effectiveDuration > 0 ? fmt(effectiveDuration) : 'Clique pour écouter'}</span>
+              </div>
+            </section>
 
             {/* Versions Switcher + Manual Linking / Detaching */}
             <section className="space-y-2.5">
@@ -763,30 +827,8 @@ export function TrackDetailModal({
               </div>
             </section>
           </div>
-
-          {/* Footer */}
-          <div className="px-5 py-3 border-t border-slate-100 dark:border-zinc-800/80 flex items-center justify-between bg-slate-50/60 dark:bg-zinc-950/40 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                deleteMusicTrack(track.id);
-                if (group.versions.length <= 1) onClose();
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
-            >
-              <Trash2 size={13} />
-              Supprimer {group.hasMultipleVersions ? activeEntry.versionLabel : 'ce son'}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-1.5 text-xs font-semibold cursor-pointer"
-            >
-              Fermer
-            </button>
-          </div>
-        </motion.div>
-      </div>
+        </div>
+      </motion.div>
     </AnimatePresence>
   );
 }
