@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  AlertTriangle,
   Camera,
   CheckCircle2,
   ChevronDown,
@@ -72,6 +73,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     cloudUser,
     cloudConfigured,
     cloudSyncing,
+    cloudError,
     lastCloudSyncAt,
     connectGoogleCloud,
     connectEmailCloud,
@@ -117,6 +119,23 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [geminiStatus, setGeminiStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [testingBridge, setTestingBridge] = useState(false);
   const [bridgeStatus, setBridgeStatus] = useState<string | null>(null);
+
+  // Keep form fields synchronized whenever the modal opens or cloud state hydrates while closed
+  useEffect(() => {
+    setName(state.preferences.name || '');
+    setBio(state.preferences.bio || '');
+    setAvatarColor(state.preferences.avatarColor || 'slate');
+    setAvatarUrl(state.preferences.avatarUrl || '');
+    setGeminiApiKey(state.preferences.geminiApiKey || '');
+    setPronoteUrl(state.preferences.pronoteBridgeUrl || 'http://127.0.0.1:4789');
+    setPronoteToken(state.preferences.pronoteBridgeToken || '');
+    setFbApiKey(state.preferences.firebaseConfig?.apiKey || '');
+    setFbProjectId(state.preferences.firebaseConfig?.projectId || '');
+    setFbAuthDomain(state.preferences.firebaseConfig?.authDomain || '');
+    setFbBucket(state.preferences.firebaseConfig?.storageBucket || '');
+    setFbSenderId(state.preferences.firebaseConfig?.messagingSenderId || '');
+    setFbAppId(state.preferences.firebaseConfig?.appId || '');
+  }, [open, state.preferences]);
 
   const handleAvatarUpload = async (file: File | undefined) => {
     if (!file) return;
@@ -183,9 +202,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     e.preventDefault();
     const cleanedKey = geminiApiKey.trim() ? sanitizeGeminiApiKey(geminiApiKey) : '';
     setGeminiApiKey(cleanedKey);
+    let normalizedUrl = pronoteUrl.trim();
+    if (normalizedUrl && !/^https?:\/\//i.test(normalizedUrl)) {
+      normalizedUrl =
+        /^(127\.0\.0\.1|localhost)/i.test(normalizedUrl)
+          ? `http://${normalizedUrl}`
+          : `https://${normalizedUrl}`;
+      setPronoteUrl(normalizedUrl);
+    }
     updatePreferences({
       geminiApiKey: cleanedKey || undefined,
-      pronoteBridgeUrl: pronoteUrl.trim() || undefined,
+      pronoteBridgeUrl: normalizedUrl || undefined,
       pronoteBridgeToken: pronoteToken.trim() || undefined,
     });
     notify('APIs & Services enregistrés ✓');
@@ -433,6 +460,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                           {cloudSyncing ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                           Sauvegarder maintenant
                         </button>
+                        {cloudError && (
+                          <div className="rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-[11px] text-rose-700 dark:text-rose-300 flex items-start gap-2 leading-relaxed">
+                            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                            <span>{cloudError}</span>
+                          </div>
+                        )}
                       </div>
                     ) : cloudConfigured ? (
                       <div className="space-y-3">

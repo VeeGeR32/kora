@@ -29,6 +29,7 @@ import { createEmptyState, createSeedState } from '../data/seed';
 import { uid } from '../utils/dates';
 import {
   fetchCloudStateOnce,
+  formatFirebaseSyncError,
   getEnvFirebaseConfig,
   listenAuthState,
   pushStateToCloud,
@@ -61,6 +62,7 @@ interface AppContextValue {
   authReady: boolean;
   cloudConfigured: boolean;
   cloudSyncing: boolean;
+  cloudError: string | null;
   lastCloudSyncAt: number | null;
   connectGoogleCloud: () => Promise<void>;
   connectEmailCloud: (email: string, password: string) => Promise<void>;
@@ -247,12 +249,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [cloudUser, setCloudUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<number | null>(null);
 
   const toastTimer = useRef<number | null>(null);
   const cloudPushTimer = useRef<number | null>(null);
   const ignoreNextPushRef = useRef(false);
   const cloudHydratedRef = useRef(false);
+  const lastPushedUpdatedAtRef = useRef<number>(0);
   const latestStateRef = useRef(state);
   latestStateRef.current = state;
 
@@ -291,6 +295,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Hydrate from Firestore FIRST on sign-in, then subscribe to live remote updates
   useEffect(() => {
     cloudHydratedRef.current = false;
+    setCloudError(null);
     if (!cloudUser || !cloudConfigured) return;
 
     let cancelled = false;
@@ -305,30 +310,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (remote) {
           // Always trust existing cloud data when signing in on a device!
           ignoreNextPushRef.current = true;
+          lastPushedUpdatedAtRef.current = remote.updatedAt || 0;
           setState(mergeWithSeed(remote));
           setLastCloudSyncAt(Date.now());
+          setCloudError(null);
         } else {
           // Brand new account in Firestore: seed initial state to cloud
-          await pushStateToCloud(resolvedFbConfig, cloudUser.uid, {
+          const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, {
             ...latestStateRef.current,
             updatedAt: Date.now(),
           });
+          lastPushedUpdatedAtRef.current = ts;
           setLastCloudSyncAt(Date.now());
+          setCloudError(null);
         }
       } catch (err) {
         console.error('[Kora Sync] Hydrate error:', err);
+        if (!cancelled) {
+          setCloudError(formatFirebaseSyncError(err));
+        }
       } finally {
         if (!cancelled) {
           cloudHydratedRef.current = true;
           setCloudSyncing(false);
-          unsub = subscribeCloudState(resolvedFbConfig, cloudUser.uid, (remote) => {
-            const localTs = latestStateRef.current.updatedAt || 0;
-            if ((remote.updatedAt || 0) > localTs) {
-              ignoreNextPushRef.current = true;
-              setState(mergeWithSeed(remote));
-              setLastCloudSyncAt(Date.now());
+          unsub = subscribeCloudState(
+            resolvedFbConfig,
+            cloudUser.uid,
+            (remote, meta) => {
+              // Ignore local cache echoes of our own writes; accept any server snapshot that differs
+              const remoteTs = remote.updatedAt || 0;
+              const localTs = latestStateRef.current.updatedAt || 0;
+              if (remoteTs === lastPushedUpdatedAtRef.current || remoteTs === localTs) return;
+              if (!meta.fromCache || remoteTs > localTs) {
+                ignoreNextPushRef.current = true;
+                lastPushedUpdatedAtRef.current = remoteTs;
+                setState(mergeWithSeed(remote));
+                setLastCloudSyncAt(Date.now());
+                setCloudError(null);
+              }
+            },
+            (err) => {
+              setCloudError(formatFirebaseSyncError(err));
             }
-          });
+          );
         }
       }
     };
@@ -352,14 +376,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     cloudPushTimer.current = window.setTimeout(async () => {
       try {
         setCloudSyncing(true);
-        await pushStateToCloud(resolvedFbConfig, cloudUser.uid, state);
+        const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, state);
+        lastPushedUpdatedAtRef.current = ts;
         setLastCloudSyncAt(Date.now());
+        setCloudError(null);
       } catch (err) {
         console.error('[Kora Sync] Push error:', err);
+        const friendly = formatFirebaseSyncError(err);
+        setCloudError(friendly);
+        setToast({ id: uid('toast'), text: `Sync Cloud bloquée : ${friendly}` });
       } finally {
         setCloudSyncing(false);
       }
-    }, 900);
+    }, 350);
     return () => {
       if (cloudPushTimer.current) window.clearTimeout(cloudPushTimer.current);
     };
@@ -377,7 +406,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const touch = (updater: (prev: AppState) => AppState) => {
-    setState((prev) => ({ ...updater(prev), updatedAt: Date.now() }));
+    setState((prev) => ({
+      ...updater(prev),
+      updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+    }));
   };
 
   const connectGoogleCloud = useCallback(async () => {
@@ -438,15 +470,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       setCloudSyncing(true);
-      await pushStateToCloud(resolvedFbConfig, cloudUser.uid, state);
+      const nextTs = Math.max(Date.now(), (latestStateRef.current.updatedAt || 0) + 1);
+      const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, {
+        ...latestStateRef.current,
+        updatedAt: nextTs,
+      });
+      lastPushedUpdatedAtRef.current = ts;
       setLastCloudSyncAt(Date.now());
+      setCloudError(null);
       notify('Données sauvegardées dans Firebase ✓');
     } catch (err) {
-      notify(`Erreur sauvegarde : ${(err as Error).message}`);
+      const friendly = formatFirebaseSyncError(err);
+      setCloudError(friendly);
+      notify(`Erreur sauvegarde : ${friendly}`);
     } finally {
       setCloudSyncing(false);
     }
-  }, [cloudUser, resolvedFbConfig, state, notify]);
+  }, [cloudUser, resolvedFbConfig, notify]);
 
   const disconnectGoogleCloud = useCallback(async () => {
     await signOutFirebase(resolvedFbConfig);
@@ -1254,12 +1294,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetToDemo = useCallback(() => {
-    setState(createSeedState());
+    setState((prev) => ({
+      ...createSeedState(),
+      preferences: prev.preferences,
+      updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+    }));
     notify('Données démo Kora chargées');
   }, [notify]);
 
   const clearAllData = useCallback(() => {
-    setState((prev) => ({ ...createEmptyState(), preferences: prev.preferences }));
+    setState((prev) => ({
+      ...createEmptyState(),
+      preferences: prev.preferences,
+      updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+    }));
     notify('Espace vidé — prêt pour ton programme');
   }, [notify]);
 
@@ -1270,7 +1318,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsed = JSON.parse(json) as Partial<AppState>;
         if (!parsed || typeof parsed !== 'object') return false;
-        setState(mergeWithSeed(parsed));
+        setState((prev) => ({
+          ...mergeWithSeed(parsed),
+          updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+        }));
         notify('Sauvegarde importée');
         return true;
       } catch {
@@ -1291,6 +1342,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         authReady,
         cloudConfigured,
         cloudSyncing,
+        cloudError,
         lastCloudSyncAt,
         connectGoogleCloud,
         connectEmailCloud,

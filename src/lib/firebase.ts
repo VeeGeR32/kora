@@ -167,6 +167,19 @@ function sanitizeForFirestore<T>(data: T): T {
   return JSON.parse(JSON.stringify(data)) as T;
 }
 
+export function formatFirebaseSyncError(err: unknown): string {
+  const e = err as { code?: string; message?: string } | null;
+  const code = e?.code || '';
+  const msg = e?.message || String(err || 'Erreur inconnue');
+  if (code === 'permission-denied' || /permission|insufficient/i.test(msg)) {
+    return 'Accès Firestore refusé (permission-denied) : publie les dernières règles firestore.rules dans Firebase Console → Firestore Database → Règles.';
+  }
+  if (code === 'unavailable' || /offline|network/i.test(msg)) {
+    return 'Hors ligne : les modifications seront synchronisées dès le retour du réseau.';
+  }
+  return msg;
+}
+
 export async function fetchCloudStateOnce(
   config: FirebaseUserConfig | null | undefined,
   uid: string
@@ -183,33 +196,43 @@ export async function pushStateToCloud(
   config: FirebaseUserConfig | null | undefined,
   uid: string,
   state: AppState
-): Promise<void> {
+): Promise<number> {
   const bundle = initFirebaseClient(config);
-  if (!bundle) return;
+  if (!bundle) return state.updatedAt || Date.now();
   const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
+  const ts = state.updatedAt && state.updatedAt >= 1577836800000 ? state.updatedAt : Date.now();
   const cleanPayload = sanitizeForFirestore({
     ...state,
-    updatedAt: state.updatedAt || Date.now(),
+    updatedAt: ts,
   });
   await setDoc(refDoc, cleanPayload);
+  return ts;
 }
 
 export function subscribeCloudState(
   config: FirebaseUserConfig | null | undefined,
   uid: string,
-  onRemoteState: (remote: AppState) => void
+  onRemoteState: (remote: AppState, meta: { fromCache: boolean }) => void,
+  onError?: (err: Error) => void
 ): Unsubscribe {
   const bundle = initFirebaseClient(config);
   if (!bundle) return () => {};
   const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
-  return onSnapshot(refDoc, (snap) => {
-    if (!snap.exists()) return;
-    if (snap.metadata.hasPendingWrites) return;
-    const data = snap.data() as AppState;
-    if (data && typeof data === 'object') {
-      onRemoteState(data);
+  return onSnapshot(
+    refDoc,
+    (snap) => {
+      if (!snap.exists()) return;
+      if (snap.metadata.hasPendingWrites) return;
+      const data = snap.data() as AppState;
+      if (data && typeof data === 'object') {
+        onRemoteState(data, { fromCache: snap.metadata.fromCache });
+      }
+    },
+    (err) => {
+      console.error('[Kora Sync] Snapshot error:', err);
+      onError?.(err);
     }
-  });
+  );
 }
 
 export async function uploadCloudMedia(
