@@ -1,8 +1,7 @@
 import crypto from 'node:crypto';
-import { createRequire } from 'node:module';
+import * as wp from 'web-push';
 
-const require = createRequire(import.meta.url);
-const webpush = require('web-push');
+const webpush = wp.default || wp;
 
 function base64url(input) {
   return Buffer.from(input)

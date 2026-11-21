@@ -1,8 +1,7 @@
-import { createRequire } from 'node:module';
+import * as wp from 'web-push';
 import { waitUntil } from '@vercel/functions';
 
-const require = createRequire(import.meta.url);
-const webpush = require('web-push');
+const webpush = wp.default || wp;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
