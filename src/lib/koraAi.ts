@@ -249,9 +249,9 @@ function buildContextSummary(state: AppState): string {
 export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
 const FALLBACK_MODELS = [
   'gemini-3.8-flash',
-  'gemini-3.8-flash-lite',
-  'gemini-3-flash-preview',
-  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.8-pro',
 ];
 
 /** Cleans accidental whitespace/quotes while supporting BOTH legacy AIza... and new AQ.... keys */
@@ -267,6 +267,7 @@ async function generateWithAutoRouting(
   const ai = new GoogleGenAI({ apiKey: cleanKey });
 
   let lastError: unknown = null;
+  let lastTransientError: unknown = null;
   for (const model of FALLBACK_MODELS) {
     try {
       const res = await ai.models.generateContent({
@@ -277,6 +278,9 @@ async function generateWithAutoRouting(
     } catch (err) {
       lastError = err;
       const msg = String((err as Error)?.message || err);
+      if (msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand') || msg.includes('429')) {
+        lastTransientError = err;
+      }
       const isRetryable =
         msg.includes('NOT_FOUND') ||
         msg.includes('404') ||
@@ -289,7 +293,7 @@ async function generateWithAutoRouting(
       if (!isRetryable) throw err;
     }
   }
-  throw lastError || new Error('Impossible de joindre Gemini');
+  throw lastTransientError || lastError || new Error('Impossible de joindre Gemini');
 }
 
 export async function testGeminiApiKey(apiKey: string): Promise<{ ok: boolean; message: string }> {
