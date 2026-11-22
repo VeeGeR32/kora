@@ -36,6 +36,7 @@ import { TrackDetailModal } from './TrackDetailModal';
 import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 import { SettingsPage } from '../SettingsModal';
+import { DocumentationPage } from '../DocumentationPage';
 import {
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
@@ -50,6 +51,8 @@ interface MusicViewProps {
   navResetNonce?: number;
   isSettingsOpen?: boolean;
   onOpenSettings?: () => void;
+  isDocsOpen?: boolean;
+  onOpenDocs?: () => void;
 }
 type LibraryFilter = 'all' | 'favorites' | 'todo';
 type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential' | 'gap';
@@ -60,6 +63,8 @@ export function MusicView({
   navResetNonce = 0,
   isSettingsOpen = false,
   onOpenSettings,
+  isDocsOpen = false,
+  onOpenDocs,
 }: MusicViewProps) {
   const {
     state,
@@ -636,13 +641,39 @@ export function MusicView({
     );
   };
 
-  const hasActiveSubPage = Boolean(isSettingsOpen || showNewProj || detailGroup || openProjectId);
+  const hasActiveSubPage = Boolean(
+    isSettingsOpen || isDocsOpen || showNewProj || detailGroup || openProjectId
+  );
 
   return (
     <div className="space-y-5 pb-14">
       {/* ================= IN-APP SUB-PAGES (rendered inside <main> alongside sidebar & navbars!) ================= */}
       {isSettingsOpen ? (
         <SettingsPage />
+      ) : isDocsOpen ? (
+        <DocumentationPage
+          onNavigateTab={(tab) => {
+            setShowNewProj(false);
+            setDetailTarget(null);
+            setOpenProjectId(null);
+            setSubTab(tab);
+          }}
+          onOpenDriveManager={() => setPermanentSetupOpen(true)}
+          onCreateProject={() => {
+            setDetailTarget(null);
+            setOpenProjectId(null);
+            setSubTab('projects');
+            setShowNewProj(true);
+          }}
+          onCreateLyrics={() => {
+            const newDocId = addLyricsDoc({ title: 'Nouveau texte' });
+            setShowNewProj(false);
+            setDetailTarget(null);
+            setOpenProjectId(null);
+            setLyricsOpenRequest({ docId: newDocId, nonce: Date.now() });
+            setSubTab('lyrics');
+          }}
+        />
       ) : showNewProj ? (
         <ProjectCreationModal
           open={showNewProj}
@@ -1294,6 +1325,7 @@ export function MusicView({
           setSubTab(tab);
         }}
         onOpenSettings={onOpenSettings}
+        onOpenDocs={onOpenDocs}
         onOpenProject={(projId) => {
           setShowNewProj(false);
           setDetailTarget(null);

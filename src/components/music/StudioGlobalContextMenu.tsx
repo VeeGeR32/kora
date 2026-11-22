@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  BookOpen,
   Circle,
   Copy,
   Disc3,
@@ -35,6 +36,7 @@ interface StudioGlobalContextMenuProps {
   onClose: () => void;
   onNavigateTab: (tab: MusicSubTab) => void;
   onOpenSettings?: () => void;
+  onOpenDocs?: () => void;
   onOpenProject: (projectId: string) => void;
   onCreateProject: () => void;
   onOpenLyricsDoc: (docId: string) => void;
@@ -48,6 +50,7 @@ export function StudioGlobalContextMenu({
   onClose,
   onNavigateTab,
   onOpenSettings,
+  onOpenDocs,
   onOpenProject,
   onCreateProject,
   onOpenLyricsDoc,
@@ -536,6 +539,20 @@ export function StudioGlobalContextMenu({
                     : 'Passer en mode sombre'}
                 </span>
               </button>
+
+              {onOpenDocs && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenDocs();
+                    onClose();
+                  }}
+                  className={itemCls}
+                >
+                  <BookOpen size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
+                  <span>Guide & Documentation</span>
+                </button>
+              )}
 
               {onOpenSettings && (
                 <button

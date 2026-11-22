@@ -31,7 +31,7 @@ function KoraMusicApp() {
     (next: AppPage) => {
       setActivePageState(next);
       setNavResetNonce((n) => n + 1);
-      if (next !== 'settings') {
+      if (next !== 'settings' && next !== 'docs') {
         updateLastSession({ activeTab: 'music', musicSubTab: next, scrollY: 0 });
       }
       window.scrollTo({ top: 0, behavior: 'auto' });
@@ -85,9 +85,9 @@ function KoraMusicApp() {
     state.musicTracks.length,
   ]);
 
-  // If user taps cover art inside the full-screen player while on Settings, switch back to MusicView so the Song Page opens!
+  // If user taps cover art inside the full-screen player while on Settings or Docs, switch back to MusicView so the Song Page opens!
   useEffect(() => {
-    if (player.pendingOpenTrackId && activePage === 'settings') {
+    if (player.pendingOpenTrackId && (activePage === 'settings' || activePage === 'docs')) {
       setActivePageState('dashboard');
     }
   }, [player.pendingOpenTrackId, activePage]);
@@ -149,9 +149,11 @@ function KoraMusicApp() {
   return (
     <Layout activePage={activePage} onPageChange={setActivePage}>
       <MusicView
-        subTab={activePage === 'settings' ? 'dashboard' : activePage}
+        subTab={activePage === 'settings' || activePage === 'docs' ? 'dashboard' : activePage}
         isSettingsOpen={activePage === 'settings'}
         onOpenSettings={() => setActivePage('settings')}
+        isDocsOpen={activePage === 'docs'}
+        onOpenDocs={() => setActivePage('docs')}
         onSubTabChange={handleMusicSubTabChange}
         navResetNonce={navResetNonce}
       />

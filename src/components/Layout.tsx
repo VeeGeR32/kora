@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  BookOpen,
   Cloud,
   CloudOff,
   Disc3,
@@ -21,7 +22,7 @@ import { KoraLogo } from './ui/KoraLogo';
 import { MiniAudioPlayer } from './music/MiniAudioPlayer';
 import type { MusicSubTab } from './music/MusicView';
 
-export type AppPage = MusicSubTab | 'settings';
+export type AppPage = MusicSubTab | 'settings' | 'docs';
 
 interface LayoutProps {
   activePage: AppPage;
@@ -264,6 +265,20 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
             </button>
             <button
               type="button"
+              onClick={() => onPageChange(activePage === 'docs' ? 'dashboard' : 'docs')}
+              title="Guide & Documentation"
+              aria-label="Guide & Documentation"
+              className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-2 text-xs font-medium transition cursor-pointer ${
+                activePage === 'docs'
+                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                  : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
+              }`}
+            >
+              <BookOpen size={14} />
+              <span>Guide</span>
+            </button>
+            <button
+              type="button"
               onClick={() => onPageChange('settings')}
               aria-label="Paramètres"
               className={`rounded-xl p-2 transition cursor-pointer ${
@@ -293,6 +308,19 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
           </button>
 
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onPageChange(activePage === 'docs' ? 'dashboard' : 'docs')}
+              aria-label="Guide & Documentation"
+              title="Guide & Documentation"
+              className={`rounded-xl p-2 transition ${
+                activePage === 'docs'
+                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-white'
+                  : 'text-slate-600 dark:text-zinc-300'
+              }`}
+            >
+              <BookOpen size={16} />
+            </button>
             <button
               type="button"
               onClick={toggleTheme}
