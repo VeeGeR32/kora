@@ -86,7 +86,6 @@ export function MiniAudioPlayer() {
   const [scrubbing, setScrubbing] = useState(false);
 
   // Direct GPU DOM refs updated via 60/120fps requestAnimationFrame (ZERO React re-renders per frame!)
-  const discRef = useRef<HTMLDivElement>(null);
   const miniDiscRef = useRef<HTMLDivElement>(null);
   const tapePlayedRef = useRef<HTMLDivElement>(null);
   const tapeUnplayedRef = useRef<HTMLDivElement>(null);
@@ -211,7 +210,6 @@ export function MiniAudioPlayer() {
     if (miniTapeUnplayedRef.current) miniTapeUnplayedRef.current.style.transform = miniTransform;
 
     const discTransform = `rotate3d(0, 0, 1, ${rot.toFixed(2)}deg)`;
-    if (discRef.current) discRef.current.style.transform = discTransform;
     if (miniDiscRef.current) miniDiscRef.current.style.transform = discTransform;
 
     const label = `${fmt(t)} / ${fmt(dur)}`;
@@ -799,17 +797,16 @@ export function MiniAudioPlayer() {
                 </div>
               </div>
 
-              {/* Center Spinning Vinyl Cover (Tap -> Opens the Song Page!) */}
-              <div className="flex-1 flex flex-col items-center justify-center py-4 min-h-0">
+              {/* Large Spotify-Style Square Cover Art (Static, Zero Circular Crop · Tap -> Song Page!) */}
+              <div className="flex-1 flex flex-col items-center justify-center py-3 min-h-0 w-full">
                 <button
                   type="button"
                   onClick={handleOpenTrackPageFromCover}
                   title="Cliquer pour ouvrir la page du morceau"
-                  className="group relative rounded-full active:scale-[0.98] transition-transform cursor-pointer focus:outline-none"
+                  className="group relative w-full max-w-[340px] sm:max-w-[360px] aspect-square rounded-2xl active:scale-[0.985] transition-transform cursor-pointer focus:outline-none"
                 >
                   <div
-                    ref={discRef}
-                    className={`h-60 w-60 sm:h-72 sm:w-72 rounded-full overflow-hidden border border-white/15 shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] will-change-transform transition-opacity ${
+                    className={`w-full h-full rounded-2xl overflow-hidden border border-white/10 shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
                       coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
                     } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
                   >
@@ -822,7 +819,7 @@ export function MiniAudioPlayer() {
                       />
                     ) : (
                       <div className="h-full w-full flex items-center justify-center">
-                        <div className="h-14 w-14 rounded-full bg-black/25 border border-white/20" />
+                        <Disc3 size={64} className="text-white/40" strokeWidth={1.3} />
                       </div>
                     )}
                   </div>
