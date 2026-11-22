@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   Disc3,
-  FileText,
   GitBranch,
   ListChecks,
   MoreHorizontal,
@@ -18,7 +17,6 @@ import type { TrackGroup } from '../../lib/musicVersioning';
 import {
   countLyricsFixTags,
   findLinkedLyricsForTrack,
-  LYRICS_STATUS_META,
   resolveEffectiveTrackCover,
   resolveTrackRatings,
   resolveTrackWorkflow,
@@ -115,7 +113,6 @@ export function TrackCard({
       ),
     [track, state.lyricsDocs, group.allTrackIds, group.versions]
   );
-  const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
   const fixTagCount = useMemo(
     () => (linkedLyrics ? countLyricsFixTags(linkedLyrics.content) : 0),
     [linkedLyrics]
@@ -252,8 +249,8 @@ export function TrackCard({
             </div>
           </div>
 
-          {/* Version Pill + Date + Duration */}
-          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+          {/* Version Pill + Status + Ratings + Duration (Single-Line, No Vertical Wrap) */}
+          <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-1 min-w-0">
             {group.hasMultipleVersions ? (
               <button
                 type="button"
@@ -262,7 +259,7 @@ export function TrackCard({
                   onOpenContextMenu(e, group, track.id, 'versions');
                 }}
                 title="Choisir une autre version"
-                className="inline-flex items-center gap-1 rounded-full bg-slate-900/8 dark:bg-zinc-100/10 hover:bg-slate-900/14 dark:hover:bg-zinc-100/16 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-800 dark:text-zinc-200 transition cursor-pointer"
+                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-900/8 dark:bg-zinc-100/10 hover:bg-slate-900/14 dark:hover:bg-zinc-100/16 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-800 dark:text-zinc-200 transition cursor-pointer"
               >
                 <GitBranch size={9} className="text-fuchsia-500" />
                 <span>{activeEntry.versionLabel}</span>
@@ -271,7 +268,7 @@ export function TrackCard({
               </button>
             ) : (
               activeEntry.versionLabel !== 'Original' && (
-                <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-zinc-400">
+                <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-zinc-400">
                   {activeEntry.versionLabel}
                 </span>
               )
@@ -279,43 +276,15 @@ export function TrackCard({
 
             <span
               title={`${statusMeta.label} — ${statusMeta.hint}`}
-              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
             >
               {statusMeta.shortLabel}
             </span>
 
-            {moodMeta && (
-              <span
-                title={`Ambiance : ${moodMeta.label}`}
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${moodMeta.badge}`}
-              >
-                {moodMeta.emoji} {moodMeta.short}
-              </span>
-            )}
-
-            {fixTagCount > 0 && (
-              <span
-                title={`${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] restante${fixTagCount > 1 ? 's' : ''} dans le texte`}
-                className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold"
-              >
-                [FIX] ×{fixTagCount}
-              </span>
-            )}
-
-            {lyricsMeta && (
-              <span
-                title={`Texte lié : ${linkedLyrics?.title || ''} (${lyricsMeta.label})`}
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${lyricsMeta.badge}`}
-              >
-                <FileText size={9} className="shrink-0 opacity-80" />
-                <span>{lyricsMeta.label}</span>
-              </span>
-            )}
-
             {(ratings.current !== null || ratings.potential !== null) && (
               <span
                 title={`Note actuelle : ${ratings.current ?? '—'}/10 · Potentiel : ${ratings.potential ?? '—'}/10`}
-                className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
+                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
               >
                 {ratings.current !== null && <span>{ratings.current}</span>}
                 {ratings.current !== null && ratings.potential !== null && (
@@ -327,6 +296,24 @@ export function TrackCard({
               </span>
             )}
 
+            {moodMeta && (
+              <span
+                title={`Ambiance : ${moodMeta.label}`}
+                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${moodMeta.badge}`}
+              >
+                {moodMeta.emoji}
+              </span>
+            )}
+
+            {fixTagCount > 0 && (
+              <span
+                title={`${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] restante${fixTagCount > 1 ? 's' : ''} dans le texte`}
+                className="shrink-0 rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold"
+              >
+                [FIX] ×{fixTagCount}
+              </span>
+            )}
+
             {group.prodTrack && group.prodTrack.id !== track.id && onPlayProd && (
               <button
                 type="button"
@@ -335,7 +322,7 @@ export function TrackCard({
                   onPlayProd(group.prodTrack!);
                 }}
                 title="Lancer la prod (instru) de ce morceau"
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer ${
+                className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer ${
                   isPlayingProd
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/22'
@@ -351,7 +338,7 @@ export function TrackCard({
             )}
 
             {track.durationSec ? (
-              <span className="font-mono text-[10px] text-slate-400">
+              <span className="shrink-0 font-mono text-[10px] text-slate-400">
                 {fmtDuration(track.durationSec)}
               </span>
             ) : null}

@@ -39,7 +39,7 @@ export function ProjectHarmonizationView({
   allGroups,
   onOpenTrackDetails,
 }: ProjectHarmonizationViewProps) {
-  const { updateMusicProject, updateMusicTrack, setTrackGroupWorkflow } = useApp();
+  const { updateMusicProject, setTrackGroupWorkflow } = useApp();
   const player = useAudioPlayer();
 
   const [newStepLabel, setNewStepLabel] = useState('');
@@ -322,12 +322,10 @@ export function ProjectHarmonizationView({
           </p>
         ) : (
           <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 overflow-hidden bg-white dark:bg-[#111115]">
-            {/* Header Row (BPM & Ton. hidden on mobile so titles have generous room!) */}
-            <div className="grid grid-cols-[22px_minmax(0,1fr)_70px_82px] sm:grid-cols-[28px_minmax(0,2fr)_64px_64px_92px_100px] items-center gap-1.5 px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-50/70 dark:bg-zinc-900/50">
+            {/* Header Row (BPM & Ton. live exclusively in the Song Page) */}
+            <div className="grid grid-cols-[24px_minmax(0,1fr)_74px_86px] sm:grid-cols-[32px_minmax(0,1fr)_96px_108px] items-center gap-1.5 px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-50/70 dark:bg-zinc-900/50">
               <span>#</span>
               <span>Titre</span>
-              <span className="hidden sm:block text-center">BPM</span>
-              <span className="hidden sm:block text-center">Ton.</span>
               <span className="text-center">Mood</span>
               <span className="text-right">Statut</span>
             </div>
@@ -363,7 +361,7 @@ export function ProjectHarmonizationView({
                           }
                         : { touchAction: 'pan-y' }
                     }
-                    className={`grid grid-cols-[22px_minmax(0,1fr)_70px_82px] sm:grid-cols-[28px_minmax(0,2fr)_64px_64px_92px_100px] items-center gap-1.5 px-3 py-2 text-xs select-none ${
+                    className={`grid grid-cols-[24px_minmax(0,1fr)_74px_86px] sm:grid-cols-[32px_minmax(0,1fr)_96px_108px] items-center gap-1.5 px-3 py-2 text-xs select-none ${
                       isDragging
                         ? 'relative z-20 bg-white dark:bg-zinc-900 shadow-lg ring-1 ring-slate-300 dark:ring-zinc-700 rounded-xl'
                         : ''
@@ -413,32 +411,6 @@ export function ProjectHarmonizationView({
                         {trk.manualGroupTitle || trk.title}
                       </button>
                     </div>
-
-                    {/* Inline BPM (desktop / tablet) */}
-                    <input
-                      type="number"
-                      value={trk.bpm || ''}
-                      onChange={(e) =>
-                        updateMusicTrack(trk.id, {
-                          bpm: e.target.value ? Number(e.target.value) : undefined,
-                        })
-                      }
-                      placeholder="—"
-                      aria-label="BPM"
-                      className="hidden sm:block w-full text-center font-mono text-[11px] bg-transparent rounded-md py-0.5 text-slate-700 dark:text-zinc-200 placeholder:text-slate-300 dark:placeholder:text-zinc-700 focus:bg-slate-100 dark:focus:bg-zinc-800 outline-none"
-                    />
-
-                    {/* Inline Key (desktop / tablet) */}
-                    <input
-                      type="text"
-                      value={trk.musicalKey || ''}
-                      onChange={(e) =>
-                        updateMusicTrack(trk.id, { musicalKey: e.target.value || undefined })
-                      }
-                      placeholder="—"
-                      aria-label="Tonalité"
-                      className="hidden sm:block w-full text-center font-mono text-[11px] bg-transparent rounded-md py-0.5 text-slate-700 dark:text-zinc-200 placeholder:text-slate-300 dark:placeholder:text-zinc-700 focus:bg-slate-100 dark:focus:bg-zinc-800 outline-none"
-                    />
 
                     {/* 1-Tap Mood Cycler */}
                     <button

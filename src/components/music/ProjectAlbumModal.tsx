@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  FileText,
   GripVertical,
   Link2,
   ListChecks,
@@ -37,7 +36,6 @@ import {
   countLyricsFixTags,
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
-  LYRICS_STATUS_META,
   prepareAndUploadHdCover,
   resolveTrackRatings,
   resolveTrackWorkflow,
@@ -1046,7 +1044,6 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     trkGroup?.allTrackIds,
                     trkGroup?.versions.map((v) => v.track)
                   );
-                  const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
                   const trkFixCount = linkedLyrics ? countLyricsFixTags(linkedLyrics.content) : 0;
                   const trkWorkflow = resolveTrackWorkflow(
                     trk,
@@ -1118,7 +1115,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                               void player.playTrack(trk, 0, projectTracks);
                             }
                           }}
-                          className="flex items-center gap-3.5 min-w-0 flex-1 text-left cursor-pointer"
+                          className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
                         >
                           <span className="w-5 text-center font-mono text-xs text-slate-400 dark:text-zinc-500 shrink-0">
                             {playing ? (
@@ -1150,43 +1147,21 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                             >
                               {trk.manualGroupTitle || trk.title}
                             </p>
-                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                              <p className="text-xs text-slate-400 dark:text-zinc-500">
+                            <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-0.5 min-w-0">
+                              <span className="text-[11px] text-slate-400 dark:text-zinc-500 truncate min-w-0">
                                 {fmtAddedDate(trk.modifiedAt || trk.addedAt) ||
                                   state.preferences.name ||
                                   trk.artist}
-                                {trk.bpm ? ` · ${trk.bpm} BPM` : ''}
-                              </p>
+                              </span>
                               <span
-                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkStatusMeta.badge}`}
+                                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkStatusMeta.badge}`}
                               >
                                 {trkStatusMeta.shortLabel}
                               </span>
-                              {trkMoodMeta && (
-                                <span
-                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkMoodMeta.badge}`}
-                                >
-                                  {trkMoodMeta.emoji} {trkMoodMeta.short}
-                                </span>
-                              )}
-                              {trkFixCount > 0 && (
-                                <span className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
-                                  [FIX] ×{trkFixCount}
-                                </span>
-                              )}
-                              {lyricsMeta && (
-                                <span
-                                  title={`Texte lié : ${linkedLyrics?.title || ''} (${lyricsMeta.label})`}
-                                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${lyricsMeta.badge}`}
-                                >
-                                  <FileText size={9} className="shrink-0 opacity-80" />
-                                  <span>{lyricsMeta.label}</span>
-                                </span>
-                              )}
                               {(trkRatings.current !== null || trkRatings.potential !== null) && (
                                 <span
                                   title={`Note actuelle : ${trkRatings.current ?? '—'}/10 · Potentiel : ${trkRatings.potential ?? '—'}/10`}
-                                  className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
+                                  className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
                                 >
                                   {trkRatings.current !== null && <span>{trkRatings.current}</span>}
                                   {trkRatings.current !== null && trkRatings.potential !== null && (
@@ -1197,6 +1172,18 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                       ↗{trkRatings.potential}
                                     </span>
                                   )}
+                                </span>
+                              )}
+                              {trkMoodMeta && (
+                                <span
+                                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkMoodMeta.badge}`}
+                                >
+                                  {trkMoodMeta.emoji}
+                                </span>
+                              )}
+                              {trkFixCount > 0 && (
+                                <span className="shrink-0 rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                                  [FIX] ×{trkFixCount}
                                 </span>
                               )}
                             </div>

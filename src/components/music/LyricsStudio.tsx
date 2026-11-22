@@ -1038,11 +1038,6 @@ export function LyricsStudio({
                             linkedTrack?.title ||
                             'Associer un son…'}
                         </span>
-                        {linkedTrack?.bpm ? (
-                          <span className="hidden sm:inline font-mono text-[10px] text-slate-400 shrink-0">
-                            · {linkedTrack.bpm} BPM
-                          </span>
-                        ) : null}
                         <ChevronDown size={12} className="text-slate-400 shrink-0 ml-auto" />
                       </button>
 

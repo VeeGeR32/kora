@@ -366,26 +366,26 @@ export function ProjectSprintView({
                               <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
                             )}
                           </div>
-                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-0.5 min-w-0">
                             <span
-                              className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
+                              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
                             >
                               {statusMeta.step}/5 · {statusMeta.shortLabel}
                             </span>
                             {moodMeta && (
                               <span
-                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${moodMeta.badge}`}
+                                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${moodMeta.badge}`}
                               >
-                                {moodMeta.emoji} {moodMeta.short}
+                                {moodMeta.emoji}
                               </span>
                             )}
                             {fixCount > 0 && (
-                              <span className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                              <span className="shrink-0 rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
                                 [FIX] ×{fixCount}
                               </span>
                             )}
                             {openTodos > 0 && (
-                              <span className="font-mono text-[10px] text-slate-400">
+                              <span className="shrink-0 font-mono text-[10px] text-slate-400">
                                 {openTodos} tâche{openTodos > 1 ? 's' : ''}
                               </span>
                             )}
@@ -630,12 +630,12 @@ export function ProjectSprintView({
                       : 'bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 text-slate-800 dark:text-zinc-100 hover:border-slate-400'
                   }`}
                 >
-                  <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-semibold truncate">
+                  <div className="min-w-0 flex-1 flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap">
+                    <span className="text-xs font-semibold truncate min-w-0">
                       {trk.manualGroupTitle || trk.title}
                     </span>
                     <span
-                      className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
+                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
                         selected ? 'bg-white/15 dark:bg-black/15' : statusMeta.badge
                       }`}
                     >
@@ -643,22 +643,22 @@ export function ProjectSprintView({
                     </span>
                     {moodMeta && (
                       <span
-                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
                           selected ? 'bg-white/15 dark:bg-black/15' : moodMeta.badge
                         }`}
                       >
-                        {moodMeta.emoji} {moodMeta.short}
+                        {moodMeta.emoji}
                       </span>
                     )}
                     {existingSprintTitle && (
                       <span
-                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-mono ${
+                        className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-mono ${
                           selected
                             ? 'bg-white/20 dark:bg-black/20'
                             : 'bg-slate-100 dark:bg-zinc-800 text-slate-400'
                         }`}
                       >
-                        déjà dans {existingSprintTitle}
+                        {existingSprintTitle}
                       </span>
                     )}
                   </div>
