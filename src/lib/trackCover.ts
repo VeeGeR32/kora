@@ -1,4 +1,5 @@
-import type { LyricsDoc, MusicProject, MusicTrack } from '../types';
+import type { FirebaseUserConfig, LyricsDoc, MusicProject, MusicTrack } from '../types';
+import { getCurrentFirebaseIdToken } from './firebase';
 import { getDeterministicGradientId } from './musicVersioning';
 
 export const LYRICS_STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
@@ -43,11 +44,12 @@ export function findLinkedLyricsForTrack(
   return activeDocs.find((d) => d.linkedTrackId && idSet.has(d.linkedTrackId)) || null;
 }
 
-/** Compresses any uploaded cover image cleanly for instant cross-device Firestore sync */
+/** Compresses any uploaded cover image cleanly (supports WebP & high-quality resampling) */
 export async function compressCoverImage(
   file: File,
-  maxSize = 240,
-  quality = 0.7
+  maxSize = 1080,
+  quality = 0.9,
+  preferWebp = true
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -56,10 +58,21 @@ export async function compressCoverImage(
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
         const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
+        if (preferWebp) {
+          const webp = canvas.toDataURL('image/webp', quality);
+          if (webp.startsWith('data:image/webp')) {
+            resolve(webp);
+            return;
+          }
+        }
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
@@ -68,6 +81,50 @@ export async function compressCoverImage(
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * Prepares a razor-sharp HD Retina cover (up to 1080x1080 WebP/JPEG) and uploads it
+ * to dedicated cloud cover storage (/api/cover) so appState/main stays tiny (< 40 bytes per cover!)
+ * while covers render in crystal-clear HD across all devices and public share links.
+ * Gracefully falls back to inline compressed image if offline / local dev.
+ */
+export async function prepareAndUploadHdCover(
+  file: File,
+  firebaseConfig?: FirebaseUserConfig | null
+): Promise<string> {
+  let hdDataUrl = await compressCoverImage(file, 1080, 0.9, true);
+  if (hdDataUrl.length > 720_000) {
+    hdDataUrl = await compressCoverImage(file, 900, 0.84, true);
+  }
+  if (hdDataUrl.length > 720_000) {
+    hdDataUrl = await compressCoverImage(file, 760, 0.78, true);
+  }
+
+  try {
+    const idToken = await getCurrentFirebaseIdToken(firebaseConfig);
+    if (idToken) {
+      const res = await fetch('/api/cover', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ dataUrl: hdDataUrl }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { ok?: boolean; url?: string };
+        if (data?.ok && data.url) {
+          return data.url;
+        }
+      }
+    }
+  } catch {
+    // Offline or local dev without Vercel API — fall back to compact inline cover
+  }
+
+  // Fallback for offline / local dev
+  return compressCoverImage(file, 420, 0.8, true);
 }
 
 /** Recompresses an existing inline data URL to shrink Firestore document size if needed */

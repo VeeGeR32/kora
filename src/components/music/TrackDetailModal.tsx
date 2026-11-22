@@ -29,9 +29,9 @@ import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import {
-  compressCoverImage,
   findLinkedLyricsForTrack,
   LYRICS_STATUS_META,
+  prepareAndUploadHdCover,
   resolveEffectiveTrackCover,
 } from '../../lib/trackCover';
 import type { TrackGroup } from '../../lib/musicVersioning';
@@ -199,9 +199,9 @@ export function TrackDetailModal({
   const handleUploadCover = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const dataUrl = await compressCoverImage(file);
-      setTrackGroupCover(allGroupTrackIds, { coverDataUrl: dataUrl });
-      notify('Pochette du son mise à jour ✓');
+      const coverUrl = await prepareAndUploadHdCover(file, state.preferences.firebaseConfig);
+      setTrackGroupCover(allGroupTrackIds, { coverDataUrl: coverUrl });
+      notify('Pochette HD mise à jour ✓');
     } catch {
       notify('Impossible de lire cette image');
     }

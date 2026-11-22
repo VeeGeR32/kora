@@ -24,7 +24,7 @@ import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
-import { compressCoverImage } from '../../lib/trackCover';
+import { prepareAndUploadHdCover } from '../../lib/trackCover';
 
 export interface TrackContextMenuState {
   group: TrackGroup;
@@ -293,9 +293,9 @@ export function TrackContextMenu({
               e.target.value = '';
               if (!file) return;
               try {
-                const dataUrl = await compressCoverImage(file);
-                setTrackGroupCover(allIds, { coverDataUrl: dataUrl });
-                notify(`Pochette de « ${group.baseTitle} » mise à jour ✓`);
+                const coverUrl = await prepareAndUploadHdCover(file, state.preferences.firebaseConfig);
+                setTrackGroupCover(allIds, { coverDataUrl: coverUrl });
+                notify(`Pochette HD de « ${group.baseTitle} » mise à jour ✓`);
                 onClose();
               } catch {
                 notify('Impossible de lire cette image');

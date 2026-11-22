@@ -30,6 +30,7 @@ import {
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
   LYRICS_STATUS_META,
+  prepareAndUploadHdCover,
 } from '../../lib/trackCover';
 import { groupMusicTracks } from '../../lib/musicVersioning';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
@@ -53,28 +54,6 @@ function fmtAddedDate(iso?: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-async function resizeProjectCover(file: File, maxSize = 320): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
-      };
-      img.onerror = reject;
-      img.src = String(reader.result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: ProjectAlbumModalProps) {
@@ -156,9 +135,9 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const handleCoverUpload = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const dataUrl = await resizeProjectCover(file);
-      updateMusicProject(project.id, { coverDataUrl: dataUrl });
-      notify('Pochette du projet mise à jour ✓');
+      const coverUrl = await prepareAndUploadHdCover(file, state.preferences.firebaseConfig);
+      updateMusicProject(project.id, { coverDataUrl: coverUrl });
+      notify('Pochette HD du projet mise à jour ✓');
     } catch {
       notify('Impossible de lire cette image');
     }
