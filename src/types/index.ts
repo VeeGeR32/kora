@@ -339,6 +339,7 @@ export interface MusicProject {
   status: 'en-cours' | 'mix' | 'pret' | 'sorti';
   steps: MusicProjectStep[];
   trackIds: string[];
+  benchTrackIds?: string[]; // Sons mis de côté / en réflexion (non lus dans la mixtape principale)
   notes?: string;
 }
 

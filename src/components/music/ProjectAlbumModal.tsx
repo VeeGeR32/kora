@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  Archive,
+  ArrowUp,
   Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   FileText,
+  GripVertical,
   Link2,
   ListChecks,
   Loader2,
@@ -16,6 +19,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Search,
   SlidersHorizontal,
   Trash2,
   X,
@@ -26,6 +30,7 @@ import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { CheckCircle } from '../ui/CheckCircle';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { triggerHapticTick } from '../../lib/haptics';
 import {
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
@@ -75,11 +80,30 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const todoSectionRef = useRef<HTMLDivElement>(null);
   const [todoInput, setTodoInput] = useState('');
   const [showAddTrack, setShowAddTrack] = useState(false);
+  const [addTrackSearch, setAddTrackSearch] = useState('');
+  const [showBench, setShowBench] = useState(false);
   const [showEditMeta, setShowEditMeta] = useState(false);
   const [openTrackMenuId, setOpenTrackMenuId] = useState<string | null>(null);
   const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [sharing, setSharing] = useState(false);
+
+  // Press-and-hold fluid drag-and-drop reorder state
+  const [draggingTrackId, setDraggingTrackId] = useState<string | null>(null);
+  const [dragOrderIds, setDragOrderIds] = useState<string[] | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const dragOrderRef = useRef<string[] | null>(null);
+  const justDraggedRef = useRef(false);
+  const holdDragRef = useRef<{
+    trackId: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originY: number;
+    active: boolean;
+    timerId: number | null;
+  } | null>(null);
 
   const project: MusicProject | null = useMemo(
     () => (projectId ? state.musicProjects.find((p) => p.id === projectId) || null : null),
@@ -100,18 +124,19 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const projectTracks = useMemo(() => {
     if (!project) return [];
     const byId = new Map(state.musicTracks.map((t) => [t.id, t]));
+    const benchSet = new Set(project.benchTrackIds || []);
     const ordered: typeof state.musicTracks = [];
     const seen = new Set<string>();
 
     for (const tid of project.trackIds) {
       const found = byId.get(tid);
-      if (found && !seen.has(found.id)) {
+      if (found && !seen.has(found.id) && !benchSet.has(found.id)) {
         ordered.push(found);
         seen.add(found.id);
       }
     }
     for (const t of state.musicTracks) {
-      if (t.linkedProjectId === project.id && !seen.has(t.id)) {
+      if (t.linkedProjectId === project.id && !seen.has(t.id) && !benchSet.has(t.id)) {
         ordered.push(t);
         seen.add(t.id);
       }
@@ -119,10 +144,62 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     return ordered;
   }, [project, state.musicTracks]);
 
-  const availableTracks = useMemo(() => {
-    const inProj = new Set(projectTracks.map((t) => t.id));
-    return state.musicTracks.filter((t) => !inProj.has(t.id));
-  }, [state.musicTracks, projectTracks]);
+  const benchTracks = useMemo(() => {
+    if (!project || !project.benchTrackIds || project.benchTrackIds.length === 0) return [];
+    const byId = new Map(state.musicTracks.map((t) => [t.id, t]));
+    const activeSet = new Set(projectTracks.map((t) => t.id));
+    const list: typeof state.musicTracks = [];
+    const seen = new Set<string>();
+    for (const tid of project.benchTrackIds) {
+      const found = byId.get(tid);
+      if (found && !seen.has(found.id) && !activeSet.has(found.id)) {
+        list.push(found);
+        seen.add(found.id);
+      }
+    }
+    return list;
+  }, [project, state.musicTracks, projectTracks]);
+
+  // Display order uses live dragOrderIds during drag for instant zero-lag visual swaps
+  const displayedProjectTracks = useMemo(() => {
+    if (!dragOrderIds) return projectTracks;
+    const byId = new Map(projectTracks.map((t) => [t.id, t]));
+    const next: typeof projectTracks = [];
+    for (const id of dragOrderIds) {
+      const found = byId.get(id);
+      if (found) next.push(found);
+    }
+    return next.length === projectTracks.length ? next : projectTracks;
+  }, [dragOrderIds, projectTracks]);
+
+  // Block iOS Safari native touch scroll ONLY while an item is actively being dragged
+  useEffect(() => {
+    if (!draggingTrackId) return;
+    const preventScroll = (e: TouchEvent) => {
+      if (holdDragRef.current?.active) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('touchmove', preventScroll, { passive: false });
+    return () => window.removeEventListener('touchmove', preventScroll);
+  }, [draggingTrackId]);
+
+  // Deduplicated available song groups (excluding songs already in tracklist OR bench)
+  const availableTrackGroups = useMemo(() => {
+    const usedIds = new Set([
+      ...projectTracks.map((t) => t.id),
+      ...benchTracks.map((t) => t.id),
+    ]);
+    const q = addTrackSearch.trim().toLowerCase();
+    return allGroups.filter((g) => {
+      if (g.allTrackIds.some((id) => usedIds.has(id))) return false;
+      if (!q) return true;
+      return (
+        g.baseTitle.toLowerCase().includes(q) ||
+        g.versions.some((v) => v.track.title.toLowerCase().includes(q))
+      );
+    });
+  }, [allGroups, projectTracks, benchTracks, addTrackSearch]);
 
   if (!project) return null;
 
@@ -158,16 +235,192 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
 
   const handleAddTrackToProject = (trackId: string) => {
     const nextIds = Array.from(new Set([...projectTracks.map((t) => t.id), trackId]));
-    updateMusicProject(project.id, { trackIds: nextIds });
+    const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
+    updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
     updateMusicTrack(trackId, { linkedProjectId: project.id });
     notify('Son ajouté au projet ✓');
   };
 
-  const handleRemoveTrackFromProject = (trackId: string) => {
+  const handleBenchTrack = (trackId: string) => {
     const nextIds = projectTracks.map((t) => t.id).filter((id) => id !== trackId);
-    updateMusicProject(project.id, { trackIds: nextIds });
+    const nextBench = Array.from(new Set([...(project.benchTrackIds || []), trackId]));
+    updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
     updateMusicTrack(trackId, { linkedProjectId: undefined });
     setOpenTrackMenuId(null);
+    notify('Mis de côté');
+  };
+
+  const handleRestoreFromBench = (trackId: string) => {
+    const nextIds = Array.from(new Set([...projectTracks.map((t) => t.id), trackId]));
+    const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
+    updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
+    updateMusicTrack(trackId, { linkedProjectId: project.id });
+    notify('Remis dans la tracklist ✓');
+  };
+
+  const handleRemoveFromBench = (trackId: string) => {
+    const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
+    updateMusicProject(project.id, { benchTrackIds: nextBench });
+    notify('Retiré');
+  };
+
+  const handleRemoveTrackFromProject = (trackId: string) => {
+    const nextIds = projectTracks.map((t) => t.id).filter((id) => id !== trackId);
+    const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
+    updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
+    updateMusicTrack(trackId, { linkedProjectId: undefined });
+    setOpenTrackMenuId(null);
+  };
+
+  // Press-and-hold (220ms) OR instant grip-handle drag reordering
+  const activateRowDrag = (trackId: string, clientY: number) => {
+    const d = holdDragRef.current;
+    if (!d || d.trackId !== trackId) return;
+    d.active = true;
+    d.originY = clientY;
+    const initialIds = projectTracks.map((t) => t.id);
+    dragOrderRef.current = initialIds;
+    setDragOrderIds(initialIds);
+    setDraggingTrackId(trackId);
+    setDragOffsetY(0);
+    setOpenTrackMenuId(null);
+    triggerHapticTick(16);
+  };
+
+  const handleRowPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    trackId: string,
+    instant = false
+  ) => {
+    if (projectTracks.length <= 1) return;
+    const target = e.target as HTMLElement;
+    if (!instant && target.closest('[data-no-drag]')) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    if (holdDragRef.current?.timerId) {
+      window.clearTimeout(holdDragRef.current.timerId);
+    }
+
+    const rowEl = e.currentTarget;
+    holdDragRef.current = {
+      trackId,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originY: e.clientY,
+      active: false,
+      timerId: null,
+    };
+
+    if (instant) {
+      try {
+        rowEl.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      activateRowDrag(trackId, e.clientY);
+    } else {
+      const timerId = window.setTimeout(() => {
+        if (!holdDragRef.current || holdDragRef.current.trackId !== trackId) return;
+        try {
+          rowEl.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+        activateRowDrag(trackId, holdDragRef.current.startY);
+      }, 220);
+      holdDragRef.current.timerId = timerId;
+    }
+  };
+
+  const handleRowPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = holdDragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+
+    if (!d.active) {
+      // User moved before hold threshold -> cancel hold so native scroll stays silky smooth
+      if (Math.abs(e.clientY - d.startY) > 8 || Math.abs(e.clientX - d.startX) > 8) {
+        if (d.timerId) window.clearTimeout(d.timerId);
+        holdDragRef.current = null;
+      }
+      return;
+    }
+
+    const dy = e.clientY - d.originY;
+    setDragOffsetY(dy);
+
+    const curOrder = dragOrderRef.current;
+    if (!curOrder) return;
+    const curIdx = curOrder.indexOf(d.trackId);
+    if (curIdx < 0) return;
+
+    // Check swap with previous row
+    if (curIdx > 0) {
+      const prevId = curOrder[curIdx - 1];
+      const prevEl = rowRefs.current.get(prevId);
+      if (prevEl) {
+        const rect = prevEl.getBoundingClientRect();
+        if (e.clientY < rect.top + rect.height * 0.55) {
+          const nextOrder = [...curOrder];
+          [nextOrder[curIdx - 1], nextOrder[curIdx]] = [nextOrder[curIdx], nextOrder[curIdx - 1]];
+          dragOrderRef.current = nextOrder;
+          setDragOrderIds(nextOrder);
+          d.originY -= rect.height;
+          setDragOffsetY(e.clientY - d.originY);
+          triggerHapticTick(8);
+          return;
+        }
+      }
+    }
+
+    // Check swap with next row
+    if (curIdx < curOrder.length - 1) {
+      const nextId = curOrder[curIdx + 1];
+      const nextEl = rowRefs.current.get(nextId);
+      if (nextEl) {
+        const rect = nextEl.getBoundingClientRect();
+        if (e.clientY > rect.top + rect.height * 0.45) {
+          const nextOrder = [...curOrder];
+          [nextOrder[curIdx + 1], nextOrder[curIdx]] = [nextOrder[curIdx], nextOrder[curIdx + 1]];
+          dragOrderRef.current = nextOrder;
+          setDragOrderIds(nextOrder);
+          d.originY += rect.height;
+          setDragOffsetY(e.clientY - d.originY);
+          triggerHapticTick(8);
+        }
+      }
+    }
+  };
+
+  const finishRowDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = holdDragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    if (d.timerId) window.clearTimeout(d.timerId);
+    const wasActive = d.active;
+    holdDragRef.current = null;
+
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (wasActive) {
+      justDraggedRef.current = true;
+      window.setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 160);
+      const finalOrder = dragOrderRef.current;
+      if (finalOrder && finalOrder.length === projectTracks.length) {
+        updateMusicProject(project.id, { trackIds: finalOrder });
+      }
+      dragOrderRef.current = null;
+      setDragOrderIds(null);
+      setDraggingTrackId(null);
+      setDragOffsetY(0);
+    }
   };
 
   const handleMoveTrack = (idx: number, delta: -1 | 1) => {
@@ -468,29 +721,60 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                       <X size={14} />
                     </button>
                   </div>
-                  {availableTracks.length === 0 ? (
+                  <div className="flex items-center gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1.5">
+                    <Search size={12} className="text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={addTrackSearch}
+                      onChange={(e) => setAddTrackSearch(e.target.value)}
+                      placeholder="Rechercher un morceau…"
+                      className="w-full bg-transparent text-xs outline-none text-slate-800 dark:text-zinc-100 placeholder:text-slate-400"
+                    />
+                    {addTrackSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setAddTrackSearch('')}
+                        className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
+                  {availableTrackGroups.length === 0 ? (
                     <p className="text-xs text-slate-400 py-2">
-                      Tous tes MP3 sont déjà dans ce projet. Importe-en d’autres dans « MP3 & Prods ».
+                      {addTrackSearch
+                        ? 'Aucun morceau trouvé.'
+                        : 'Tous tes morceaux sont déjà dans ce projet.'}
                     </p>
                   ) : (
-                    <div className="max-h-44 overflow-y-auto space-y-1">
-                      {availableTracks.map((t) => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => handleAddTrackToProject(t.id)}
-                          className="w-full flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-3 py-2 text-left hover:border-slate-400 dark:hover:border-zinc-600 transition cursor-pointer"
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {availableTrackGroups.map((g) => (
+                        <div
+                          key={g.groupKey}
+                          className="w-full flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-3 py-2"
                         >
-                          <span className="flex items-center gap-2 min-w-0">
+                          <span className="flex items-center gap-2 min-w-0 flex-1">
                             <Music2 size={13} className="text-fuchsia-500 shrink-0" />
-                            <span className="text-xs font-medium truncate">
-                              {t.manualGroupTitle || t.title}
-                            </span>
+                            <span className="text-xs font-medium truncate">{g.baseTitle}</span>
                           </span>
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300 shrink-0">
-                            <Plus size={12} /> Ajouter
-                          </span>
-                        </button>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleBenchTrack(g.latestTrack.id)}
+                              title="Ajouter dans « Mis de côté »"
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                            >
+                              <Archive size={11} /> De côté
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAddTrackToProject(g.latestTrack.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[10px] font-semibold hover:opacity-90 transition cursor-pointer"
+                            >
+                              <Plus size={11} /> Ajouter
+                            </button>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   )}
@@ -498,17 +782,18 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               )}
             </AnimatePresence>
 
-            {/* Airy Minimalist Numbered Tracklist (exact [untitled] reference!) */}
-            <div className="divide-y divide-slate-100 dark:divide-zinc-900">
-              {projectTracks.length === 0 ? (
+            {/* Airy Minimalist Numbered Tracklist (Press & Hold to Drag-Reorder!) */}
+            <div className="divide-y divide-slate-100 dark:divide-zinc-900 relative">
+              {displayedProjectTracks.length === 0 ? (
                 <p className="py-6 text-center text-xs text-slate-400">
                   Aucun titre dans ce projet — clique sur « Ajouter un son » ci-dessus.
                 </p>
               ) : (
-                projectTracks.map((trk, idx) => {
+                displayedProjectTracks.map((trk, idx) => {
                   const isCur = player.currentTrack?.id === trk.id;
                   const playing = isCur && player.isPlaying;
                   const menuOpen = openTrackMenuId === trk.id;
+                  const isDragging = draggingTrackId === trk.id;
                   const trkGroup = allGroups.find((g) => g.allTrackIds.includes(trk.id));
                   const linkedLyrics = findLinkedLyricsForTrack(
                     trk,
@@ -531,11 +816,47 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     null;
                   const rowThumb = project.coverDataUrl || trkOwnCover;
                   return (
-                    <div key={trk.id} className="py-3">
-                      <div className="flex items-center justify-between gap-3">
+                    <div
+                      key={trk.id}
+                      ref={(el) => {
+                        if (el) rowRefs.current.set(trk.id, el);
+                        else rowRefs.current.delete(trk.id);
+                      }}
+                      onPointerDown={(e) => handleRowPointerDown(e, trk.id, false)}
+                      onPointerMove={handleRowPointerMove}
+                      onPointerUp={finishRowDrag}
+                      onPointerCancel={finishRowDrag}
+                      style={
+                        isDragging
+                          ? {
+                              transform: `translate3d(0, ${dragOffsetY.toFixed(1)}px, 0) scale(1.02)`,
+                              touchAction: 'none',
+                            }
+                          : { touchAction: 'pan-y' }
+                      }
+                      className={`py-3 select-none ${
+                        isDragging
+                          ? 'relative z-20 rounded-2xl bg-white dark:bg-zinc-900 px-2.5 -mx-2.5 shadow-xl ring-1 ring-slate-200 dark:ring-zinc-700'
+                          : 'transition-transform duration-150'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2.5">
+                        {projectTracks.length > 1 && (
+                          <div
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              handleRowPointerDown(e, trk.id, true);
+                            }}
+                            title="Maintenir et glisser pour réordonner"
+                            className="hidden sm:flex items-center justify-center p-1 -ml-1 text-slate-300 dark:text-zinc-700 hover:text-slate-500 dark:hover:text-zinc-400 cursor-grab active:cursor-grabbing shrink-0"
+                          >
+                            <GripVertical size={14} />
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
+                            if (justDraggedRef.current) return;
                             const sameQueue =
                               player.queue.length === projectTracks.length &&
                               player.queue.every((q, i) => q.id === projectTracks[i].id);
@@ -545,7 +866,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                               void player.playTrack(trk, 0, projectTracks);
                             }
                           }}
-                          className="flex items-center gap-4 min-w-0 flex-1 text-left cursor-pointer"
+                          className="flex items-center gap-3.5 min-w-0 flex-1 text-left cursor-pointer"
                         >
                           <span className="w-5 text-center font-mono text-xs text-slate-400 dark:text-zinc-500 shrink-0">
                             {playing ? (
@@ -563,7 +884,8 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                             <img
                               src={rowThumb}
                               alt={trk.manualGroupTitle || trk.title}
-                              className="h-9 w-9 rounded-lg object-cover border border-slate-200/70 dark:border-zinc-800 shrink-0"
+                              draggable={false}
+                              className="h-9 w-9 rounded-lg object-cover border border-slate-200/70 dark:border-zinc-800 shrink-0 pointer-events-none"
                             />
                           )}
                           <div className="min-w-0 flex-1">
@@ -612,7 +934,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                           </div>
                         </button>
 
-                        <div className="flex items-center gap-0.5 shrink-0">
+                        <div data-no-drag="true" className="flex items-center gap-0.5 shrink-0">
                           {onOpenTrackDetails && (
                             <button
                               type="button"
@@ -635,7 +957,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                       </div>
 
                       {menuOpen && (
-                        <div className="mt-2 ml-9 space-y-2">
+                        <div data-no-drag="true" className="mt-2 ml-9 space-y-2">
                           <div className="flex flex-wrap items-center gap-1.5">
                             {onOpenTrackDetails && (
                               <button
@@ -666,6 +988,14 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                               }`}
                             >
                               <Pencil size={11} /> Renommer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleBenchTrack(trk.id)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer"
+                              title="Mettre ce morceau de côté (hors tracklist principale)"
+                            >
+                              <Archive size={11} /> De côté
                             </button>
                             <button
                               type="button"
@@ -739,6 +1069,113 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 })
               )}
             </div>
+
+            {/* Ultra-Discreet Collapsible "Mis de côté" (Maybe / Bench) Drawer */}
+            {benchTracks.length > 0 && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowBench((v) => !v)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400/80 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 transition cursor-pointer"
+                >
+                  <Archive size={11} className="opacity-70" />
+                  <span>Mis de côté ({benchTracks.length})</span>
+                  {showBench ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+
+                <AnimatePresence>
+                  {showBench && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-2 rounded-2xl border border-dashed border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/40 dark:bg-zinc-900/25 divide-y divide-slate-100/80 dark:divide-zinc-800/60 px-3">
+                        {benchTracks.map((trk) => {
+                          const isCur = player.currentTrack?.id === trk.id;
+                          const playing = isCur && player.isPlaying;
+                          const trkGroup = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+                          const trkRatings = resolveTrackRatings(
+                            trk,
+                            trkGroup?.versions.map((v) => v.track)
+                          );
+                          return (
+                            <div
+                              key={trk.id}
+                              className="py-2.5 flex items-center justify-between gap-2 opacity-75 hover:opacity-100 transition"
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  isCur
+                                    ? player.togglePlay()
+                                    : void player.playTrack(trk, 0, [trk])
+                                }
+                                className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+                              >
+                                <span className="h-6 w-6 rounded-full bg-slate-200/70 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 flex items-center justify-center shrink-0">
+                                  {playing ? (
+                                    <Pause size={10} fill="currentColor" />
+                                  ) : (
+                                    <Play size={10} fill="currentColor" className="ml-0.5" />
+                                  )}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium text-slate-700 dark:text-zinc-300 truncate">
+                                    {trk.manualGroupTitle || trk.title}
+                                  </p>
+                                  {(trkRatings.current !== null || trkRatings.potential !== null) && (
+                                    <span className="font-mono text-[10px] text-slate-400">
+                                      {trkRatings.current !== null ? trkRatings.current : ''}
+                                      {trkRatings.current !== null && trkRatings.potential !== null
+                                        ? ' · '
+                                        : ''}
+                                      {trkRatings.potential !== null
+                                        ? `↗${trkRatings.potential}`
+                                        : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRestoreFromBench(trk.id)}
+                                  title="Remettre dans la tracklist"
+                                  className="inline-flex items-center gap-1 rounded-lg bg-slate-200/70 dark:bg-zinc-800 px-2 py-1 text-[10px] font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-950 transition cursor-pointer"
+                                >
+                                  <ArrowUp size={10} /> Remettre
+                                </button>
+                                {onOpenTrackDetails && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenTrackDetails(trk.id)}
+                                    title="Page du son"
+                                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
+                                  >
+                                    <ChevronRight size={13} />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveFromBench(trk.id)}
+                                  title="Retirer définitivement"
+                                  className="p-1.5 rounded-full text-slate-400 hover:text-rose-500 cursor-pointer"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
 
             {/* Integrated Project TODO Checklist */}
             <section
