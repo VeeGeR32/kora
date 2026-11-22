@@ -47,6 +47,21 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  caret-color: transparent;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  caret-color: auto;
+}
+
+button,
+nav,
+aside,
+header {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .tabular-nums {

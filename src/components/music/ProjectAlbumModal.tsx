@@ -629,7 +629,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
 
         {/* Scrollable Editorial Album Content */}
         <div
-          className={`flex-1 overflow-y-auto px-5 sm:px-6 ${
+          className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-6 ${
             player.currentTrack ? 'pb-44' : 'pb-16'
           }`}
         >

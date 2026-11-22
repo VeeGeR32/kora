@@ -86,6 +86,38 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
   }, []);
   const hasFullscreenOverlay = overlayCount > 0;
+
+  // Lock background page scroll while any full-screen overlay or expanded player is open (prevents iOS Safari background scroll bleed-through)
+  useEffect(() => {
+    const locked = hasFullscreenOverlay || expanded;
+    if (!locked) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyWidth = body.style.width;
+    const prevBodyOverscroll = body.style.overscrollBehavior;
+
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    body.style.overscrollBehavior = 'none';
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.width = prevBodyWidth;
+      body.style.overscrollBehavior = prevBodyOverscroll;
+      window.scrollTo(0, scrollY);
+    };
+  }, [hasFullscreenOverlay, expanded]);
   const requestOpenTrackPage = useCallback((trackId: string) => {
     setPendingOpenTrackId(trackId);
   }, []);

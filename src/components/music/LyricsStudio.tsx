@@ -890,10 +890,10 @@ export function LyricsStudio({
           </header>
 
           {/* Editorial Body + Optional Tools Sidebar */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row gap-6">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col">
+            <div className="flex-1 min-h-full max-w-5xl w-full mx-auto px-4 sm:px-6 pt-5 sm:pt-7 pb-4 flex flex-col lg:flex-row gap-6">
               {/* Centered Writing Column */}
-              <div className="flex-1 min-w-0 max-w-2xl mx-auto w-full flex flex-col">
+              <div className="flex-1 min-h-0 min-w-0 max-w-2xl mx-auto w-full flex flex-col">
                 <input
                   type="text"
                   value={activeDoc.title}
@@ -949,11 +949,11 @@ export function LyricsStudio({
                     onChange={(e) => handleContentChange(e.target.value)}
                     placeholder="Commence à écrire tes couplets, refrains, idées de flow…"
                     spellCheck={false}
-                    className="flex-1 w-full min-h-[45vh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700"
+                    className="flex-1 w-full min-h-[68dvh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700 pb-6"
                   />
                 ) : (
                   <div
-                    className="flex-1 w-full min-h-[45vh] text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100"
+                    className="flex-1 w-full min-h-[68dvh] text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 pb-6"
                     dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
                   />
                 )}

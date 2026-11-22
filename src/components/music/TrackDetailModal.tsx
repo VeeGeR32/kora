@@ -334,7 +334,7 @@ export function TrackDetailModal({
 
         {/* Scrollable Full Song Page Body */}
         <div
-          className={`flex-1 overflow-y-auto px-4 sm:px-6 pt-5 ${
+          className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pt-5 ${
             player.currentTrack ? 'pb-48' : 'pb-16'
           }`}
         >
