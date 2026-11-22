@@ -408,7 +408,7 @@ export function createSeedState(): AppState {
         artist: 'Moi',
         bpm: 132,
         musicalKey: 'F# min',
-        status: 'ecriture',
+        status: 'squelette',
         tags: ['Nocturne', 'Trap mélodique', 'EP Minuit'],
         markers: [
           { id: 'mk-1', timeSec: 16, label: 'Intro' },
@@ -426,7 +426,7 @@ export function createSeedState(): AppState {
         artist: 'Moi',
         bpm: 98,
         musicalKey: 'D min',
-        status: 'demo',
+        status: 'maquette',
         tags: ['Boom-bap', 'Chill'],
         markers: [{ id: 'mk-4', timeSec: 24, label: 'Couplet 1' }],
         linkedProjectId: 'proj-ep-1',

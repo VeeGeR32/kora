@@ -1,6 +1,14 @@
-import type { FirebaseUserConfig, LyricsDoc, MusicProject, MusicTrack } from '../types';
+import type {
+  FirebaseUserConfig,
+  LyricsDoc,
+  MusicProject,
+  MusicTrack,
+  TrackMood,
+  TrackStatus,
+} from '../types';
 import { getCurrentFirebaseIdToken } from './firebase';
 import { getDeterministicGradientId } from './musicVersioning';
+import { normalizeTrackStatus, TRACK_PIPELINE_ORDER } from '../utils/theme';
 
 export const LYRICS_STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
   1: {
@@ -58,6 +66,32 @@ export function resolveTrackRatings(
     valid(track.ratingPotential) ??
     valid(siblingTracks?.find((s) => valid(s.ratingPotential) !== null)?.ratingPotential);
   return { current, potential };
+}
+
+/** Counts all [FIX] / [FIX: ...] tags in a lyrics document (case-insensitive) */
+export function countLyricsFixTags(content?: string | null): number {
+  if (!content) return 0;
+  const matches = content.match(/\[FIX(?::[^\]]*)?\]/gi);
+  return matches ? matches.length : 0;
+}
+
+/** Resolves normalized pipeline status & mood across active track and sibling versions */
+export function resolveTrackWorkflow(
+  track: MusicTrack,
+  siblingTracks?: MusicTrack[]
+): { status: TrackStatus; mood: TrackMood | null } {
+  const candidates = [track, ...(siblingTracks || [])];
+  let bestIdx = TRACK_PIPELINE_ORDER.indexOf(normalizeTrackStatus(track.status));
+  for (const s of candidates) {
+    const idx = TRACK_PIPELINE_ORDER.indexOf(normalizeTrackStatus(s.status));
+    if (idx > bestIdx) bestIdx = idx;
+  }
+  const status = TRACK_PIPELINE_ORDER[Math.max(0, bestIdx)] || 'maquette';
+  const mood =
+    track.mood ||
+    siblingTracks?.find((s) => Boolean(s.mood))?.mood ||
+    null;
+  return { status, mood };
 }
 
 /** Compresses any uploaded cover image cleanly (supports WebP & high-quality resampling) */

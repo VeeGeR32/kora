@@ -24,21 +24,27 @@ import {
   Unlink,
   X,
 } from 'lucide-react';
-import type { MusicTrack, TrackStatus } from '../../types';
+import type { MusicTrack, TrackMood, TrackStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import {
+  countLyricsFixTags,
   findLinkedLyricsForTrack,
   LYRICS_STATUS_META,
   prepareAndUploadHdCover,
   resolveEffectiveTrackCover,
   resolveTrackRatings,
+  resolveTrackWorkflow,
 } from '../../lib/trackCover';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { getDeterministicGradientId } from '../../lib/musicVersioning';
-import { TRACK_STATUS_META } from '../../utils/theme';
+import {
+  TRACK_MOOD_META,
+  TRACK_PIPELINE_ORDER,
+  TRACK_STATUS_META,
+} from '../../utils/theme';
 import { CheckCircle } from '../ui/CheckCircle';
 import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
 
@@ -84,6 +90,7 @@ export function TrackDetailModal({
     setTrackGroupCover,
     setTrackGroupFavorite,
     setTrackGroupRatings,
+    setTrackGroupWorkflow,
     addMusicTrackTodo,
     toggleMusicTrackTodo,
     deleteMusicTrackTodo,
@@ -178,6 +185,21 @@ export function TrackDetailModal({
     [track, group, state.lyricsDocs]
   );
   const linkedLyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+  const fixTagCount = useMemo(
+    () => (linkedLyrics ? countLyricsFixTags(linkedLyrics.content) : 0),
+    [linkedLyrics]
+  );
+  const workflow = useMemo(
+    () =>
+      track && group
+        ? resolveTrackWorkflow(
+            track,
+            group.versions.map((v) => v.track)
+          )
+        : { status: 'maquette' as TrackStatus, mood: null as TrackMood | null },
+    [track, group]
+  );
+  const currentStepIdx = TRACK_PIPELINE_ORDER.indexOf(workflow.status);
   const ratings = useMemo(
     () =>
       track && group
@@ -500,6 +522,11 @@ export function TrackDetailModal({
                             <span className="opacity-75">{linkedLyricsMeta.label}</span>
                           </>
                         )}
+                        {fixTagCount > 0 && (
+                          <span className="rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[9px] font-bold">
+                            [FIX] ×{fixTagCount}
+                          </span>
+                        )}
                       </button>
                       <button
                         type="button"
@@ -592,6 +619,128 @@ export function TrackDetailModal({
               <div className="flex items-center justify-between font-mono text-[10px] text-slate-400">
                 <span>{isCurrent ? fmt(player.currentTime) : '0:00'}</span>
                 <span>{effectiveDuration > 0 ? fmt(effectiveDuration) : 'Clique pour écouter'}</span>
+              </div>
+            </section>
+
+            {/* 5-Stage Strict Sequential Production Pipeline + Mood Tag */}
+            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/60 dark:bg-zinc-900/40 px-4 py-3.5 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Pipeline · Étape {currentStepIdx + 1}/5
+                  </span>
+                  <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                    {TRACK_STATUS_META[workflow.status].label}{' '}
+                    <span className="font-normal text-slate-400">
+                      — {TRACK_STATUS_META[workflow.status].hint}
+                    </span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    disabled={currentStepIdx <= 0}
+                    onClick={() => {
+                      const prevSt = TRACK_PIPELINE_ORDER[currentStepIdx - 1];
+                      if (!prevSt) return;
+                      setTrackGroupWorkflow(allGroupTrackIds, { status: prevSt });
+                      notify(`Étape : ${TRACK_STATUS_META[prevSt].label}`);
+                    }}
+                    className="rounded-lg border border-slate-200 dark:border-zinc-800 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-30 transition cursor-pointer"
+                  >
+                    ← Préc.
+                  </button>
+                  <button
+                    type="button"
+                    disabled={currentStepIdx >= TRACK_PIPELINE_ORDER.length - 1}
+                    onClick={() => {
+                      const nextSt = TRACK_PIPELINE_ORDER[currentStepIdx + 1];
+                      if (!nextSt) return;
+                      if (nextSt === 'rec-final' && fixTagCount > 0) {
+                        notify(
+                          `Attention : encore ${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] dans les paroles`
+                        );
+                      }
+                      setTrackGroupWorkflow(allGroupTrackIds, { status: nextSt });
+                      if (!(nextSt === 'rec-final' && fixTagCount > 0)) {
+                        notify(`Étape : ${TRACK_STATUS_META[nextSt].label} ✓`);
+                      }
+                    }}
+                    className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 disabled:opacity-30 transition cursor-pointer"
+                  >
+                    Suiv. →
+                  </button>
+                </div>
+              </div>
+
+              {/* Strict 5-Step Progress Track (adjacent steps clickable sequentially) */}
+              <div className="grid grid-cols-5 gap-1">
+                {TRACK_PIPELINE_ORDER.map((st, idx) => {
+                  const meta = TRACK_STATUS_META[st];
+                  const active = idx === currentStepIdx;
+                  const done = idx < currentStepIdx;
+                  const canJump = Math.abs(idx - currentStepIdx) <= 1;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      disabled={!canJump}
+                      onClick={() => {
+                        if (!canJump || active) return;
+                        if (st === 'rec-final' && fixTagCount > 0) {
+                          notify(
+                            `Attention : encore ${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] dans les paroles`
+                          );
+                        }
+                        setTrackGroupWorkflow(allGroupTrackIds, { status: st });
+                      }}
+                      title={
+                        canJump
+                          ? `${meta.step}. ${meta.label} — ${meta.hint}`
+                          : `Avance étape par étape vers ${meta.label}`
+                      }
+                      className={`rounded-xl px-1.5 py-1.5 text-center transition ${
+                        active
+                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                          : done
+                          ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-medium'
+                          : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400'
+                      } ${canJump && !active ? 'cursor-pointer hover:border-slate-400' : 'cursor-default opacity-75'}`}
+                    >
+                      <span className="block font-mono text-[9px] opacity-65">{meta.step}</span>
+                      <span className="block text-[10px] truncate">{meta.shortLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Mood Tag Selector */}
+              <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-800/70 flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
+                  Ambiance (pour Sprints)
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {(['energetic', 'chill', 'experimental'] as TrackMood[]).map((m) => {
+                    const meta = TRACK_MOOD_META[m];
+                    const active = workflow.mood === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() =>
+                          setTrackGroupWorkflow(allGroupTrackIds, { mood: active ? null : m })
+                        }
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
+                          active
+                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:border-slate-400'
+                        }`}
+                      >
+                        {meta.emoji} {meta.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </section>
 
@@ -879,27 +1028,8 @@ export function TrackDetailModal({
               </form>
             </section>
 
-            {/* Metadata Grid: Status, BPM, Key, Project */}
-            <section className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <div className="space-y-1">
-                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Statut
-                </label>
-                <select
-                  value={track.status}
-                  onChange={(e) =>
-                    updateMusicTrack(track.id, { status: e.target.value as TrackStatus })
-                  }
-                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2.5 py-2 text-xs outline-none"
-                >
-                  {(Object.keys(TRACK_STATUS_META) as TrackStatus[]).map((st) => (
-                    <option key={st} value={st}>
-                      {TRACK_STATUS_META[st].label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+            {/* Metadata Grid: BPM, Key, Project */}
+            <section className="grid grid-cols-3 gap-2.5">
               <div className="space-y-1">
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   BPM

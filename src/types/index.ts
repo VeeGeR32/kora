@@ -23,7 +23,8 @@ export type QuickAddMode =
 
 export type SetType = 'warmup' | 'normal' | 'failure';
 
-export type TrackStatus = 'idee' | 'demo' | 'ecriture' | 'enregistrement' | 'mix' | 'sorti';
+export type TrackStatus = 'squelette' | 'maquette' | 'rec-final' | 'pre-mix' | 'masterise';
+export type TrackMood = 'energetic' | 'chill' | 'experimental';
 
 export type ProjectKind = 'single' | 'ep' | 'album' | 'mixtape';
 
@@ -286,6 +287,7 @@ export interface MusicTrack {
   bpm?: number;
   musicalKey?: string;
   status: TrackStatus;
+  mood?: TrackMood; // Tag d'ambiance (energetic / chill / experimental)
   tags: string[];
   markers: AudioMarker[];
   isFavorite?: boolean;
@@ -328,6 +330,15 @@ export interface MusicProjectStep {
   dueDate?: string;
 }
 
+export interface MusicProjectSprint {
+  id: string;
+  title: string;
+  trackIds: string[]; // max 3 titres actifs
+  targetDate?: string; // ISO YYYY-MM-DD optionnelle
+  createdAt: string;
+  completedAt?: string;
+}
+
 export interface MusicProject {
   id: string;
   title: string;
@@ -339,7 +350,10 @@ export interface MusicProject {
   status: 'en-cours' | 'mix' | 'pret' | 'sorti';
   steps: MusicProjectStep[];
   trackIds: string[];
-  benchTrackIds?: string[]; // Sons mis de côté / en réflexion (non lus dans la mixtape principale)
+  benchTrackIds?: string[]; // Backlog / Hors-projet (sons mis de côté / en réflexion)
+  isTracklistLocked?: boolean; // Gel de la tracklist définitive
+  sprints?: MusicProjectSprint[]; // Production par Sprints (micro-batching, max 3 titres)
+  harmonizationChecklist?: MusicProjectStep[]; // Checklist finale phase Harmonisation & Mix global
   notes?: string;
 }
 

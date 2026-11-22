@@ -174,6 +174,10 @@ interface AppContextValue {
     trackIds: string[],
     ratings: { ratingCurrent?: number | null; ratingPotential?: number | null }
   ) => void;
+  setTrackGroupWorkflow: (
+    trackIds: string[],
+    patch: { status?: import('../types').TrackStatus; mood?: import('../types').TrackMood | null }
+  ) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
   deleteMusicTrackTodo: (trackId: string, todoId: string) => void;
@@ -1383,7 +1387,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             driveYearFolder: f.yearFolder,
             modifiedAt: f.modifiedTime || nowIso,
             coverGradient: getDeterministicGradientId(parsed.groupKey),
-            status: 'demo' as const,
+            status: 'maquette' as const,
             tags: ['Google Drive'],
             markers: [],
             addedAt: f.modifiedTime || nowIso,
@@ -1502,6 +1506,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               typeof ratings.ratingPotential === 'number'
                 ? Math.max(1, Math.min(10, Math.round(ratings.ratingPotential)))
                 : undefined;
+          }
+          return next;
+        }),
+      }));
+    },
+    []
+  );
+
+  const setTrackGroupWorkflow = useCallback(
+    (
+      trackIds: string[],
+      patch: { status?: import('../types').TrackStatus; mood?: import('../types').TrackMood | null }
+    ) => {
+      const idSet = new Set(trackIds);
+      touch((prev) => ({
+        ...prev,
+        musicTracks: prev.musicTracks.map((t) => {
+          if (!idSet.has(t.id)) return t;
+          const next = { ...t };
+          if (patch.status !== undefined) {
+            next.status = patch.status;
+          }
+          if ('mood' in patch) {
+            next.mood = patch.mood || undefined;
           }
           return next;
         }),
@@ -2126,6 +2154,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setTrackGroupCover,
         setTrackGroupFavorite,
         setTrackGroupRatings,
+        setTrackGroupWorkflow,
         addMusicTrackTodo,
         toggleMusicTrackTodo,
         deleteMusicTrackTodo,

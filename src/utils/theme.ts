@@ -1,4 +1,4 @@
-import type { EventType, MealSlot, Priority, TrackStatus, WorkoutFocus } from '../types';
+import type { EventType, MealSlot, Priority, TrackMood, TrackStatus, WorkoutFocus } from '../types';
 
 export const EVENT_STYLES: Record<
   EventType,
@@ -94,11 +94,122 @@ export const WORKOUT_FOCUSES: WorkoutFocus[] = [
   'Autre',
 ];
 
-export const TRACK_STATUS_META: Record<TrackStatus, { label: string; badge: string }> = {
-  idee: { label: 'Idée', badge: 'bg-slate-500/12 text-slate-600 dark:text-zinc-300' },
-  demo: { label: 'Démo', badge: 'bg-sky-500/12 text-sky-700 dark:text-sky-300' },
-  ecriture: { label: 'Écriture', badge: 'bg-amber-500/12 text-amber-700 dark:text-amber-300' },
-  enregistrement: { label: 'Rec', badge: 'bg-rose-500/12 text-rose-700 dark:text-rose-300' },
-  mix: { label: 'Mix / Master', badge: 'bg-violet-500/12 text-violet-700 dark:text-violet-300' },
-  sorti: { label: 'Sorti', badge: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300' },
+export const TRACK_PIPELINE_ORDER: TrackStatus[] = [
+  'squelette',
+  'maquette',
+  'rec-final',
+  'pre-mix',
+  'masterise',
+];
+
+export const TRACK_STATUS_META: Record<
+  TrackStatus,
+  {
+    step: 1 | 2 | 3 | 4 | 5;
+    label: string;
+    shortLabel: string;
+    hint: string;
+    badge: string;
+    dot: string;
+  }
+> = {
+  squelette: {
+    step: 1,
+    label: 'Squelette',
+    shortLabel: 'Squelette',
+    hint: '100 % de la structure écrite, balises [FIX] autorisées',
+    badge: 'bg-slate-500/12 text-slate-600 dark:text-zinc-300',
+    dot: 'bg-slate-400',
+  },
+  maquette: {
+    step: 2,
+    label: 'Maquette (v1)',
+    shortLabel: 'Maquette v1',
+    hint: 'Prise témoin pour valider placement et souffle',
+    badge: 'bg-sky-500/12 text-sky-700 dark:text-sky-300',
+    dot: 'bg-sky-500',
+  },
+  'rec-final': {
+    step: 3,
+    label: 'Rec final (v2)',
+    shortLabel: 'Rec v2',
+    hint: 'Prises définitives verrouillées, paroles figées',
+    badge: 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
+    dot: 'bg-amber-500',
+  },
+  'pre-mix': {
+    step: 4,
+    label: 'Pré-mix (v3)',
+    shortLabel: 'Pré-mix v3',
+    hint: "Balance et nettoyage prêts pour l'harmonisation",
+    badge: 'bg-violet-500/12 text-violet-700 dark:text-violet-300',
+    dot: 'bg-violet-500',
+  },
+  masterise: {
+    step: 5,
+    label: 'Masterisé (v4)',
+    shortLabel: 'Master v4',
+    hint: 'Finalisé',
+    badge: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
+    dot: 'bg-emerald-500',
+  },
 };
+
+export function normalizeTrackStatus(raw?: string | null): TrackStatus {
+  switch (raw) {
+    case 'squelette':
+    case 'idee':
+    case 'ecriture':
+      return 'squelette';
+    case 'maquette':
+    case 'demo':
+      return 'maquette';
+    case 'rec-final':
+    case 'enregistrement':
+      return 'rec-final';
+    case 'pre-mix':
+    case 'mix':
+      return 'pre-mix';
+    case 'masterise':
+    case 'sorti':
+      return 'masterise';
+    default:
+      return 'maquette';
+  }
+}
+
+export function isReadyForHarmonization(raw?: string | null): boolean {
+  const st = normalizeTrackStatus(raw);
+  return st === 'pre-mix' || st === 'masterise';
+}
+
+export const TRACK_MOOD_META: Record<
+  TrackMood,
+  { label: string; short: string; emoji: string; badge: string }
+> = {
+  energetic: {
+    label: 'Énergique',
+    short: 'Énergique',
+    emoji: '⚡',
+    badge: 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
+  },
+  chill: {
+    label: 'Chill',
+    short: 'Chill',
+    emoji: '🌊',
+    badge: 'bg-sky-500/12 text-sky-700 dark:text-sky-300',
+  },
+  experimental: {
+    label: 'Expérimental',
+    short: 'Expé',
+    emoji: '🧪',
+    badge: 'bg-fuchsia-500/12 text-fuchsia-700 dark:text-fuchsia-300',
+  },
+};
+
+export const DEFAULT_HARMONIZATION_STEPS = [
+  { id: 'harm-vocal', label: 'Chaîne vocale de référence (EQ, comp, reverb cohérents)', done: false },
+  { id: 'harm-lufs', label: 'Cohérence LUFS, dynamique & niveau perçu entre tous les titres', done: false },
+  { id: 'harm-trans', label: 'Transitions, silences et enchaînement de la tracklist finale', done: false },
+  { id: 'harm-export', label: 'Export final WAV 24-bit + MP3 320 + écoute test (voiture / AirPods)', done: false },
+];

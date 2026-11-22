@@ -33,6 +33,7 @@ import { YoutubeBeatPlayer } from './YoutubeBeatPlayer';
 import { LexCoreInspirationWidget, MetronomeWidget } from './LexCoreTools';
 import { LexCoreImportModal } from './LexCoreImportModal';
 import { groupMusicTracks } from '../../lib/musicVersioning';
+import { countLyricsFixTags } from '../../lib/trackCover';
 
 interface LyricsStudioProps {
   initialDocId?: string | null;
@@ -901,12 +902,27 @@ export function LyricsStudio({
                   className="w-full text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white bg-transparent outline-none placeholder:text-slate-300 dark:placeholder:text-zinc-700"
                 />
 
-                <div className="mt-2 pb-4 mb-4 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 text-[11px] text-slate-400">
-                  <span className="font-mono">
-                    {lineCount} lignes · {wordCount} mots
-                    {activeDoc.lastModified ? ` · ${fmtShortDate(activeDoc.lastModified)}` : ''}
-                  </span>
+                <div className="mt-2 pb-4 mb-4 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 text-[11px] text-slate-400 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono">
+                      {lineCount} lignes · {wordCount} mots
+                      {activeDoc.lastModified ? ` · ${fmtShortDate(activeDoc.lastModified)}` : ''}
+                    </span>
+                    {countLyricsFixTags(activeDoc.content) > 0 && (
+                      <span className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-2 py-0.5 font-mono text-[10px] font-semibold">
+                        [FIX] ×{countLyricsFixTags(activeDoc.content)}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => insertWord('[FIX]')}
+                      className="px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                      title="Insérer une balise [FIX]"
+                    >
+                      + [FIX]
+                    </button>
                     <button
                       type="button"
                       onClick={() => wrapSelection('**')}

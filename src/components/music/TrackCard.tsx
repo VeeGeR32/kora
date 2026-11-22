@@ -16,12 +16,14 @@ import { useApp } from '../../context/AppContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import {
+  countLyricsFixTags,
   findLinkedLyricsForTrack,
   LYRICS_STATUS_META,
   resolveEffectiveTrackCover,
   resolveTrackRatings,
+  resolveTrackWorkflow,
 } from '../../lib/trackCover';
-import { TRACK_STATUS_META } from '../../utils/theme';
+import { TRACK_MOOD_META, TRACK_STATUS_META } from '../../utils/theme';
 import { getGradientClass } from './MiniAudioPlayer';
 
 interface TrackCardProps {
@@ -114,6 +116,20 @@ export function TrackCard({
     [track, state.lyricsDocs, group.allTrackIds, group.versions]
   );
   const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+  const fixTagCount = useMemo(
+    () => (linkedLyrics ? countLyricsFixTags(linkedLyrics.content) : 0),
+    [linkedLyrics]
+  );
+  const workflow = useMemo(
+    () =>
+      resolveTrackWorkflow(
+        track,
+        group.versions.map((v) => v.track)
+      ),
+    [track, group.versions]
+  );
+  const statusMeta = TRACK_STATUS_META[workflow.status];
+  const moodMeta = workflow.mood ? TRACK_MOOD_META[workflow.mood] : null;
   const ratings = useMemo(
     () =>
       resolveTrackRatings(
@@ -262,12 +278,29 @@ export function TrackCard({
             )}
 
             <span
-              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                TRACK_STATUS_META[track.status].badge
-              }`}
+              title={`${statusMeta.label} — ${statusMeta.hint}`}
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusMeta.badge}`}
             >
-              {TRACK_STATUS_META[track.status].label}
+              {statusMeta.shortLabel}
             </span>
+
+            {moodMeta && (
+              <span
+                title={`Ambiance : ${moodMeta.label}`}
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${moodMeta.badge}`}
+              >
+                {moodMeta.emoji} {moodMeta.short}
+              </span>
+            )}
+
+            {fixTagCount > 0 && (
+              <span
+                title={`${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] restante${fixTagCount > 1 ? 's' : ''} dans le texte`}
+                className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold"
+              >
+                [FIX] ×{fixTagCount}
+              </span>
+            )}
 
             {lyricsMeta && (
               <span

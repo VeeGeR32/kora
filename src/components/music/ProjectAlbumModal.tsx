@@ -13,6 +13,7 @@ import {
   Link2,
   ListChecks,
   Loader2,
+  Lock,
   MoreHorizontal,
   Music2,
   Pause,
@@ -22,6 +23,7 @@ import {
   Search,
   SlidersHorizontal,
   Trash2,
+  Unlock,
   X,
 } from 'lucide-react';
 import type { MusicProject, ProjectKind } from '../../types';
@@ -32,14 +34,23 @@ import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import { triggerHapticTick } from '../../lib/haptics';
 import {
+  countLyricsFixTags,
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
   LYRICS_STATUS_META,
   prepareAndUploadHdCover,
   resolveTrackRatings,
+  resolveTrackWorkflow,
 } from '../../lib/trackCover';
 import { groupMusicTracks } from '../../lib/musicVersioning';
+import {
+  isReadyForHarmonization,
+  TRACK_MOOD_META,
+  TRACK_STATUS_META,
+} from '../../utils/theme';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
+import { ProjectSprintView } from './ProjectSprintView';
+import { ProjectHarmonizationView } from './ProjectHarmonizationView';
 
 interface ProjectAlbumModalProps {
   projectId: string | null;
@@ -71,6 +82,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     deleteMusicProjectStep,
     deleteMusicProject,
     updateMusicTrack,
+    toggleMusicTrackTodo,
     renameTrackGroup,
     notify,
   } = useApp();
@@ -79,8 +91,10 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const coverInputRef = useRef<HTMLInputElement>(null);
   const todoSectionRef = useRef<HTMLDivElement>(null);
   const [todoInput, setTodoInput] = useState('');
+  const [projectTab, setProjectTab] = useState<'sprint' | 'tracklist' | 'harmonization'>('tracklist');
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [addTrackSearch, setAddTrackSearch] = useState('');
+  const [addTrackSort, setAddTrackSort] = useState<'recent' | 'potential' | 'gap'>('potential');
   const [showBench, setShowBench] = useState(false);
   const [showEditMeta, setShowEditMeta] = useState(false);
   const [openTrackMenuId, setOpenTrackMenuId] = useState<string | null>(null);
@@ -115,6 +129,13 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     if (!project) return;
     return registerFullscreenOverlay();
   }, [Boolean(project), registerFullscreenOverlay]);
+
+  // Default to "Sprint actif" view when opening a project that has an active sprint
+  useEffect(() => {
+    if (!project) return;
+    const hasActiveSprint = (project.sprints || []).some((s) => !s.completedAt);
+    setProjectTab(hasActiveSprint ? 'sprint' : 'tracklist');
+  }, [project?.id]);
 
   const allGroups = useMemo(
     () => groupMusicTracks(state.musicTracks),
@@ -184,14 +205,14 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     return () => window.removeEventListener('touchmove', preventScroll);
   }, [draggingTrackId]);
 
-  // Deduplicated available song groups (excluding songs already in tracklist OR bench)
+  // Deduplicated available song groups with analytical sorting (Potentiel ↓ / Écart ↓ / Récent)
   const availableTrackGroups = useMemo(() => {
     const usedIds = new Set([
       ...projectTracks.map((t) => t.id),
       ...benchTracks.map((t) => t.id),
     ]);
     const q = addTrackSearch.trim().toLowerCase();
-    return allGroups.filter((g) => {
+    const list = allGroups.filter((g) => {
       if (g.allTrackIds.some((id) => usedIds.has(id))) return false;
       if (!q) return true;
       return (
@@ -199,13 +220,64 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
         g.versions.some((v) => v.track.title.toLowerCase().includes(q))
       );
     });
-  }, [allGroups, projectTracks, benchTracks, addTrackSearch]);
+    return [...list].sort((a, b) => {
+      const ra = resolveTrackRatings(a.latestTrack, a.versions.map((v) => v.track));
+      const rb = resolveTrackRatings(b.latestTrack, b.versions.map((v) => v.track));
+      if (addTrackSort === 'potential') {
+        const pa = ra.potential ?? -1;
+        const pb = rb.potential ?? -1;
+        if (pb !== pa) return pb - pa;
+      } else if (addTrackSort === 'gap') {
+        const ga = ra.potential !== null && ra.current !== null ? ra.potential - ra.current : -99;
+        const gb = rb.potential !== null && rb.current !== null ? rb.potential - rb.current : -99;
+        if (gb !== ga) return gb - ga;
+      }
+      return b.latestTimestampMs - a.latestTimestampMs;
+    });
+  }, [allGroups, projectTracks, benchTracks, addTrackSearch, addTrackSort]);
+
+  // Dynamic Roll-Up of ALL active tracks' TODOs + global project steps
+  const rolledUpTrackTodos = useMemo(() => {
+    const items: {
+      trackId: string;
+      trackTitle: string;
+      todoId: string;
+      label: string;
+      done: boolean;
+    }[] = [];
+    for (const trk of projectTracks) {
+      for (const td of trk.todos || []) {
+        items.push({
+          trackId: trk.id,
+          trackTitle: trk.manualGroupTitle || trk.title,
+          todoId: td.id,
+          label: td.label,
+          done: td.done,
+        });
+      }
+    }
+    return items;
+  }, [projectTracks]);
+
+  const harmonizationReadyCount = useMemo(() => {
+    let count = 0;
+    for (const trk of projectTracks) {
+      const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+      const wf = resolveTrackWorkflow(trk, grp?.versions.map((v) => v.track));
+      if (isReadyForHarmonization(wf.status)) count++;
+    }
+    return count;
+  }, [projectTracks, allGroups]);
 
   if (!project) return null;
 
+  const isLocked = Boolean(project.isTracklistLocked);
+  const activeSprint = (project.sprints || []).find((s) => !s.completedAt) || null;
   const totalSec = projectTracks.reduce((acc, t) => acc + (t.durationSec || 0), 0);
-  const doneSteps = project.steps.filter((s) => s.done).length;
-  const totalSteps = project.steps.length;
+  const doneSteps =
+    project.steps.filter((s) => s.done).length +
+    rolledUpTrackTodos.filter((t) => t.done).length;
+  const totalSteps = project.steps.length + rolledUpTrackTodos.length;
   const todoPct = totalSteps > 0 ? Math.round((doneSteps / totalSteps) * 100) : 0;
   const isPlayingThisProject =
     player.isPlaying && projectTracks.some((t) => t.id === player.currentTrack?.id);
@@ -234,6 +306,10 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   };
 
   const handleAddTrackToProject = (trackId: string) => {
+    if (project.isTracklistLocked) {
+      handleBenchTrack(trackId);
+      return;
+    }
     const nextIds = Array.from(new Set([...projectTracks.map((t) => t.id), trackId]));
     const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
     updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
@@ -247,10 +323,14 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
     updateMusicTrack(trackId, { linkedProjectId: undefined });
     setOpenTrackMenuId(null);
-    notify('Mis de côté');
+    notify(project.isTracklistLocked ? 'Ajouté au Backlog / Hors-projet' : 'Mis de côté');
   };
 
   const handleRestoreFromBench = (trackId: string) => {
+    if (project.isTracklistLocked) {
+      notify('Tracklist verrouillée — déverrouille le cadenas en haut pour la modifier');
+      return;
+    }
     const nextIds = Array.from(new Set([...projectTracks.map((t) => t.id), trackId]));
     const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
     updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
@@ -494,7 +574,37 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               </button>
               <button
                 type="button"
-                onClick={() => todoSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={() => {
+                  const nextLocked = !isLocked;
+                  updateMusicProject(project.id, { isTracklistLocked: nextLocked });
+                  notify(
+                    nextLocked
+                      ? 'Tracklist verrouillée — les nouveaux sons iront dans le Backlog 🔒'
+                      : 'Tracklist déverrouillée 🔓'
+                  );
+                }}
+                title={
+                  isLocked
+                    ? 'Tracklist figée (cliquer pour déverrouiller)'
+                    : 'Verrouiller / figer la tracklist définitive'
+                }
+                className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
+                  isLocked
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                    : 'bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
+                }`}
+              >
+                {isLocked ? <Lock size={15} /> : <Unlock size={15} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectTab('tracklist');
+                  window.setTimeout(
+                    () => todoSectionRef.current?.scrollIntoView({ behavior: 'smooth' }),
+                    60
+                  );
+                }}
                 title="Voir la TODO"
                 className="h-10 px-3.5 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 inline-flex items-center gap-1.5 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer"
               >
@@ -670,9 +780,17 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   placeholder="NOM DU PROJET"
                   className="w-full text-2xl sm:text-[26px] font-bold tracking-tight leading-tight uppercase bg-transparent text-slate-950 dark:text-zinc-50 outline-none"
                 />
-                <p className="text-xs font-medium tracking-wide text-slate-400 dark:text-zinc-500">
-                  {artistName} · {projectTracks.length} {projectTracks.length > 1 ? 'titres' : 'titre'}
-                  {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
+                <p className="text-xs font-medium tracking-wide text-slate-400 dark:text-zinc-500 flex items-center gap-1.5 flex-wrap">
+                  <span>
+                    {artistName} · {projectTracks.length}{' '}
+                    {projectTracks.length > 1 ? 'titres' : 'titre'}
+                    {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
+                  </span>
+                  {isLocked && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/12 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-semibold">
+                      <Lock size={9} /> Figée
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -690,17 +808,100 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               </button>
             </div>
 
-            {/* Full-Width Soft Action Pill (matches "Save to library" pill in [untitled]!) */}
+            {/* Minimalist Project Sub-Tabs: Sprint actif | Tracklist | Harmonisation */}
+            <nav
+              aria-label="Vues du projet"
+              className="flex items-center gap-5 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {(
+                [
+                  [
+                    'sprint',
+                    'Sprint actif',
+                    activeSprint ? `${activeSprint.trackIds.length}/3` : null,
+                  ],
+                  ['tracklist', 'Tracklist', String(projectTracks.length)],
+                  [
+                    'harmonization',
+                    'Harmonisation',
+                    projectTracks.length > 0
+                      ? `${harmonizationReadyCount}/${projectTracks.length}`
+                      : null,
+                  ],
+                ] as const
+              ).map(([id, label, badge]) => {
+                const active = projectTab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setProjectTab(id)}
+                    className={`relative pb-2.5 text-xs font-semibold transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                      active
+                        ? 'text-slate-950 dark:text-white'
+                        : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    <span>{label}</span>
+                    {badge && (
+                      <span
+                        className={`font-mono text-[10px] ${
+                          active ? 'text-slate-500 dark:text-zinc-400' : 'opacity-65'
+                        }`}
+                      >
+                        {badge}
+                      </span>
+                    )}
+                    {active && (
+                      <motion.span
+                        layoutId="projectSubTabUnderline"
+                        transition={{ type: 'spring', stiffness: 520, damping: 36 }}
+                        className="absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-slate-950 dark:bg-white"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* ================= SUB-TAB 1: SPRINT ACTIF (MICRO-BATCH MAX 3) ================= */}
+            {projectTab === 'sprint' && (
+              <ProjectSprintView
+                project={project}
+                projectTracks={projectTracks}
+                allGroups={allGroups}
+                onOpenTrackDetails={onOpenTrackDetails}
+              />
+            )}
+
+            {/* ================= SUB-TAB 3: HARMONISATION & MIX GLOBAL ================= */}
+            {projectTab === 'harmonization' && (
+              <ProjectHarmonizationView
+                project={project}
+                projectTracks={projectTracks}
+                allGroups={allGroups}
+                onOpenTrackDetails={onOpenTrackDetails}
+              />
+            )}
+
+            {/* ================= SUB-TAB 2: TRACKLIST + BACKLOG + ROLL-UP TODO ================= */}
+            {projectTab === 'tracklist' && (
+              <>
+            {/* Full-Width Soft Action Pill (routes to Backlog when tracklist is locked!) */}
             <button
               type="button"
               onClick={() => setShowAddTrack((v) => !v)}
               className="w-full rounded-2xl bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800/90 py-3 px-4 flex items-center justify-center gap-2 text-xs font-semibold text-slate-900 dark:text-zinc-100 transition cursor-pointer"
             >
-              <Plus size={15} />
-              <span>Ajouter un son à ce projet</span>
+              {isLocked ? <Archive size={14} /> : <Plus size={15} />}
+              <span>
+                {isLocked
+                  ? 'Ajouter un son au Backlog / Hors-projet (tracklist figée)'
+                  : 'Ajouter un son à ce projet'}
+              </span>
             </button>
 
-            {/* Collapsible Library Track Picker */}
+            {/* Collapsible Library Track Picker with Analytical Sort */}
             <AnimatePresence>
               {showAddTrack && (
                 <motion.div
@@ -709,17 +910,39 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   exit={{ opacity: 0, height: 0 }}
                   className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/50 p-3.5 space-y-2 overflow-hidden"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
                       Tes sons disponibles ({availableTrackGroups.length})
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddTrack(false)}
-                      className="text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
-                    >
-                      <X size={14} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {(
+                        [
+                          ['potential', '↗ Potentiel'],
+                          ['gap', 'Δ Écart'],
+                          ['recent', 'Récents'],
+                        ] as const
+                      ).map(([id, lbl]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setAddTrackSort(id)}
+                          className={`rounded-lg px-2 py-0.5 text-[10px] font-medium transition cursor-pointer ${
+                            addTrackSort === id
+                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              : 'text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setShowAddTrack(false)}
+                        className="ml-1 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1.5">
                     <Search size={12} className="text-slate-400 shrink-0" />
@@ -748,34 +971,56 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     </p>
                   ) : (
                     <div className="max-h-48 overflow-y-auto space-y-1">
-                      {availableTrackGroups.map((g) => (
-                        <div
-                          key={g.groupKey}
-                          className="w-full flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-3 py-2"
-                        >
-                          <span className="flex items-center gap-2 min-w-0 flex-1">
-                            <Music2 size={13} className="text-fuchsia-500 shrink-0" />
-                            <span className="text-xs font-medium truncate">{g.baseTitle}</span>
-                          </span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => handleBenchTrack(g.latestTrack.id)}
-                              title="Ajouter dans « Mis de côté »"
-                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
-                            >
-                              <Archive size={11} /> De côté
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAddTrackToProject(g.latestTrack.id)}
-                              className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[10px] font-semibold hover:opacity-90 transition cursor-pointer"
-                            >
-                              <Plus size={11} /> Ajouter
-                            </button>
+                      {availableTrackGroups.map((g) => {
+                        const r = resolveTrackRatings(
+                          g.latestTrack,
+                          g.versions.map((v) => v.track)
+                        );
+                        return (
+                          <div
+                            key={g.groupKey}
+                            className="w-full flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-3 py-2"
+                          >
+                            <span className="flex items-center gap-2 min-w-0 flex-1">
+                              <Music2 size={13} className="text-fuchsia-500 shrink-0" />
+                              <span className="text-xs font-medium truncate">{g.baseTitle}</span>
+                              {(r.current !== null || r.potential !== null) && (
+                                <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                                  {r.current ?? '—'}
+                                  <span className="text-violet-500">↗{r.potential ?? '—'}</span>
+                                </span>
+                              )}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {!isLocked && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleBenchTrack(g.latestTrack.id)}
+                                  title="Ajouter au Backlog / Hors-projet"
+                                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-medium text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                                >
+                                  <Archive size={11} /> Backlog
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleAddTrackToProject(g.latestTrack.id)}
+                                className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[10px] font-semibold hover:opacity-90 transition cursor-pointer"
+                              >
+                                {isLocked ? (
+                                  <>
+                                    <Archive size={11} /> Backlog
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus size={11} /> Ajouter
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </motion.div>
@@ -802,6 +1047,13 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     trkGroup?.versions.map((v) => v.track)
                   );
                   const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+                  const trkFixCount = linkedLyrics ? countLyricsFixTags(linkedLyrics.content) : 0;
+                  const trkWorkflow = resolveTrackWorkflow(
+                    trk,
+                    trkGroup?.versions.map((v) => v.track)
+                  );
+                  const trkStatusMeta = TRACK_STATUS_META[trkWorkflow.status];
+                  const trkMoodMeta = trkWorkflow.mood ? TRACK_MOOD_META[trkWorkflow.mood] : null;
                   const trkRatings = resolveTrackRatings(
                     trk,
                     trkGroup?.versions.map((v) => v.track)
@@ -905,6 +1157,23 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                   trk.artist}
                                 {trk.bpm ? ` · ${trk.bpm} BPM` : ''}
                               </p>
+                              <span
+                                className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkStatusMeta.badge}`}
+                              >
+                                {trkStatusMeta.shortLabel}
+                              </span>
+                              {trkMoodMeta && (
+                                <span
+                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkMoodMeta.badge}`}
+                                >
+                                  {trkMoodMeta.emoji} {trkMoodMeta.short}
+                                </span>
+                              )}
+                              {trkFixCount > 0 && (
+                                <span className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                                  [FIX] ×{trkFixCount}
+                                </span>
+                              )}
                               {lyricsMeta && (
                                 <span
                                   title={`Texte lié : ${linkedLyrics?.title || ''} (${lyricsMeta.label})`}
@@ -1079,7 +1348,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400/80 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 transition cursor-pointer"
                 >
                   <Archive size={11} className="opacity-70" />
-                  <span>Mis de côté ({benchTracks.length})</span>
+                  <span>Backlog / Mis de côté ({benchTracks.length})</span>
                   {showBench ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                 </button>
 
@@ -1226,6 +1495,45 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     </button>
                   </div>
                 ))}
+
+                {/* Automatic Roll-Up of ALL active tracks' TODOs */}
+                {rolledUpTrackTodos.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-slate-100 dark:border-zinc-900 space-y-1">
+                    <p className="px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                      Tâches des titres actifs ({rolledUpTrackTodos.filter((t) => t.done).length}/
+                      {rolledUpTrackTodos.length})
+                    </p>
+                    {rolledUpTrackTodos.map((item) => (
+                      <div
+                        key={`${item.trackId}-${item.todoId}`}
+                        className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900/60"
+                      >
+                        <CheckCircle
+                          checked={item.done}
+                          onToggle={() => toggleMusicTrackTodo(item.trackId, item.todoId)}
+                          accent="violet"
+                          size="sm"
+                        />
+                        <span
+                          className={`flex-1 text-xs ${
+                            item.done
+                              ? 'line-through text-slate-400'
+                              : 'text-slate-700 dark:text-zinc-200'
+                          }`}
+                        >
+                          {item.label}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onOpenTrackDetails?.(item.trackId)}
+                          className="rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 truncate max-w-[110px] cursor-pointer shrink-0"
+                        >
+                          {item.trackTitle}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <form onSubmit={handleAddTodo} className="flex items-center gap-2 pt-1">
@@ -1233,7 +1541,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   type="text"
                   value={todoInput}
                   onChange={(e) => setTodoInput(e.target.value)}
-                  placeholder="+ Ajouter une tâche TODO…"
+                  placeholder="+ Ajouter une tâche globale au projet…"
                   className="flex-1 rounded-2xl bg-slate-100 dark:bg-zinc-900 px-3.5 py-2.5 text-xs outline-none focus:ring-2 focus:ring-slate-900/15 dark:focus:ring-zinc-100/20"
                 />
                 {todoInput.trim() && (
@@ -1246,6 +1554,8 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 )}
               </form>
             </section>
+              </>
+            )}
           </div>
         </div>
       </motion.div>

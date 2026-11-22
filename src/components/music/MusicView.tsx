@@ -53,7 +53,7 @@ interface MusicViewProps {
 
 type MusicSubTab = 'dashboard' | 'library' | 'lyrics';
 type LibraryFilter = 'all' | 'favorites' | 'todo';
-type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential';
+type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential' | 'gap';
 
 export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const {
@@ -277,6 +277,15 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         if (pb !== pa) return pb - pa;
         return b.latestTimestampMs - a.latestTimestampMs;
       }
+      if (libSort === 'gap') {
+        const ra = resolveTrackRatings(a.latestTrack, a.versions.map((v) => v.track));
+        const rb = resolveTrackRatings(b.latestTrack, b.versions.map((v) => v.track));
+        const gapA = ra.potential !== null && ra.current !== null ? ra.potential - ra.current : -99;
+        const gapB = rb.potential !== null && rb.current !== null ? rb.potential - rb.current : -99;
+        if (gapB !== gapA) return gapB - gapA;
+        if ((rb.potential ?? -1) !== (ra.potential ?? -1)) return (rb.potential ?? -1) - (ra.potential ?? -1);
+        return b.latestTimestampMs - a.latestTimestampMs;
+      }
       return b.latestTimestampMs - a.latestTimestampMs;
     });
   }, [groupVersions, trackGroups, flatTrackGroups, libSearch, libFilter, libSort, yearFilter]);
@@ -336,7 +345,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
           driveYearFolder: f.yearFolder,
           modifiedAt: f.modifiedTime || nowIso,
           coverGradient: getDeterministicGradientId(parsed.groupKey),
-          status: 'demo' as const,
+          status: 'maquette' as const,
           tags: ['Google Drive'],
           markers: [],
           addedAt: f.modifiedTime || nowIso,
@@ -1166,6 +1175,18 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   }`}
                 >
                   ↗ Potentiel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLibSort('gap')}
+                  title="Trier par écart Potentiel − Note actuelle (titres prioritaires)"
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    libSort === 'gap'
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  Δ Écart
                 </button>
               </div>
             </div>
