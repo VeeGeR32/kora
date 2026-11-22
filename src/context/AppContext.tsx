@@ -35,7 +35,12 @@ import {
   isExcludedProdName,
   listAllGoogleDriveAudioFilesWithExclusions,
 } from '../lib/googleDrive';
-import { getDeterministicGradientId, parseTrackVersion } from '../lib/musicVersioning';
+import {
+  getDeterministicGradientId,
+  groupMusicTracks,
+  parseTrackVersion,
+  reconcileProjectTrackVersions,
+} from '../lib/musicVersioning';
 import { createEmptyState, createSeedState } from '../data/seed';
 import { uid } from '../utils/dates';
 import {
@@ -205,6 +210,12 @@ interface AppContextValue {
 
   addMusicProject: (project: Omit<MusicProject, 'id'>) => string;
   updateMusicProject: (id: string, patch: Partial<MusicProject>) => void;
+  setProjectTrackVersion: (
+    projectId: string,
+    groupKey: string,
+    trackId: string,
+    mode?: 'auto' | 'pin'
+  ) => void;
   toggleMusicProjectStep: (projectId: string, stepId: string) => void;
   addMusicProjectStep: (projectId: string, label: string, dueDate?: string) => void;
   deleteMusicProjectStep: (projectId: string, stepId: string) => void;
@@ -1345,7 +1356,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               if (driveId) prevMap.set(driveId, -1);
             }
           }
-          return { ...prev, musicTracks: [...freshNew, ...merged] };
+          const combinedTracks = [...freshNew, ...merged];
+          const reconciled = reconcileProjectTrackVersions(prev.musicProjects, combinedTracks);
+          return {
+            ...prev,
+            musicTracks: reconciled.musicTracks,
+            musicProjects: reconciled.musicProjects,
+          };
         });
       }
 
@@ -1808,6 +1825,128 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  /**
+   * Switches which version of a song group is used inside a specific project.
+   * - If `mode === 'auto'` OR `trackId` is the group's latest version (and `mode !== 'pin'`),
+   *   the pin is cleared so future Drive versions auto-update this song in the project.
+   * - Otherwise, pins `trackId` in `project.pinnedVersionByGroup[groupKey]` so auto-sync
+   *   preserves the user's explicit version choice for this project.
+   */
+  const setProjectTrackVersion = useCallback(
+    (projectId: string, groupKey: string, trackId: string, mode?: 'auto' | 'pin') => {
+      touch((prev) => {
+        const project = prev.musicProjects.find((p) => p.id === projectId);
+        if (!project) return prev;
+
+        const groups = groupMusicTracks(prev.musicTracks);
+        const group =
+          groups.find((g) => g.groupKey === groupKey) ||
+          groups.find((g) => g.allTrackIds.includes(trackId));
+        if (!group) return prev;
+
+        const targetExists = group.allTrackIds.includes(trackId);
+        const useAuto =
+          mode === 'auto' ||
+          (!targetExists && mode !== 'pin') ||
+          (mode !== 'pin' && trackId === group.latestTrack.id);
+        const resolvedId = useAuto ? group.latestTrack.id : trackId;
+        const groupIdSet = new Set(group.allTrackIds);
+
+        const replaceList = (ids: string[] | undefined): string[] | undefined => {
+          if (!ids) return ids;
+          const out: string[] = [];
+          let replaced = false;
+          for (const id of ids) {
+            if (groupIdSet.has(id)) {
+              if (!replaced) {
+                out.push(resolvedId);
+                replaced = true;
+              }
+            } else if (!out.includes(id)) {
+              out.push(id);
+            }
+          }
+          return out;
+        };
+
+        const nextTrackIds = replaceList(project.trackIds) || [];
+        const nextBenchTrackIds = replaceList(project.benchTrackIds);
+        const nextSprints = project.sprints?.map((spr) => ({
+          ...spr,
+          trackIds: replaceList(spr.trackIds) || [],
+        }));
+
+        const nextPins = { ...(project.pinnedVersionByGroup || {}) };
+        if (useAuto) {
+          delete nextPins[group.groupKey];
+        } else {
+          nextPins[group.groupKey] = resolvedId;
+        }
+        const pinnedVersionByGroup = Object.keys(nextPins).length > 0 ? nextPins : undefined;
+
+        const explicitTitle =
+          group.latestTrack.manualGroupTitle?.trim() ||
+          group.versions
+            .find((v) => Boolean(v.track.manualGroupTitle?.trim()))
+            ?.track.manualGroupTitle?.trim();
+        const isInActiveTracklist = nextTrackIds.includes(resolvedId);
+
+        const nextProjects = prev.musicProjects.map((p) =>
+          p.id === projectId
+            ? {
+                ...p,
+                trackIds: nextTrackIds,
+                ...(nextBenchTrackIds !== undefined ? { benchTrackIds: nextBenchTrackIds } : {}),
+                ...(nextSprints !== undefined ? { sprints: nextSprints } : {}),
+                pinnedVersionByGroup,
+              }
+            : p
+        );
+
+        const nextTracks = prev.musicTracks.map((t) => {
+          if (!groupIdSet.has(t.id)) return t;
+          if (t.id === resolvedId) {
+            return {
+              ...t,
+              ...(isInActiveTracklist ? { linkedProjectId: projectId } : {}),
+              ...(explicitTitle && !t.manualGroupTitle?.trim()
+                ? { manualGroupTitle: explicitTitle }
+                : {}),
+            };
+          }
+          if (t.linkedProjectId === projectId) {
+            return { ...t, linkedProjectId: undefined };
+          }
+          return t;
+        });
+
+        return {
+          ...prev,
+          musicProjects: nextProjects,
+          musicTracks: nextTracks,
+        };
+      });
+    },
+    []
+  );
+
+  // Automatically reconcile project track versions whenever tracks or projects change
+  // (e.g., on cloud hydration, after Drive sync, or after manual version linking/detaching).
+  useEffect(() => {
+    if (cloudConfigured && cloudUser && !cloudHydratedRef.current) return;
+    const res = reconcileProjectTrackVersions(state.musicProjects, state.musicTracks);
+    if (!res.changed) return;
+    touch((prev) => {
+      const latest = reconcileProjectTrackVersions(prev.musicProjects, prev.musicTracks);
+      if (!latest.changed) return prev;
+      return {
+        ...prev,
+        musicProjects: latest.musicProjects,
+        musicTracks: latest.musicTracks,
+      };
+    });
+  }, [state.musicTracks, state.musicProjects, lastCloudSyncAt, cloudConfigured, cloudUser?.uid]);
+
   const toggleMusicProjectStep = useCallback((projectId: string, stepId: string) => {
     touch((prev) => ({
       ...prev,
@@ -2205,6 +2344,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         importLexCoreBackup,
         addMusicProject,
         updateMusicProject,
+        setProjectTrackVersion,
         toggleMusicProjectStep,
         addMusicProjectStep,
         deleteMusicProjectStep,

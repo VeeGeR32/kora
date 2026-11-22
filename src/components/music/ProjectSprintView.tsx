@@ -360,7 +360,7 @@ export function ProjectSprintView({
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <p className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                              {trk.manualGroupTitle || trk.title}
+                              {getTrackContext(trk).grp?.baseTitle || trk.manualGroupTitle || trk.title}
                             </p>
                             {ready && (
                               <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />

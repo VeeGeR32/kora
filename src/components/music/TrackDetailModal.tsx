@@ -32,6 +32,7 @@ import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import {
   countLyricsFixTags,
   findLinkedLyricsForTrack,
+  findLinkedProjectForTrack,
   LYRICS_STATUS_META,
   prepareAndUploadHdCover,
   resolveEffectiveTrackCover,
@@ -51,6 +52,7 @@ import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
 interface TrackDetailModalProps {
   group: TrackGroup | null;
   selectedTrackId: string | null;
+  activeProjectId?: string | null;
   onSelectVersion: (trackId: string) => void;
   onOpenLyrics: (track: MusicTrack) => void;
   onRequestPullVersion: (group: TrackGroup, trackId: string) => void;
@@ -76,6 +78,7 @@ function fmtDate(iso?: string): string {
 export function TrackDetailModal({
   group,
   selectedTrackId,
+  activeProjectId,
   onSelectVersion,
   onOpenLyrics,
   onRequestPullVersion,
@@ -98,6 +101,7 @@ export function TrackDetailModal({
     deleteTrackMarker,
     deleteMusicTrack,
     updateMusicProject,
+    setProjectTrackVersion,
     updateLyricsDoc,
     notify,
   } = useApp();
@@ -242,25 +246,73 @@ export function TrackDetailModal({
     }
   };
 
+  const siblingTracks = group.versions.map((v) => v.track);
+  const linkedProject = findLinkedProjectForTrack(track, state.musicProjects, siblingTracks);
+  const activeContextProject = activeProjectId
+    ? state.musicProjects.find(
+        (p) =>
+          p.id === activeProjectId &&
+          (p.trackIds.some((id) => allGroupTrackIds.includes(id)) ||
+            (p.benchTrackIds || []).some((id) => allGroupTrackIds.includes(id)))
+      ) || null
+    : null;
+  const targetProject = activeContextProject || linkedProject;
+  const projectTrackIdInGroup = targetProject
+    ? targetProject.trackIds.find((id) => allGroupTrackIds.includes(id)) ||
+      (targetProject.benchTrackIds || []).find((id) => allGroupTrackIds.includes(id)) ||
+      null
+    : null;
+  const projectVersionEntry = projectTrackIdInGroup
+    ? group.versions.find((v) => v.track.id === projectTrackIdInGroup) || null
+    : null;
+  const isProjectPinned = Boolean(
+    targetProject && targetProject.pinnedVersionByGroup?.[group.groupKey]
+  );
+
   const handleAssignProject = (projectId: string) => {
-    const prevProjectId = track.linkedProjectId;
-    updateMusicTrack(track.id, { linkedProjectId: projectId || undefined });
+    const prevProjectId = linkedProject?.id || track.linkedProjectId;
+    const groupIdSet = new Set(allGroupTrackIds);
+
     if (prevProjectId && prevProjectId !== projectId) {
       const oldProj = state.musicProjects.find((p) => p.id === prevProjectId);
       if (oldProj) {
+        const nextPins = { ...(oldProj.pinnedVersionByGroup || {}) };
+        delete nextPins[group.groupKey];
         updateMusicProject(oldProj.id, {
-          trackIds: oldProj.trackIds.filter((id) => id !== track.id),
+          trackIds: oldProj.trackIds.filter((id) => !groupIdSet.has(id)),
+          benchTrackIds: (oldProj.benchTrackIds || []).filter((id) => !groupIdSet.has(id)),
+          pinnedVersionByGroup: Object.keys(nextPins).length > 0 ? nextPins : undefined,
         });
+      }
+      for (const id of allGroupTrackIds) {
+        const t = state.musicTracks.find((x) => x.id === id);
+        if (t?.linkedProjectId === prevProjectId) {
+          updateMusicTrack(id, { linkedProjectId: undefined });
+        }
       }
     }
+
     if (projectId) {
       const targetProj = state.musicProjects.find((p) => p.id === projectId);
-      if (targetProj && !targetProj.trackIds.includes(track.id)) {
+      const isSpecificOlderVersion = track.id !== group.latestTrack.id;
+      if (targetProj) {
+        const alreadyInProj = targetProj.trackIds.some((id) => groupIdSet.has(id));
+        const nextTrackIds = alreadyInProj
+          ? targetProj.trackIds.map((id) => (groupIdSet.has(id) ? track.id : id))
+          : [...targetProj.trackIds, track.id];
+        const nextPins = { ...(targetProj.pinnedVersionByGroup || {}) };
+        if (isSpecificOlderVersion) nextPins[group.groupKey] = track.id;
+        else delete nextPins[group.groupKey];
         updateMusicProject(targetProj.id, {
-          trackIds: [...targetProj.trackIds, track.id],
+          trackIds: Array.from(new Set(nextTrackIds)),
+          benchTrackIds: (targetProj.benchTrackIds || []).filter((id) => !groupIdSet.has(id)),
+          pinnedVersionByGroup: Object.keys(nextPins).length > 0 ? nextPins : undefined,
         });
       }
+      updateMusicTrack(track.id, { linkedProjectId: projectId });
       notify(`Ajouté au projet « ${targetProj?.title || ''} » ✓`);
+    } else if (prevProjectId) {
+      notify('Retiré du projet');
     }
   };
 
@@ -848,9 +900,77 @@ export function TrackDetailModal({
                 </div>
               </div>
 
+              {targetProject && projectVersionEntry && group.hasMultipleVersions && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/50 px-3 py-2 text-xs">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                    <FolderKanban size={12} className="text-fuchsia-500 shrink-0" />
+                    <span className="text-slate-500 dark:text-zinc-400">
+                      Dans <strong className="text-slate-800 dark:text-zinc-100">{targetProject.title}</strong> :
+                    </span>
+                    <span className="font-mono font-semibold text-slate-900 dark:text-zinc-100">
+                      {projectVersionEntry.versionLabel}
+                    </span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                        isProjectPinned
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                          : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {isProjectPinned ? 'Fixée' : 'Auto · dernière'}
+                    </span>
+                  </div>
+
+                  {track.id !== projectTrackIdInGroup ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProjectTrackVersion(
+                          targetProject.id,
+                          group.groupKey,
+                          track.id,
+                          activeEntry.isLatest ? 'auto' : 'pin'
+                        );
+                        notify(
+                          activeEntry.isLatest
+                            ? `Version ${activeEntry.versionLabel} (auto) activée pour « ${targetProject.title} » ✓`
+                            : `Version ${activeEntry.versionLabel} fixée pour « ${targetProject.title} » ✓`
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer shrink-0"
+                    >
+                      <Check size={11} />
+                      Utiliser {activeEntry.versionLabel} dans le projet
+                    </button>
+                  ) : isProjectPinned && !projectVersionEntry.isLatest ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProjectTrackVersion(
+                          targetProject.id,
+                          group.groupKey,
+                          group.latestTrack.id,
+                          'auto'
+                        );
+                        onSelectVersion(group.latestTrack.id);
+                        notify(
+                          `Version ${group.latestVersionLabel} (auto) activée pour « ${targetProject.title} » ✓`
+                        );
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/25 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer shrink-0"
+                    >
+                      Passer en auto ({group.latestVersionLabel})
+                    </button>
+                  ) : null}
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-1.5">
                 {group.versions.map((v) => {
                   const selected = v.track.id === track.id;
+                  const isUsedInProject = Boolean(
+                    targetProject && projectTrackIdInGroup === v.track.id
+                  );
                   const playingThis =
                     player.currentTrack?.id === v.track.id && player.isPlaying;
                   return (
@@ -893,6 +1013,18 @@ export function TrackDetailModal({
                             }`}
                           >
                             Actuelle
+                          </span>
+                        )}
+                        {isUsedInProject && (
+                          <span
+                            title={`Version active dans « ${targetProject?.title} »`}
+                            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                              selected
+                                ? 'bg-emerald-400/25 text-emerald-200 dark:bg-emerald-600/20 dark:text-emerald-800'
+                                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            }`}
+                          >
+                            Projet
                           </span>
                         )}
                         {playingThis && (
@@ -1067,7 +1199,7 @@ export function TrackDetailModal({
                   <FolderKanban size={10} /> Projet
                 </label>
                 <select
-                  value={track.linkedProjectId || ''}
+                  value={linkedProject?.id || ''}
                   onChange={(e) => handleAssignProject(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2.5 py-2 text-xs outline-none"
                 >

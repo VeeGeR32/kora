@@ -1,4 +1,4 @@
-import type { MusicTrack } from '../types';
+import type { MusicProject, MusicTrack } from '../types';
 
 export interface ParsedTrackVersion {
   groupKey: string;
@@ -506,4 +506,262 @@ export function getDeterministicGradientId(groupKey: string): string {
     hash = (hash * 31 + groupKey.charCodeAt(i)) >>> 0;
   }
   return GROUP_GRADIENT_IDS[hash % GROUP_GRADIENT_IDS.length];
+}
+
+export interface ReconcileProjectVersionsResult {
+  musicProjects: MusicProject[];
+  musicTracks: MusicTrack[];
+  changed: boolean;
+}
+
+function sameStringArray(a: string[] | undefined, b: string[] | undefined): boolean {
+  const la = a || [];
+  const lb = b || [];
+  if (la.length !== lb.length) return false;
+  for (let i = 0; i < la.length; i++) {
+    if (la[i] !== lb[i]) return false;
+  }
+  return true;
+}
+
+function sameStringRecord(
+  a: Record<string, string> | undefined,
+  b: Record<string, string> | undefined
+): boolean {
+  const ka = a ? Object.keys(a) : [];
+  const kb = b ? Object.keys(b) : [];
+  if (ka.length !== kb.length) return false;
+  for (const k of ka) {
+    if (!b || a![k] !== b[k]) return false;
+  }
+  return true;
+}
+
+/**
+ * Automatically updates every project's track references (trackIds, benchTrackIds, sprints)
+ * to the latest version of each song group, UNLESS the user explicitly pinned a specific
+ * version for that song in `project.pinnedVersionByGroup[groupKey]`.
+ *
+ * Also keeps `linkedProjectId` and explicit `manualGroupTitle` cleanly in sync on the resolved
+ * tracks, deduplicates sibling versions inside a project, and prunes stale pins.
+ */
+export function reconcileProjectTrackVersions(
+  musicProjects: MusicProject[],
+  musicTracks: MusicTrack[]
+): ReconcileProjectVersionsResult {
+  if (musicProjects.length === 0 || musicTracks.length === 0) {
+    return { musicProjects, musicTracks, changed: false };
+  }
+
+  const groups = groupMusicTracks(musicTracks);
+  const trackById = new Map<string, MusicTrack>(musicTracks.map((t) => [t.id, t]));
+  const groupByTrackId = new Map<string, TrackGroup>();
+  const groupByKey = new Map<string, TrackGroup>();
+  const explicitGroupTitleByKey = new Map<string, string>();
+
+  for (const g of groups) {
+    groupByKey.set(g.groupKey, g);
+    for (const id of g.allTrackIds) {
+      groupByTrackId.set(id, g);
+    }
+    const explicitTitle =
+      g.latestTrack.manualGroupTitle?.trim() ||
+      g.versions.find((v) => Boolean(v.track.manualGroupTitle?.trim()))?.track.manualGroupTitle?.trim();
+    if (explicitTitle) {
+      explicitGroupTitleByKey.set(g.groupKey, explicitTitle);
+    }
+  }
+
+  let anyProjectChanged = false;
+  // Track patches we need to apply to musicTracks (linkedProjectId & manualGroupTitle)
+  const linkedProjectPatch = new Map<string, string | undefined>();
+  const manualTitlePatch = new Map<string, string>();
+
+  const nextProjects = musicProjects.map((project) => {
+    const pins = project.pinnedVersionByGroup || {};
+
+    const resolveId = (tid: string): { id: string; groupKey: string | null } => {
+      const grp = groupByTrackId.get(tid);
+      if (!grp) return { id: tid, groupKey: null };
+      const pinnedId = pins[grp.groupKey];
+      if (pinnedId && trackById.has(pinnedId) && grp.allTrackIds.includes(pinnedId)) {
+        return { id: pinnedId, groupKey: grp.groupKey };
+      }
+      return { id: grp.latestTrack.id, groupKey: grp.groupKey };
+    };
+
+    const activeGroupKeys = new Set<string>();
+    const nextTrackIds: string[] = [];
+    const seenTrackIds = new Set<string>();
+
+    const pushActiveId = (rawTid: string) => {
+      const { id, groupKey } = resolveId(rawTid);
+      if (groupKey && activeGroupKeys.has(groupKey)) return;
+      if (seenTrackIds.has(id)) return;
+      if (groupKey) activeGroupKeys.add(groupKey);
+      seenTrackIds.add(id);
+      nextTrackIds.push(id);
+    };
+
+    for (const tid of project.trackIds || []) {
+      pushActiveId(tid);
+    }
+
+    // Also pick up any track linked via linkedProjectId === project.id that isn't benched
+    const rawBenchSet = new Set(project.benchTrackIds || []);
+    for (const t of musicTracks) {
+      if (t.linkedProjectId === project.id && !rawBenchSet.has(t.id)) {
+        const grp = groupByTrackId.get(t.id);
+        // Only add if this song group isn't already in trackIds or bench
+        const benchedGroup = grp && (project.benchTrackIds || []).some((bid) => grp.allTrackIds.includes(bid));
+        if (!benchedGroup) {
+          pushActiveId(t.id);
+        }
+      }
+    }
+
+    // Resolve benchTrackIds (excluding any song group already active in trackIds)
+    const benchGroupKeys = new Set<string>();
+    const nextBenchTrackIds: string[] = [];
+    const seenBenchIds = new Set<string>();
+    for (const bid of project.benchTrackIds || []) {
+      const { id, groupKey } = resolveId(bid);
+      if (groupKey && (activeGroupKeys.has(groupKey) || benchGroupKeys.has(groupKey))) continue;
+      if (seenTrackIds.has(id) || seenBenchIds.has(id)) continue;
+      if (groupKey) benchGroupKeys.add(groupKey);
+      seenBenchIds.add(id);
+      nextBenchTrackIds.push(id);
+    }
+
+    // Resolve sprints[].trackIds
+    let sprintsChanged = false;
+    const nextSprints = project.sprints
+      ? project.sprints.map((spr) => {
+          const nextSprIds: string[] = [];
+          const seenSpr = new Set<string>();
+          for (const sid of spr.trackIds) {
+            const { id } = resolveId(sid);
+            if (!seenSpr.has(id)) {
+              seenSpr.add(id);
+              nextSprIds.push(id);
+            }
+          }
+          if (!sameStringArray(spr.trackIds, nextSprIds)) {
+            sprintsChanged = true;
+            return { ...spr, trackIds: nextSprIds };
+          }
+          return spr;
+        })
+      : undefined;
+
+    // Prune stale pins (deleted track, wrong group, or song removed from project)
+    const nextPinsObj: Record<string, string> = {};
+    for (const [gKey, pinnedId] of Object.entries(pins)) {
+      const grp = groupByKey.get(gKey);
+      if (
+        grp &&
+        (activeGroupKeys.has(gKey) || benchGroupKeys.has(gKey)) &&
+        trackById.has(pinnedId) &&
+        grp.allTrackIds.includes(pinnedId)
+      ) {
+        nextPinsObj[gKey] = pinnedId;
+      }
+    }
+    const nextPinnedVersionByGroup =
+      Object.keys(nextPinsObj).length > 0 ? nextPinsObj : undefined;
+
+    // Sync linkedProjectId & manualGroupTitle on resolved tracks vs old siblings
+    for (const resolvedId of nextTrackIds) {
+      const grp = groupByTrackId.get(resolvedId);
+      const trk = trackById.get(resolvedId);
+      if (trk && !linkedProjectPatch.has(resolvedId)) {
+        // Keep existing linkedProjectId if it already points to a valid project containing this track
+        const existingLinkedProj = trk.linkedProjectId
+          ? musicProjects.find((p) => p.id === trk.linkedProjectId)
+          : null;
+        const alreadyLinkedToValidProj =
+          existingLinkedProj &&
+          (existingLinkedProj.id === project.id ||
+            existingLinkedProj.trackIds.includes(resolvedId) ||
+            (grp ? grp.allTrackIds.some((id) => existingLinkedProj.trackIds.includes(id)) : false));
+        if (!alreadyLinkedToValidProj) {
+          linkedProjectPatch.set(resolvedId, project.id);
+        }
+      }
+      if (grp) {
+        const expTitle = explicitGroupTitleByKey.get(grp.groupKey);
+        if (expTitle && trk && !trk.manualGroupTitle?.trim()) {
+          manualTitlePatch.set(resolvedId, expTitle);
+        }
+        // Clear stale linkedProjectId on other siblings that pointed to this project
+        for (const sibId of grp.allTrackIds) {
+          if (sibId === resolvedId) continue;
+          const sib = trackById.get(sibId);
+          if (sib && sib.linkedProjectId === project.id && !linkedProjectPatch.has(sibId)) {
+            linkedProjectPatch.set(sibId, undefined);
+          }
+        }
+      }
+    }
+
+    // Also propagate manualGroupTitle on benched resolved tracks
+    for (const resolvedBenchId of nextBenchTrackIds) {
+      const grp = groupByTrackId.get(resolvedBenchId);
+      const trk = trackById.get(resolvedBenchId);
+      if (grp) {
+        const expTitle = explicitGroupTitleByKey.get(grp.groupKey);
+        if (expTitle && trk && !trk.manualGroupTitle?.trim()) {
+          manualTitlePatch.set(resolvedBenchId, expTitle);
+        }
+      }
+    }
+
+    const trackIdsChanged = !sameStringArray(project.trackIds, nextTrackIds);
+    const benchChanged = !sameStringArray(project.benchTrackIds, nextBenchTrackIds);
+    const pinsChanged = !sameStringRecord(project.pinnedVersionByGroup, nextPinnedVersionByGroup);
+
+    if (trackIdsChanged || benchChanged || sprintsChanged || pinsChanged) {
+      anyProjectChanged = true;
+      return {
+        ...project,
+        trackIds: nextTrackIds,
+        ...(project.benchTrackIds !== undefined || nextBenchTrackIds.length > 0
+          ? { benchTrackIds: nextBenchTrackIds }
+          : {}),
+        ...(nextSprints !== undefined ? { sprints: nextSprints } : {}),
+        pinnedVersionByGroup: nextPinnedVersionByGroup,
+      };
+    }
+
+    return project;
+  });
+
+  let anyTrackChanged = false;
+  const nextTracks =
+    linkedProjectPatch.size > 0 || manualTitlePatch.size > 0
+      ? musicTracks.map((t) => {
+          const hasProjPatch = linkedProjectPatch.has(t.id);
+          const hasTitlePatch = manualTitlePatch.has(t.id);
+          if (!hasProjPatch && !hasTitlePatch) return t;
+          const nextLinked = hasProjPatch ? linkedProjectPatch.get(t.id) : t.linkedProjectId;
+          const nextTitle = hasTitlePatch ? manualTitlePatch.get(t.id) : t.manualGroupTitle;
+          if (nextLinked === t.linkedProjectId && nextTitle === t.manualGroupTitle) return t;
+          anyTrackChanged = true;
+          return {
+            ...t,
+            linkedProjectId: nextLinked,
+            ...(hasTitlePatch ? { manualGroupTitle: nextTitle } : {}),
+          };
+        })
+      : musicTracks;
+
+  if (!anyProjectChanged && !anyTrackChanged) {
+    return { musicProjects, musicTracks, changed: false };
+  }
+
+  return {
+    musicProjects: nextProjects,
+    musicTracks: nextTracks,
+    changed: true,
+  };
 }

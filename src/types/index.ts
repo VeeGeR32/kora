@@ -356,6 +356,8 @@ export interface MusicProject {
   status: 'en-cours' | 'mix' | 'pret' | 'sorti';
   steps: MusicProjectStep[];
   trackIds: string[];
+  /** Explicit per-song version override for this project (groupKey -> pinned trackId). Unpinned songs auto-follow latest version. */
+  pinnedVersionByGroup?: Record<string, string>;
   benchTrackIds?: string[]; // Backlog / Hors-projet (sons mis de côté / en réflexion)
   isTracklistLocked?: boolean; // Gel de la tracklist définitive
   sprints?: MusicProjectSprint[]; // Production par Sprints (micro-batching, max 3 titres)

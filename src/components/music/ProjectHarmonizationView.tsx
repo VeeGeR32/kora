@@ -408,7 +408,7 @@ export function ProjectHarmonizationView({
                             : 'text-slate-900 dark:text-zinc-100'
                         }`}
                       >
-                        {trk.manualGroupTitle || trk.title}
+                        {grp?.baseTitle || trk.manualGroupTitle || trk.title}
                       </button>
                     </div>
 

@@ -137,30 +137,45 @@ export function TrackContextMenu({
   const todoDone = todos.filter((t) => t.done).length;
 
   const handleAssignProject = (projectId: string) => {
-    const prevProjId = track.linkedProjectId;
-    const isRemoving = prevProjId === projectId;
-    const nextProjId = isRemoving ? undefined : projectId;
+    const groupIdSet = new Set(allIds);
+    const targetProj = state.musicProjects.find((p) => p.id === projectId);
+    const isAlreadyInTarget = Boolean(
+      targetProj &&
+        (targetProj.trackIds.some((id) => groupIdSet.has(id)) ||
+          allIds.some((id) => state.musicTracks.find((t) => t.id === id)?.linkedProjectId === projectId))
+    );
 
-    updateMusicTrack(track.id, { linkedProjectId: nextProjId });
-
-    if (prevProjId) {
-      const oldProj = state.musicProjects.find((p) => p.id === prevProjId);
-      if (oldProj) {
-        updateMusicProject(oldProj.id, {
-          trackIds: oldProj.trackIds.filter((id) => id !== track.id),
-        });
+    if (isAlreadyInTarget && targetProj) {
+      const nextPins = { ...(targetProj.pinnedVersionByGroup || {}) };
+      delete nextPins[group.groupKey];
+      updateMusicProject(targetProj.id, {
+        trackIds: targetProj.trackIds.filter((id) => !groupIdSet.has(id)),
+        benchTrackIds: (targetProj.benchTrackIds || []).filter((id) => !groupIdSet.has(id)),
+        pinnedVersionByGroup: Object.keys(nextPins).length > 0 ? nextPins : undefined,
+      });
+      for (const id of allIds) {
+        const t = state.musicTracks.find((x) => x.id === id);
+        if (t?.linkedProjectId === projectId) {
+          updateMusicTrack(id, { linkedProjectId: undefined });
+        }
       }
-    }
-    if (nextProjId) {
-      const targetProj = state.musicProjects.find((p) => p.id === nextProjId);
-      if (targetProj && !targetProj.trackIds.includes(track.id)) {
-        updateMusicProject(targetProj.id, {
-          trackIds: [...targetProj.trackIds, track.id],
-        });
-      }
-      notify(`Ajouté à « ${targetProj?.title || 'Projet'} » ✓`);
-    } else {
       notify('Retiré du projet');
+      onClose();
+      return;
+    }
+
+    if (targetProj) {
+      const isSpecificOlderVersion = track.id !== group.latestTrack.id;
+      const nextPins = { ...(targetProj.pinnedVersionByGroup || {}) };
+      if (isSpecificOlderVersion) nextPins[group.groupKey] = track.id;
+      else delete nextPins[group.groupKey];
+      updateMusicProject(targetProj.id, {
+        trackIds: [...targetProj.trackIds.filter((id) => !groupIdSet.has(id)), track.id],
+        benchTrackIds: (targetProj.benchTrackIds || []).filter((id) => !groupIdSet.has(id)),
+        pinnedVersionByGroup: Object.keys(nextPins).length > 0 ? nextPins : undefined,
+      });
+      updateMusicTrack(track.id, { linkedProjectId: projectId });
+      notify(`Ajouté à « ${targetProj.title || 'Projet'} » ✓`);
     }
     onClose();
   };
@@ -537,7 +552,8 @@ export function TrackContextMenu({
                 <div className="mt-0.5 mb-1 mx-1 rounded-xl bg-slate-50 dark:bg-zinc-900/90 border border-slate-100 dark:border-zinc-800 max-h-36 overflow-y-auto p-1 space-y-0.5">
                   {state.musicProjects.map((proj) => {
                     const linked =
-                      track.linkedProjectId === proj.id || proj.trackIds.includes(track.id);
+                      track.linkedProjectId === proj.id ||
+                      proj.trackIds.some((id) => allIds.includes(id));
                     return (
                       <button
                         key={proj.id}
