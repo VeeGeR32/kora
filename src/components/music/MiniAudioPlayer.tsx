@@ -34,11 +34,11 @@ import {
 } from '../../lib/trackCover';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
-  { id: 'pink', label: 'Untitled Pink', css: 'from-pink-300 via-fuchsia-400 to-fuchsia-600' },
-  { id: 'violet', label: 'Violet Dusk', css: 'from-violet-400 via-purple-600 to-indigo-900' },
-  { id: 'emerald', label: 'Emerald', css: 'from-emerald-300 via-teal-500 to-emerald-900' },
-  { id: 'amber', label: 'Sunset', css: 'from-amber-300 via-orange-500 to-rose-600' },
-  { id: 'sky', label: 'Ocean', css: 'from-sky-300 via-blue-500 to-indigo-800' },
+  { id: 'pink', label: 'Kora Signal', css: 'from-orange-500 via-[#FF5500] to-amber-800' },
+  { id: 'violet', label: 'Carbon Slate', css: 'from-zinc-500 via-zinc-700 to-zinc-900' },
+  { id: 'emerald', label: 'Emerald Studio', css: 'from-emerald-500 via-teal-700 to-zinc-900' },
+  { id: 'amber', label: 'Warm Bronze', css: 'from-amber-400 via-orange-600 to-stone-900' },
+  { id: 'sky', label: 'Deep Ocean', css: 'from-sky-500 via-slate-700 to-zinc-950' },
   { id: 'midnight', label: 'Obsidian', css: 'from-zinc-700 via-zinc-900 to-black' },
 ];
 
@@ -652,7 +652,7 @@ export function MiniAudioPlayer() {
                     {miniUnplayedBarsEl}
                   </div>
                 </div>
-                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-500 dark:bg-amber-300" />
+                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#FF5500]" />
               </div>
 
               {/* Compact Transport Controls (Connect Transfer / Prev / Play-Pause / Next / Close) */}
@@ -927,7 +927,7 @@ export function MiniAudioPlayer() {
                   <div className="h-5 flex items-center justify-center">
                     <span
                       ref={scrubPillTextRef}
-                      className={`rounded-full bg-amber-400 dark:bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
+                      className={`rounded-full bg-[#FF5500] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
                         scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
                       }`}
                     />
@@ -967,7 +967,7 @@ export function MiniAudioPlayer() {
                       </div>
                     </div>
 
-                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-500 dark:bg-amber-300 z-30" />
+                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#FF5500] z-30" />
                   </div>
 
                   {isLoadingTrack ? (
@@ -1013,13 +1013,13 @@ export function MiniAudioPlayer() {
                     aria-label="Aléatoire"
                     className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
                       shuffle
-                        ? 'text-amber-600 dark:text-amber-300 bg-amber-500/12 dark:bg-white/10'
+                        ? 'text-[#FF5500] bg-[#FF5500]/12 dark:bg-white/10'
                         : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
                     }`}
                   >
                     <Shuffle size={18} />
                     {shuffle && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-500 dark:bg-amber-300" />
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#FF5500]" />
                     )}
                   </button>
 
@@ -1084,13 +1084,13 @@ export function MiniAudioPlayer() {
                     aria-label="Mode boucle"
                     className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
                       repeatMode !== 'off'
-                        ? 'text-amber-600 dark:text-amber-300 bg-amber-500/12 dark:bg-white/10'
+                        ? 'text-[#FF5500] bg-[#FF5500]/12 dark:bg-white/10'
                         : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
                     }`}
                   >
                     {repeatMode === 'one' ? <Repeat1 size={18} /> : <Repeat size={18} />}
                     {repeatMode !== 'off' && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-500 dark:bg-amber-300" />
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#FF5500]" />
                     )}
                   </button>
                 </div>

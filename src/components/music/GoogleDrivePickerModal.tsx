@@ -462,7 +462,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                               >
                                 {selected && <Check size={12} strokeWidth={3} />}
                               </div>
-                              <FileAudio size={14} className="text-fuchsia-500 shrink-0" />
+                              <FileAudio size={14} className="text-[#FF5500] shrink-0" />
                               <div className="min-w-0">
                                 <p className="text-xs font-medium text-slate-800 dark:text-zinc-100 truncate">
                                   {f.name}
@@ -498,7 +498,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                       type="button"
                       disabled={importing || loading}
                       onClick={handleSyncAllInstant}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-3.5 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer transition"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:opacity-90 px-3.5 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer transition"
                     >
                       <CloudDownload size={13} />
                       Tout charger ({sortedFiles.length})

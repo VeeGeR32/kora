@@ -203,7 +203,7 @@ export function TrackContextMenu({
       >
         {/* Header Summary */}
         <div className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 flex items-center gap-2">
-          <Disc3 size={14} className="text-fuchsia-500 shrink-0" />
+          <Disc3 size={14} className="text-[#FF5500] shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-slate-900 dark:text-zinc-100 truncate">
               {group.baseTitle}
@@ -227,9 +227,9 @@ export function TrackContextMenu({
             className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
           >
             {isPlaying ? (
-              <Pause size={14} className="text-fuchsia-500 shrink-0" />
+              <Pause size={14} className="text-[#FF5500] shrink-0" />
             ) : (
-              <Play size={14} className="text-fuchsia-500 shrink-0" />
+              <Play size={14} className="text-[#FF5500] shrink-0" />
             )}
             <span className="font-medium">{isPlaying ? 'Mettre en pause' : 'Écouter'}</span>
           </button>
@@ -323,7 +323,7 @@ export function TrackContextMenu({
             onClick={() => coverInputRef.current?.click()}
             className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
           >
-            <ImagePlus size={14} className="text-fuchsia-500 shrink-0" />
+            <ImagePlus size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
             <span className="font-medium">Changer la pochette</span>
           </button>
 
@@ -396,7 +396,7 @@ export function TrackContextMenu({
               <span className="font-medium">Description & TODO</span>
             </span>
             {todos.length > 0 && (
-              <span className="font-mono text-[10px] rounded-full bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-1.5 py-0.5 font-semibold">
+              <span className="font-mono text-[10px] rounded-full bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 px-1.5 py-0.5 font-semibold">
                 {todoDone}/{todos.length}
               </span>
             )}
@@ -449,7 +449,7 @@ export function TrackContextMenu({
                               className={`text-[9px] px-1.5 py-0.2 rounded-full ${
                                 selected
                                   ? 'bg-white/20 text-white dark:bg-black/15 dark:text-zinc-950'
-                                  : 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                                  : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
                               }`}
                             >
                               Dernière
@@ -479,7 +479,7 @@ export function TrackContextMenu({
             }}
             className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
           >
-            <Link2 size={14} className="text-fuchsia-500 shrink-0" />
+            <Link2 size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
             <span className="font-medium">Version d’un autre son…</span>
           </button>
 
@@ -562,7 +562,7 @@ export function TrackContextMenu({
                         className="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-slate-700 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-800 transition cursor-pointer"
                       >
                         <span className="truncate">{proj.title}</span>
-                        {linked && <Check size={12} className="text-fuchsia-500 shrink-0" />}
+                        {linked && <Check size={12} className="text-[#FF5500] shrink-0" />}
                       </button>
                     );
                   })}

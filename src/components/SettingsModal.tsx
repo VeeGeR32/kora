@@ -21,11 +21,11 @@ import { DriveSourcesManager } from './music/DrivePermanentSetupModal';
 
 const AVATAR_COLORS = [
   { id: 'slate', cls: 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950' },
-  { id: 'indigo', cls: 'bg-indigo-600 text-white' },
-  { id: 'violet', cls: 'bg-violet-600 text-white' },
-  { id: 'emerald', cls: 'bg-emerald-600 text-white' },
-  { id: 'fuchsia', cls: 'bg-fuchsia-600 text-white' },
+  { id: 'violet', cls: 'bg-[#FF5500] text-white' },
   { id: 'amber', cls: 'bg-amber-500 text-white' },
+  { id: 'emerald', cls: 'bg-emerald-600 text-white' },
+  { id: 'indigo', cls: 'bg-zinc-700 text-white' },
+  { id: 'fuchsia', cls: 'bg-stone-600 text-white' },
 ];
 
 async function resizeImageToDataUrl(file: File, maxSize = 160): Promise<string> {

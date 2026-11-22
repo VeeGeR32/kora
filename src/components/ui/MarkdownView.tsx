@@ -48,7 +48,7 @@ function renderInline(text: string): React.ReactNode[] {
             href={m[2]}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline decoration-violet-400 underline-offset-2 hover:text-violet-600 dark:hover:text-violet-300"
+            className="underline decoration-[#FF5500]/60 underline-offset-2 hover:text-[#FF5500]"
           >
             {m[1]}
           </a>
@@ -135,7 +135,7 @@ export function MarkdownView({ content, className = '' }: MarkdownViewProps) {
         i++;
       }
       blocks.push(
-        <ul key={k++} className="my-1.5 space-y-1 pl-4 list-disc marker:text-violet-500">
+        <ul key={k++} className="my-1.5 space-y-1 pl-4 list-disc marker:text-[#FF5500]">
           {items.map((it, idx) => (
             <li key={idx}>{renderInline(it)}</li>
           ))}
@@ -152,7 +152,7 @@ export function MarkdownView({ content, className = '' }: MarkdownViewProps) {
         i++;
       }
       blocks.push(
-        <ol key={k++} className="my-1.5 space-y-1 pl-4 list-decimal marker:text-violet-500">
+        <ol key={k++} className="my-1.5 space-y-1 pl-4 list-decimal marker:text-[#FF5500]">
           {items.map((it, idx) => (
             <li key={idx}>{renderInline(it)}</li>
           ))}

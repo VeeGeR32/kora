@@ -339,11 +339,11 @@ export function TrackDetailModal({
                 <ChevronLeft size={16} /> Retour
               </button>
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
-                <GitBranch size={11} className="text-fuchsia-500 shrink-0" />
+                <GitBranch size={11} className="text-[#FF5500] shrink-0" />
                 {activeEntry.versionLabel}
               </span>
               {group.yearFolder && (
-                <span className="hidden sm:inline-flex rounded-full bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-2.5 py-1 font-mono text-[10px] font-semibold shrink-0">
+                <span className="hidden sm:inline-flex rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 px-2.5 py-1 font-mono text-[10px] font-semibold shrink-0">
                   {group.yearFolder}
                 </span>
               )}
@@ -661,7 +661,7 @@ export function TrackDetailModal({
                       style={{ height: `${h}%` }}
                       className={`flex-1 rounded-full transition-colors ${
                         played
-                          ? 'bg-slate-900 dark:bg-zinc-100'
+                          ? 'bg-[#FF5500]'
                           : 'bg-slate-300/80 dark:bg-zinc-700 hover:bg-slate-400 dark:hover:bg-zinc-600'
                       }`}
                     />
@@ -840,10 +840,10 @@ export function TrackDetailModal({
               <div className="space-y-1.5 pt-2 border-t border-slate-200/60 dark:border-zinc-800/70">
                 <div className="flex items-center justify-between">
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
-                    <TrendingUp size={12} className="text-violet-500" />
+                    <TrendingUp size={12} className="text-[#FF5500]" />
                     Potentiel
                   </span>
-                  <span className="font-mono text-xs font-semibold tabular-nums text-violet-600 dark:text-violet-400">
+                  <span className="font-mono text-xs font-semibold tabular-nums text-[#FF5500]">
                     {ratings.potential !== null ? `${ratings.potential}/10` : '—'}
                   </span>
                 </div>
@@ -862,10 +862,10 @@ export function TrackDetailModal({
                         }
                         className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
                           active
-                            ? 'bg-violet-600 text-white'
+                            ? 'bg-[#FF5500] text-white'
                             : filled
-                            ? 'bg-violet-500/15 text-violet-700 dark:text-violet-300'
-                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-violet-600 dark:hover:text-violet-300'
+                            ? 'bg-[#FF5500]/15 text-orange-700 dark:text-orange-300'
+                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-[#FF5500]'
                         }`}
                       >
                         {val}
@@ -903,7 +903,7 @@ export function TrackDetailModal({
               {targetProject && projectVersionEntry && group.hasMultipleVersions && (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/50 px-3 py-2 text-xs">
                   <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                    <FolderKanban size={12} className="text-fuchsia-500 shrink-0" />
+                    <FolderKanban size={12} className="text-slate-500 dark:text-zinc-400 shrink-0" />
                     <span className="text-slate-500 dark:text-zinc-400">
                       Dans <strong className="text-slate-800 dark:text-zinc-100">{targetProject.title}</strong> :
                     </span>
@@ -957,7 +957,7 @@ export function TrackDetailModal({
                           `Version ${group.latestVersionLabel} (auto) activée pour « ${targetProject.title} » ✓`
                         );
                       }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/25 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer shrink-0"
+                      className="inline-flex items-center gap-1 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 hover:bg-slate-300 dark:hover:bg-zinc-700 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer shrink-0"
                     >
                       Passer en auto ({group.latestVersionLabel})
                     </button>
@@ -1068,7 +1068,7 @@ export function TrackDetailModal({
             <section className="space-y-3 rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/50 dark:bg-zinc-900/35 p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <ListChecks size={14} className="text-fuchsia-500" />
+                  <ListChecks size={14} className="text-slate-500 dark:text-zinc-400" />
                   <h3 className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
                     TODO du son
                   </h3>
@@ -1079,7 +1079,7 @@ export function TrackDetailModal({
                   )}
                 </div>
                 {todos.length > 0 && (
-                  <span className="font-mono text-[11px] font-semibold text-fuchsia-600 dark:text-fuchsia-400">
+                  <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-300">
                     {todoPct}%
                   </span>
                 )}
@@ -1089,7 +1089,7 @@ export function TrackDetailModal({
                 <div className="h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-zinc-800 overflow-hidden">
                   <div
                     style={{ width: `${todoPct}%` }}
-                    className="h-full rounded-full bg-fuchsia-500 transition-all duration-300"
+                    className="h-full rounded-full bg-slate-900 dark:bg-zinc-100 transition-all duration-300"
                   />
                 </div>
               )}
@@ -1149,7 +1149,7 @@ export function TrackDetailModal({
                   value={todoInput}
                   onChange={(e) => setTodoInput(e.target.value)}
                   placeholder="+ Ajouter une tâche sur ce son…"
-                  className="flex-1 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-xs outline-none focus:border-fuchsia-400"
+                  className="flex-1 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-3 py-2 text-xs outline-none focus:border-slate-400 dark:focus:border-zinc-600"
                 />
                 <button
                   type="submit"
@@ -1227,9 +1227,9 @@ export function TrackDetailModal({
                     <button
                       type="button"
                       onClick={() => void player.playTrack(track, mk.timeSec)}
-                      className="inline-flex items-center gap-1 hover:text-fuchsia-600 dark:hover:text-fuchsia-400 cursor-pointer"
+                      className="inline-flex items-center gap-1 hover:text-[#FF5500] cursor-pointer"
                     >
-                      <Tag size={10} className="text-fuchsia-500" />
+                      <Tag size={10} className="text-[#FF5500]" />
                       {mk.label}
                       <span className="font-mono text-[10px] text-slate-400">
                         {fmt(mk.timeSec)}
@@ -1259,7 +1259,7 @@ export function TrackDetailModal({
                     value={markerLabel}
                     onChange={(e) => setMarkerLabel(e.target.value)}
                     placeholder={`+ Marqueur (${isCurrent ? fmt(player.currentTime) : '0:00'})`}
-                    className="w-40 rounded-full border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2.5 py-1 text-[11px] outline-none focus:border-fuchsia-400"
+                    className="w-40 rounded-full border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2.5 py-1 text-[11px] outline-none focus:border-slate-400 dark:focus:border-zinc-600"
                   />
                 </form>
               </div>

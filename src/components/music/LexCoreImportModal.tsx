@@ -123,7 +123,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-fuchsia-600 text-white flex items-center justify-center">
+                <div className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center">
                   <Database size={16} />
                 </div>
                 <div>
@@ -164,9 +164,9 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                   void handleFilesSelected(e.dataTransfer.files);
                 }}
                 onClick={() => fileInputRef.current?.click()}
-                className="rounded-2xl border-2 border-dashed border-slate-200 dark:border-zinc-800 hover:border-fuchsia-400 dark:hover:border-fuchsia-600 p-5 text-center space-y-2 cursor-pointer transition bg-slate-50/60 dark:bg-zinc-900/40"
+                className="rounded-2xl border-2 border-dashed border-slate-200 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600 p-5 text-center space-y-2 cursor-pointer transition bg-slate-50/60 dark:bg-zinc-900/40"
               >
-                <div className="mx-auto h-10 w-10 rounded-xl bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 flex items-center justify-center">
+                <div className="mx-auto h-10 w-10 rounded-xl bg-slate-900/8 dark:bg-zinc-100/10 text-slate-800 dark:text-zinc-200 flex items-center justify-center">
                   <Upload size={18} />
                 </div>
                 <p className="font-semibold text-slate-900 dark:text-zinc-100">
@@ -186,7 +186,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                       key={`${p.name}-${idx}`}
                       className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 pl-2.5 pr-1.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-200"
                     >
-                      <FileJson size={12} className="text-fuchsia-500" />
+                      <FileJson size={12} className="text-[#FF5500]" />
                       {p.name}
                       <button
                         type="button"
@@ -210,7 +210,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                   value={pastedJson}
                   onChange={(e) => setPastedJson(e.target.value)}
                   placeholder='[{"_id": {"$oid": "..."}, "title": "Mon texte", "content": "..."}]'
-                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 font-mono text-[11px] outline-none focus:border-fuchsia-400 resize-none"
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 font-mono text-[11px] outline-none focus:border-slate-400 dark:focus:border-zinc-600 resize-none"
                 />
               </div>
 
@@ -279,7 +279,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                     (preview.parsed.docs.length === 0 && preview.parsed.folders.length === 0)
                   }
                   onClick={handleConfirmImport}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:opacity-90 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
                 >
                   <Upload size={13} /> Importer dans Kora
                 </button>

@@ -276,7 +276,7 @@ export function ProjectHarmonizationView({
             {readiness.unlocked ? (
               <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
             ) : (
-              <Sparkles size={15} className="text-violet-500 shrink-0" />
+              <Sparkles size={15} className="text-[#FF5500] shrink-0" />
             )}
             <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-zinc-100">
               {readiness.unlocked
@@ -292,7 +292,7 @@ export function ProjectHarmonizationView({
         <div className="h-1.5 rounded-full bg-slate-200/80 dark:bg-zinc-800 overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-300 ${
-              readiness.unlocked ? 'bg-emerald-500' : 'bg-violet-500'
+              readiness.unlocked ? 'bg-emerald-500' : 'bg-[#FF5500]'
             }`}
             style={{ width: `${readiness.pct}%` }}
           />
@@ -404,7 +404,7 @@ export function ProjectHarmonizationView({
                         onClick={() => onOpenTrackDetails?.(trk.id)}
                         className={`text-xs font-medium truncate text-left hover:underline cursor-pointer ${
                           isCur
-                            ? 'text-fuchsia-600 dark:text-fuchsia-400 font-semibold'
+                            ? 'text-[#FF5500] font-semibold'
                             : 'text-slate-900 dark:text-zinc-100'
                         }`}
                       >

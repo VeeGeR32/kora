@@ -62,7 +62,7 @@ export function LexCoreInspirationWidget({ onInsertWord }: { onInsertWord?: (wor
     <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/50 p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
-          <Sparkles size={12} className="text-fuchsia-500" />
+          <Sparkles size={12} className="text-[#FF5500]" />
           Inspiration
         </h4>
         <button
@@ -110,7 +110,7 @@ export function LexCoreInspirationWidget({ onInsertWord }: { onInsertWord?: (wor
           className="py-5 text-center text-xs text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300 transition cursor-pointer italic"
         >
           « La page blanche est un miroir. »
-          <span className="block not-italic text-[11px] mt-1 font-medium text-fuchsia-600 dark:text-fuchsia-400">
+          <span className="block not-italic text-[11px] mt-1 font-medium text-[#FF5500]">
             Cliquer pour tirer 18 mots
           </span>
         </button>
@@ -122,7 +122,7 @@ export function LexCoreInspirationWidget({ onInsertWord }: { onInsertWord?: (wor
               type="button"
               onClick={() => onInsertWord?.(w)}
               title={onInsertWord ? 'Cliquer pour insérer dans le texte' : w}
-              className="rounded-lg bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:border-fuchsia-400 dark:hover:border-fuchsia-500 transition cursor-pointer"
+              className="rounded-lg bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:border-[#FF5500] transition cursor-pointer"
             >
               {w}
             </button>
@@ -189,7 +189,7 @@ export function MetronomeWidget({ initialBpm = 120 }: { initialBpm?: number }) {
           <Activity size={12} /> Métronome
         </span>
         <span
-          className={`h-2 w-2 rounded-full ${isPlaying ? 'bg-fuchsia-500 animate-pulse' : 'bg-slate-300 dark:bg-zinc-700'}`}
+          className={`h-2 w-2 rounded-full ${isPlaying ? 'bg-[#FF5500] animate-pulse' : 'bg-slate-300 dark:bg-zinc-700'}`}
         />
       </div>
 

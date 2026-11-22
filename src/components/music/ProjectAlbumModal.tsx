@@ -976,7 +976,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   aria-label="Lecture aléatoire"
                   className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer disabled:opacity-35 ${
                     player.shuffle && isPlayingThisProject
-                      ? 'text-[#1DB954]'
+                      ? 'text-[#FF5500]'
                       : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10'
                   }`}
                 >
@@ -987,7 +987,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   type="button"
                   onClick={handlePlayAlbum}
                   aria-label="Lire le projet"
-                  className="h-13 w-13 rounded-full bg-[#1DB954] hover:bg-[#1ed760] text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-[0_12px_28px_-6px_rgba(29,185,84,0.55)] shrink-0 cursor-pointer"
+                  className="h-13 w-13 rounded-full bg-[#FF5500] hover:bg-[#ff661a] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-[0_12px_28px_-6px_rgba(255,85,0,0.55)] shrink-0 cursor-pointer"
                 >
                   {isPlayingThisProject ? (
                     <Pause size={22} fill="currentColor" />
@@ -1176,12 +1176,12 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                             className="w-full flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-3 py-2"
                           >
                             <span className="flex items-center gap-2 min-w-0 flex-1">
-                              <Music2 size={13} className="text-fuchsia-500 shrink-0" />
+                              <Music2 size={13} className="text-slate-400 shrink-0" />
                               <span className="text-xs font-medium truncate">{g.baseTitle}</span>
                               {(r.current !== null || r.potential !== null) && (
                                 <span className="font-mono text-[10px] text-slate-400 shrink-0">
                                   {r.current ?? '—'}
-                                  <span className="text-violet-500">↗{r.potential ?? '—'}</span>
+                                  <span className="text-[#FF5500]">↗{r.potential ?? '—'}</span>
                                 </span>
                               )}
                             </span>
@@ -1353,9 +1353,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                 showTracklistDetails ? 'text-sm' : 'text-[15px]'
                               } font-semibold truncate ${
                                 isCur
-                                  ? showTracklistDetails
-                                    ? 'text-fuchsia-600 dark:text-fuchsia-400'
-                                    : 'text-[#1DB954]'
+                                  ? 'text-[#FF5500]'
                                   : 'text-slate-900 dark:text-zinc-100'
                               }`}
                             >
@@ -1394,7 +1392,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                     className={`shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold transition cursor-pointer ${
                                       isPinnedVersion
                                         ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25'
-                                        : 'bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/20'
+                                        : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-300 dark:hover:bg-zinc-700'
                                     }`}
                                   >
                                     <GitBranch size={9} className="shrink-0" />
@@ -1417,7 +1415,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                       <span className="opacity-35">·</span>
                                     )}
                                     {trkRatings.potential !== null && (
-                                      <span className="text-violet-600 dark:text-violet-400">
+                                      <span className="text-[#FF5500]">
                                         ↗{trkRatings.potential}
                                       </span>
                                     )}
@@ -1481,7 +1479,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                         >
                           <div className="flex items-center justify-between gap-2 px-1">
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <GitBranch size={11} className="text-fuchsia-500 shrink-0" />
+                              <GitBranch size={11} className="text-slate-500 dark:text-zinc-400 shrink-0" />
                               <span className="text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
                                 Version dans ce projet
                               </span>
@@ -1546,7 +1544,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                         className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
                                           selected
                                             ? 'bg-white/20 text-white dark:bg-black/15 dark:text-zinc-950'
-                                            : 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                                            : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
                                         }`}
                                       >
                                         Dernière · Auto
@@ -1594,7 +1592,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                   setOpenTrackMenuId(null);
                                   setVersionPickerTrackId(trk.id);
                                 }}
-                                className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
+                                className="inline-flex items-center gap-1 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
                               >
                                 <GitBranch size={11} /> Version ({activeVersionEntry.versionLabel})
                               </button>

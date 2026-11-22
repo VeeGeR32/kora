@@ -100,7 +100,7 @@ export function LinkVersionModal({
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="h-8 w-8 rounded-xl bg-fuchsia-600 text-white flex items-center justify-center shrink-0">
+              <div className="h-8 w-8 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
                 <Link2 size={15} />
               </div>
               <div className="min-w-0">
@@ -138,7 +138,7 @@ export function LinkVersionModal({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Rechercher un son (ex. FOLIE, Project 271…)"
-                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 pl-9 pr-3 py-2 text-xs outline-none focus:border-fuchsia-400"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 pl-9 pr-3 py-2 text-xs outline-none focus:border-slate-400 dark:focus:border-zinc-600"
               />
             </div>
 
@@ -152,7 +152,7 @@ export function LinkVersionModal({
                 value={customLabel}
                 onChange={(e) => setCustomLabel(e.target.value)}
                 placeholder="Ex. Mix final, v2, Acoustique, Instru… (sinon auto)"
-                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-1.5 text-xs outline-none focus:border-fuchsia-400"
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-1.5 text-xs outline-none focus:border-slate-400 dark:focus:border-zinc-600"
               />
             </div>
 
@@ -168,10 +168,10 @@ export function LinkVersionModal({
                     key={cand.groupKey}
                     type="button"
                     onClick={() => handlePickCandidate(cand)}
-                    className="w-full flex items-center justify-between gap-2.5 rounded-xl border border-slate-200/70 dark:border-zinc-800/80 hover:border-fuchsia-400 dark:hover:border-fuchsia-600 hover:bg-fuchsia-50/40 dark:hover:bg-fuchsia-950/20 px-3 py-2.5 text-left transition cursor-pointer"
+                    className="w-full flex items-center justify-between gap-2.5 rounded-xl border border-slate-200/70 dark:border-zinc-800/80 hover:border-slate-400 dark:hover:border-zinc-600 hover:bg-slate-50 dark:hover:bg-zinc-900/70 px-3 py-2.5 text-left transition cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <Disc3 size={15} className="text-fuchsia-500 shrink-0" />
+                      <Disc3 size={15} className="text-slate-500 dark:text-zinc-400 shrink-0" />
                       <div className="min-w-0">
                         <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
                           {cand.baseTitle}

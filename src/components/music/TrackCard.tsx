@@ -291,7 +291,7 @@ export function TrackCard({
                   <span className="opacity-35">·</span>
                 )}
                 {ratings.potential !== null && (
-                  <span className="text-violet-600 dark:text-violet-400">↗{ratings.potential}</span>
+                  <span className="text-[#FF5500]">↗{ratings.potential}</span>
                 )}
               </span>
             )}

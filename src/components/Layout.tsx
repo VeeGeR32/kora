@@ -144,7 +144,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                 {cloudUser ? (
                   <Cloud
                     size={14}
-                    className={cloudSyncing ? 'text-fuchsia-500 animate-pulse' : 'text-emerald-500'}
+                    className={cloudSyncing ? 'text-[#FF5500] animate-pulse' : 'text-emerald-500'}
                   />
                 ) : (
                   <CloudOff size={14} />
@@ -226,13 +226,13 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               <div
                 className={`h-8 w-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 ${
                   state.preferences.avatarColor === 'indigo'
-                    ? 'bg-indigo-600 text-white'
+                    ? 'bg-zinc-700 text-white'
                     : state.preferences.avatarColor === 'violet'
-                    ? 'bg-violet-600 text-white'
+                    ? 'bg-[#FF5500] text-white'
                     : state.preferences.avatarColor === 'emerald'
                     ? 'bg-emerald-600 text-white'
                     : state.preferences.avatarColor === 'fuchsia'
-                    ? 'bg-fuchsia-600 text-white'
+                    ? 'bg-orange-600 text-white'
                     : state.preferences.avatarColor === 'amber'
                     ? 'bg-amber-500 text-white'
                     : 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
