@@ -459,10 +459,22 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
 
 export async function downloadGoogleDriveAudioBlob(
   token: string,
-  fileId: string
+  fileId: string,
+  externalSignal?: AbortSignal
 ): Promise<Blob> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 25_000);
+  let timedOut = false;
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 25_000);
   try {
     const res = await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
@@ -481,10 +493,12 @@ export async function downloadGoogleDriveAudioBlob(
     return await res.blob();
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') {
+      if (!timedOut) throw err; // Cancelled intentionally because user switched tracks
       throw new Error('Délai dépassé (25s) lors du téléchargement depuis Google Drive.');
     }
     throw err;
   } finally {
     window.clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
   }
 }

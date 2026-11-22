@@ -4,6 +4,7 @@ import {
   ChevronDown,
   Disc3,
   ListMusic,
+  Loader2,
   Music2,
   Pause,
   Play,
@@ -58,6 +59,7 @@ export function MiniAudioPlayer() {
     currentTrack,
     queue,
     isPlaying,
+    isLoadingTrack,
     currentTime,
     duration,
     repeatMode,
@@ -557,7 +559,9 @@ export function MiniAudioPlayer() {
                 >
                   <div
                     ref={miniDiscRef}
-                    className="relative h-10 w-10 rounded-full overflow-hidden border border-white/15 shrink-0 will-change-transform"
+                    className={`relative h-10 w-10 rounded-full overflow-hidden border border-white/15 shrink-0 will-change-transform ${
+                      isLoadingTrack ? 'animate-pulse opacity-75' : ''
+                    }`}
                   >
                     {coverUrl ? (
                       <img
@@ -579,7 +583,11 @@ export function MiniAudioPlayer() {
                     <p className="text-xs font-semibold text-white truncate leading-tight">
                       {displayTrackTitle}
                     </p>
-                    <p className="text-[10px] text-zinc-400 truncate mt-0.5">{subtitle}</p>
+                    {isLoadingTrack ? (
+                      <div className="mt-1.5 h-2 w-24 rounded-full bg-white/15 animate-pulse" />
+                    ) : (
+                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">{subtitle}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -587,7 +595,9 @@ export function MiniAudioPlayer() {
               {/* Smooth 60fps Mini Tape Preview (center-right on sm+) */}
               <div
                 onClick={() => setExpanded(true)}
-                className="hidden sm:block relative w-24 h-7 overflow-hidden cursor-pointer shrink-0"
+                className={`hidden sm:block relative w-24 h-7 overflow-hidden cursor-pointer shrink-0 transition-opacity ${
+                  isLoadingTrack ? 'animate-pulse opacity-35' : ''
+                }`}
               >
                 <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
                   <div
@@ -627,11 +637,13 @@ export function MiniAudioPlayer() {
                   type="button"
                   data-mini-ctrl="true"
                   onClick={togglePlay}
-                  disabled={!canPlay}
-                  aria-label={isPlaying ? 'Pause' : 'Lecture'}
-                  className="h-9 w-9 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-35 transition cursor-pointer"
+                  disabled={!canPlay || isLoadingTrack}
+                  aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
+                  className="h-9 w-9 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-70 transition cursor-pointer"
                 >
-                  {isPlaying ? (
+                  {isLoadingTrack ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : isPlaying ? (
                     <Pause size={15} fill="currentColor" />
                   ) : (
                     <Play size={15} fill="currentColor" className="ml-0.5" />
@@ -797,9 +809,9 @@ export function MiniAudioPlayer() {
                 >
                   <div
                     ref={discRef}
-                    className={`h-60 w-60 sm:h-72 sm:w-72 rounded-full overflow-hidden border border-white/15 shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] will-change-transform ${
+                    className={`h-60 w-60 sm:h-72 sm:w-72 rounded-full overflow-hidden border border-white/15 shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] will-change-transform transition-opacity ${
                       coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
-                    }`}
+                    } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
                   >
                     {coverUrl ? (
                       <img
@@ -869,7 +881,9 @@ export function MiniAudioPlayer() {
                     onPointerUp={finishTapeDrag}
                     onPointerCancel={finishTapeDrag}
                     style={{ touchAction: 'none' }}
-                    className="relative w-full h-12 overflow-hidden cursor-grab active:cursor-grabbing select-none"
+                    className={`relative w-full h-12 overflow-hidden cursor-grab active:cursor-grabbing select-none transition-opacity ${
+                      isLoadingTrack ? 'animate-pulse opacity-35 pointer-events-none' : ''
+                    }`}
                     title="Glisser horizontalement pour naviguer dans le son"
                   >
                     <div className="pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[#0b0b0e] to-transparent z-20" />
@@ -898,10 +912,16 @@ export function MiniAudioPlayer() {
                     <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-300 z-30" />
                   </div>
 
-                  <p
-                    ref={timeTextRef}
-                    className="text-center font-mono text-xs text-zinc-400 tabular-nums min-h-[1rem]"
-                  />
+                  {isLoadingTrack ? (
+                    <div className="h-4 flex items-center justify-center">
+                      <span className="h-2.5 w-20 rounded-full bg-white/15 animate-pulse" />
+                    </div>
+                  ) : (
+                    <p
+                      ref={timeTextRef}
+                      className="text-center font-mono text-xs text-zinc-400 tabular-nums min-h-[1rem]"
+                    />
+                  )}
 
                   {currentTrack.markers.length > 0 && (
                     <div className="flex flex-wrap items-center justify-center gap-1.5 pt-0.5">
@@ -964,11 +984,13 @@ export function MiniAudioPlayer() {
                       togglePlay();
                       triggerHapticTick(10);
                     }}
-                    disabled={!canPlay}
-                    aria-label={isPlaying ? 'Pause' : 'Lecture'}
-                    className="h-16 w-16 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-35 transition shadow-lg cursor-pointer"
+                    disabled={!canPlay || isLoadingTrack}
+                    aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
+                    className="h-16 w-16 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-75 transition shadow-lg cursor-pointer"
                   >
-                    {isPlaying ? (
+                    {isLoadingTrack ? (
+                      <Loader2 size={24} className="animate-spin" />
+                    ) : isPlaying ? (
                       <Pause size={26} fill="currentColor" />
                     ) : (
                       <Play size={26} fill="currentColor" className="ml-1" />

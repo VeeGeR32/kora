@@ -23,6 +23,7 @@ interface AudioPlayerContextValue {
   currentTrack: MusicTrack | null;
   queue: MusicTrack[];
   isPlaying: boolean;
+  isLoadingTrack: boolean;
   currentTime: number;
   duration: number;
   loop: boolean;
@@ -65,6 +66,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
   const [queue, setQueue] = useState<MusicTrack[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingTrack, setIsLoadingTrack] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
@@ -110,6 +112,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const lastReportedSecRef = useRef(-1);
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
+  // Instant in-memory ObjectURL cache + deduplicated in-flight downloads + active fetch abort
+  const memoryUrlCacheRef = useRef<Map<string, string>>(new Map());
+  const inFlightDownloadsRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  const activeFetchAbortRef = useRef<AbortController | null>(null);
+  const driveTokenWarmedRef = useRef(false);
 
   useEffect(() => {
     repeatModeRef.current = repeatMode;
@@ -136,6 +143,91 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     (effectiveQueue.length > 1 && currentIdx >= 0) || state.musicTracks.length > 1;
   const hasPrev = effectiveQueue.length > 1 && currentIdx >= 0;
 
+  // Pre-warm Google Drive token silently on boot so the very first track click is instant
+  useEffect(() => {
+    if (driveTokenWarmedRef.current) return;
+    const hasDriveTracks = state.musicTracks.some((t) => Boolean(t.googleDriveFileId));
+    if (!hasDriveTracks) return;
+    driveTokenWarmedRef.current = true;
+    void ensureGoogleDriveToken(state.preferences.firebaseConfig).catch(() => {});
+  }, [state.musicTracks, state.preferences.firebaseConfig]);
+
+  // Fast track URL resolver with RAM cache -> IndexedDB -> Drive (non-blocking IDB save!)
+  const resolveTrackAudioUrl = useCallback(
+    async (track: MusicTrack, signal?: AbortSignal): Promise<string | null> => {
+      const cacheKey = track.mediaId || (track.googleDriveFileId ? `drive_${track.googleDriveFileId}` : track.id);
+
+      const memHit = memoryUrlCacheRef.current.get(cacheKey);
+      if (memHit) return memHit;
+
+      if (track.mediaId) {
+        const idbUrl = await getMediaObjectUrl(track.mediaId);
+        if (idbUrl) {
+          memoryUrlCacheRef.current.set(cacheKey, idbUrl);
+          return idbUrl;
+        }
+      }
+      if (track.googleDriveFileId) {
+        const driveIdbUrl = await getMediaObjectUrl(`drive_${track.googleDriveFileId}`);
+        if (driveIdbUrl) {
+          memoryUrlCacheRef.current.set(cacheKey, driveIdbUrl);
+          return driveIdbUrl;
+        }
+      }
+      if (track.cloudAudioUrl) {
+        return track.cloudAudioUrl;
+      }
+      if (track.googleDriveFileId) {
+        // Reuse an in-flight download (e.g. from lookahead pre-fetch!) instead of downloading twice
+        const existingPromise = inFlightDownloadsRef.current.get(cacheKey);
+        if (existingPromise) {
+          return existingPromise;
+        }
+
+        const downloadPromise = (async (): Promise<string | null> => {
+          try {
+            const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
+            const blob = await downloadGoogleDriveAudioBlob(token, track.googleDriveFileId!, signal);
+            // Play IMMEDIATELY from RAM ObjectURL (0ms!) and persist to IndexedDB in background
+            const instantUrl = URL.createObjectURL(blob);
+            memoryUrlCacheRef.current.set(cacheKey, instantUrl);
+            void saveMediaBlob(cacheKey, blob, `${track.title}.mp3`).catch(() => {});
+            return instantUrl;
+          } catch (err) {
+            if ((err as Error)?.name === 'AbortError') return null;
+            throw err;
+          } finally {
+            inFlightDownloadsRef.current.delete(cacheKey);
+          }
+        })();
+
+        inFlightDownloadsRef.current.set(cacheKey, downloadPromise);
+        return downloadPromise;
+      }
+      return null;
+    },
+    [state.preferences.firebaseConfig]
+  );
+
+  // Silent lookahead prefetch: preloads the NEXT track in the queue in the background -> 0ms Next!
+  const prefetchUpcomingTrack = useCallback(
+    (currentId: string, activeQ: MusicTrack[]) => {
+      if (activeQ.length <= 1) return;
+      const idx = activeQ.findIndex((t) => t.id === currentId);
+      if (idx < 0) return;
+      const nextTrack = activeQ[idx + 1] || (repeatModeRef.current === 'all' ? activeQ[0] : null);
+      if (!nextTrack || nextTrack.id === currentId) return;
+      const cacheKey =
+        nextTrack.mediaId ||
+        (nextTrack.googleDriveFileId ? `drive_${nextTrack.googleDriveFileId}` : nextTrack.id);
+      if (memoryUrlCacheRef.current.has(cacheKey) || inFlightDownloadsRef.current.has(cacheKey)) {
+        return;
+      }
+      void resolveTrackAudioUrl(nextTrack).catch(() => {});
+    },
+    [resolveTrackAudioUrl]
+  );
+
   const playTrack = useCallback(
     async (
       track: MusicTrack,
@@ -147,6 +239,23 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       if (!audio) return;
 
       const reqId = ++playRequestIdRef.current;
+
+      // Cancel any previous in-flight Drive download so full bandwidth goes to this track
+      if (activeFetchAbortRef.current) {
+        activeFetchAbortRef.current.abort();
+        activeFetchAbortRef.current = null;
+      }
+
+      const isDifferentTrack = currentTrackRef.current?.id !== track.id;
+
+      // IMMEDIATELY silence & stop the current track when switching songs!
+      if (isDifferentTrack) {
+        audio.pause();
+        audio.removeAttribute('src');
+        setIsPlaying(false);
+        setCurrentTime(startAtSec ?? 0);
+        setDuration(track.durationSec || 0);
+      }
 
       if (customQueue && customQueue.length > 0) {
         if (!internalQueueSwap) {
@@ -181,38 +290,32 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         }
       }
 
-      // Immediately reflect track selection for zero-lag UI feedback
+      // Immediately reflect track selection + clean player loading skeleton (if not already in RAM)
       currentTrackRef.current = track;
       setCurrentTrack(track);
       pendingResumeSecRef.current = null;
       lastReportedSecRef.current = -1;
 
+      const cacheKey =
+        track.mediaId || (track.googleDriveFileId ? `drive_${track.googleDriveFileId}` : track.id);
+      const isInstantHit = Boolean(memoryUrlCacheRef.current.get(cacheKey) || track.cloudAudioUrl);
+      if (!isInstantHit) {
+        setIsLoadingTrack(true);
+      }
+
+      const abortController = new AbortController();
+      activeFetchAbortRef.current = abortController;
+
       let src: string | null = null;
-      if (track.mediaId) {
-        src = await getMediaObjectUrl(track.mediaId);
-      }
-      if (reqId !== playRequestIdRef.current) return;
-      if (!src && track.googleDriveFileId) {
-        src = await getMediaObjectUrl(`drive_${track.googleDriveFileId}`);
-      }
-      if (reqId !== playRequestIdRef.current) return;
-      if (!src && track.cloudAudioUrl) {
-        src = track.cloudAudioUrl;
-      }
-      if (!src && track.googleDriveFileId) {
-        try {
-          notify(`Chargement depuis Google Drive (« ${track.title} »)…`);
-          const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
-          if (reqId !== playRequestIdRef.current) return;
-          const blob = await downloadGoogleDriveAudioBlob(token, track.googleDriveFileId);
-          if (reqId !== playRequestIdRef.current) return;
-          const cacheKey = track.mediaId || `drive_${track.googleDriveFileId}`;
-          await saveMediaBlob(cacheKey, blob, `${track.title}.mp3`);
-          if (reqId !== playRequestIdRef.current) return;
-          src = await getMediaObjectUrl(cacheKey);
-        } catch (err) {
-          if (reqId !== playRequestIdRef.current) return;
-          notify(`Google Drive : ${(err as Error).message}`);
+      try {
+        src = await resolveTrackAudioUrl(track, abortController.signal);
+      } catch (err) {
+        if (reqId !== playRequestIdRef.current) return;
+        setIsLoadingTrack(false);
+        notify(`Google Drive : ${(err as Error).message}`);
+      } finally {
+        if (activeFetchAbortRef.current === abortController) {
+          activeFetchAbortRef.current = null;
         }
       }
       if (reqId !== playRequestIdRef.current) return;
@@ -223,6 +326,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         setDuration(track.durationSec || 0);
         setCurrentTime(startAtSec ?? 0);
         setIsPlaying(false);
+        setIsLoadingTrack(false);
         return;
       }
 
@@ -244,12 +348,20 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       });
       try {
         await audio.play();
-        if (reqId === playRequestIdRef.current) setIsPlaying(true);
+        if (reqId === playRequestIdRef.current) {
+          setIsPlaying(true);
+          setIsLoadingTrack(false);
+          // Silently prefetch the next track in the queue so the next skip is 0ms instant!
+          prefetchUpcomingTrack(track.id, queueRef.current);
+        }
       } catch {
-        if (reqId === playRequestIdRef.current) setIsPlaying(false);
+        if (reqId === playRequestIdRef.current) {
+          setIsPlaying(false);
+          setIsLoadingTrack(false);
+        }
       }
     },
-    [state.musicTracks, state.preferences.firebaseConfig, notify, updateLastSession]
+    [state.musicTracks, resolveTrackAudioUrl, prefetchUpcomingTrack, notify, updateLastSession]
   );
 
   const playShuffled = useCallback(
@@ -517,6 +629,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   );
 
   const closePlayer = useCallback(() => {
+    if (activeFetchAbortRef.current) {
+      activeFetchAbortRef.current.abort();
+      activeFetchAbortRef.current = null;
+    }
+    ++playRequestIdRef.current;
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute('src');
@@ -525,6 +642,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setCurrentTrack(null);
     setExpanded(false);
     setIsPlaying(false);
+    setIsLoadingTrack(false);
     setCurrentTime(0);
     setDuration(0);
     setAbLoop({ start: null, end: null });
@@ -574,6 +692,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       currentTrack,
       queue: effectiveQueue,
       isPlaying,
+      isLoadingTrack,
       currentTime,
       duration,
       loop,
@@ -610,6 +729,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       currentTrack,
       effectiveQueue,
       isPlaying,
+      isLoadingTrack,
       currentTime,
       duration,
       loop,
