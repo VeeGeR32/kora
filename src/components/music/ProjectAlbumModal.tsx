@@ -46,7 +46,7 @@ import {
   resolveTrackRatings,
   resolveTrackWorkflow,
 } from '../../lib/trackCover';
-import { groupMusicTracks } from '../../lib/musicVersioning';
+import { groupMusicTracks, type TrackGroup } from '../../lib/musicVersioning';
 import {
   isReadyForHarmonization,
   TRACK_MOOD_META,
@@ -60,6 +60,13 @@ interface ProjectAlbumModalProps {
   projectId: string | null;
   onClose: () => void;
   onOpenTrackDetails?: (trackId: string) => void;
+  onOpenContextMenu?: (
+    e: React.MouseEvent,
+    group: TrackGroup,
+    trackId: string,
+    initialSection?: 'versions' | 'projects' | null
+  ) => void;
+  onOpenProjectContextMenu?: (e: React.MouseEvent, project: MusicProject) => void;
 }
 
 function fmtTotalDuration(sec: number): string {
@@ -104,7 +111,13 @@ function fmtReleaseShort(iso?: string): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: ProjectAlbumModalProps) {
+export function ProjectAlbumModal({
+  projectId,
+  onClose,
+  onOpenTrackDetails,
+  onOpenContextMenu,
+  onOpenProjectContextMenu,
+}: ProjectAlbumModalProps) {
   const {
     state,
     cloudUser,
@@ -623,6 +636,14 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
         transition={{ duration: 0.16, ease: 'easeOut' }}
+        onContextMenu={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+          if (!onOpenProjectContextMenu) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenProjectContextMenu(e, project);
+        }}
         className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
       >
         <div className="relative pb-8">
@@ -1088,6 +1109,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 projectTracks={projectTracks}
                 allGroups={allGroups}
                 onOpenTrackDetails={onOpenTrackDetails}
+                onOpenContextMenu={onOpenContextMenu}
               />
             )}
 
@@ -1098,6 +1120,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 projectTracks={projectTracks}
                 allGroups={allGroups}
                 onOpenTrackDetails={onOpenTrackDetails}
+                onOpenContextMenu={onOpenContextMenu}
               />
             )}
 
@@ -1303,6 +1326,12 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                       ref={(el) => {
                         if (el) rowRefs.current.set(trk.id, el);
                         else rowRefs.current.delete(trk.id);
+                      }}
+                      onContextMenu={(e) => {
+                        if (!trkGroup || !onOpenContextMenu) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onOpenContextMenu(e, trkGroup, trk.id, null);
                       }}
                       onPointerDown={(e) => handleRowPointerDown(e, trk.id, false)}
                       onPointerMove={handleRowPointerMove}
@@ -1754,6 +1783,12 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                           return (
                             <div
                               key={trk.id}
+                              onContextMenu={(e) => {
+                                if (!trkGroup || !onOpenContextMenu) return;
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onOpenContextMenu(e, trkGroup, trk.id, null);
+                              }}
                               className="py-2.5 flex items-center justify-between gap-2 opacity-75 hover:opacity-100 transition"
                             >
                               <button

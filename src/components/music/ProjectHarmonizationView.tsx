@@ -29,6 +29,12 @@ interface ProjectHarmonizationViewProps {
   projectTracks: MusicTrack[];
   allGroups: TrackGroup[];
   onOpenTrackDetails?: (trackId: string) => void;
+  onOpenContextMenu?: (
+    e: React.MouseEvent,
+    group: TrackGroup,
+    trackId: string,
+    initialSection?: 'versions' | 'projects' | null
+  ) => void;
 }
 
 const MOOD_CYCLE: Array<TrackMood | null> = ['energetic', 'chill', 'experimental', null];
@@ -38,6 +44,7 @@ export function ProjectHarmonizationView({
   projectTracks,
   allGroups,
   onOpenTrackDetails,
+  onOpenContextMenu,
 }: ProjectHarmonizationViewProps) {
   const { updateMusicProject, setTrackGroupWorkflow } = useApp();
   const player = useAudioPlayer();
@@ -348,6 +355,12 @@ export function ProjectHarmonizationView({
                     ref={(el) => {
                       if (el) rowRefs.current.set(trk.id, el);
                       else rowRefs.current.delete(trk.id);
+                    }}
+                    onContextMenu={(e) => {
+                      if (!grp || !onOpenContextMenu) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenContextMenu(e, grp, trk.id, null);
                     }}
                     onPointerDown={(e) => handlePointerDown(e, trk.id, false)}
                     onPointerMove={handlePointerMove}

@@ -60,6 +60,12 @@ interface TrackDetailModalProps {
   onRequestPullVersion: (group: TrackGroup, trackId: string) => void;
   onRequestAttachToOther: (group: TrackGroup, trackId: string) => void;
   onDetachVersion: (trackId: string) => void;
+  onOpenContextMenu?: (
+    e: React.MouseEvent,
+    group: TrackGroup,
+    trackId: string,
+    initialSection?: 'versions' | 'projects' | null
+  ) => void;
   onClose: () => void;
 }
 
@@ -90,6 +96,7 @@ export function TrackDetailModal({
   onRequestPullVersion,
   onRequestAttachToOther,
   onDetachVersion,
+  onOpenContextMenu,
   onClose,
 }: TrackDetailModalProps) {
   const {
@@ -414,6 +421,14 @@ export function TrackDetailModal({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
         transition={{ duration: 0.16, ease: 'easeOut' }}
+        onContextMenu={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
+          if (!onOpenContextMenu) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenContextMenu(e, group, track.id, null);
+        }}
         className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
       >
         {/* Minimalist In-App Top Bar */}

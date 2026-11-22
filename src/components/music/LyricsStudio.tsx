@@ -27,6 +27,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import type { LyricsDoc } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
@@ -42,6 +43,7 @@ interface LyricsStudioProps {
   resetNonce?: number;
   onCloseDoc?: () => void;
   backLabel?: string;
+  onOpenDocContextMenu?: (e: React.MouseEvent, doc: LyricsDoc) => void;
 }
 
 const STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
@@ -82,6 +84,7 @@ export function LyricsStudio({
   resetNonce = 0,
   onCloseDoc,
   backLabel,
+  onOpenDocContextMenu,
 }: LyricsStudioProps) {
   const {
     state,
@@ -632,6 +635,12 @@ export function LyricsStudio({
               <div
                 key={doc.id}
                 onClick={() => setActiveDocId(doc.id)}
+                onContextMenu={(e) => {
+                  if (!onOpenDocContextMenu) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onOpenDocContextMenu(e, doc);
+                }}
                 className="group tempo-card rounded-2xl p-4 flex flex-col justify-between gap-3 cursor-pointer hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-sm transition"
               >
                 <div className="space-y-2">

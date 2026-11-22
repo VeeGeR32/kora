@@ -5,7 +5,6 @@ import { AuthGate } from './components/AuthGate';
 import { KoraLogo } from './components/ui/KoraLogo';
 import { Layout, type AppPage } from './components/Layout';
 import { MusicView, type MusicSubTab } from './components/music/MusicView';
-import { SettingsPage } from './components/SettingsModal';
 import { PublicSharePage } from './components/music/PublicSharePage';
 
 function KoraMusicApp() {
@@ -149,15 +148,13 @@ function KoraMusicApp() {
 
   return (
     <Layout activePage={activePage} onPageChange={setActivePage}>
-      {activePage === 'settings' ? (
-        <SettingsPage />
-      ) : (
-        <MusicView
-          subTab={activePage}
-          onSubTabChange={handleMusicSubTabChange}
-          navResetNonce={navResetNonce}
-        />
-      )}
+      <MusicView
+        subTab={activePage === 'settings' ? 'dashboard' : activePage}
+        isSettingsOpen={activePage === 'settings'}
+        onOpenSettings={() => setActivePage('settings')}
+        onSubTabChange={handleMusicSubTabChange}
+        navResetNonce={navResetNonce}
+      />
     </Layout>
   );
 }

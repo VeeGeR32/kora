@@ -37,6 +37,12 @@ interface ProjectSprintViewProps {
   projectTracks: MusicTrack[];
   allGroups: TrackGroup[];
   onOpenTrackDetails?: (trackId: string) => void;
+  onOpenContextMenu?: (
+    e: React.MouseEvent,
+    group: TrackGroup,
+    trackId: string,
+    initialSection?: 'versions' | 'projects' | null
+  ) => void;
 }
 
 const MAX_SPRINT_TRACKS = 3;
@@ -53,6 +59,7 @@ export function ProjectSprintView({
   projectTracks,
   allGroups,
   onOpenTrackDetails,
+  onOpenContextMenu,
 }: ProjectSprintViewProps) {
   const { state, updateMusicProject, setTrackGroupWorkflow, notify } = useApp();
   const player = useAudioPlayer();
@@ -332,6 +339,13 @@ export function ProjectSprintView({
                 return (
                   <div
                     key={trk.id}
+                    onContextMenu={(e) => {
+                      const grp = getTrackContext(trk).grp;
+                      if (!grp || !onOpenContextMenu) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenContextMenu(e, grp, trk.id, null);
+                    }}
                     className={`rounded-2xl border p-3 transition space-y-2.5 ${
                       ready
                         ? 'border-emerald-500/35 bg-emerald-500/5 dark:bg-emerald-950/20'

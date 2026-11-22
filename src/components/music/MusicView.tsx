@@ -26,11 +26,16 @@ import {
 import { LyricsStudio } from './LyricsStudio';
 import { ProjectAlbumModal } from './ProjectAlbumModal';
 import { ProjectCreationModal } from './ProjectCreationModal';
+import {
+  StudioGlobalContextMenu,
+  type StudioContextMenuTarget,
+} from './StudioGlobalContextMenu';
 import { TrackCard } from './TrackCard';
 import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu';
 import { TrackDetailModal } from './TrackDetailModal';
 import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
+import { SettingsPage } from '../SettingsModal';
 import {
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
@@ -43,11 +48,19 @@ interface MusicViewProps {
   subTab: MusicSubTab;
   onSubTabChange: (next: MusicSubTab) => void;
   navResetNonce?: number;
+  isSettingsOpen?: boolean;
+  onOpenSettings?: () => void;
 }
 type LibraryFilter = 'all' | 'favorites' | 'todo';
 type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential' | 'gap';
 
-export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicViewProps) {
+export function MusicView({
+  subTab,
+  onSubTabChange,
+  navResetNonce = 0,
+  isSettingsOpen = false,
+  onOpenSettings,
+}: MusicViewProps) {
   const {
     state,
     lastCloudSyncAt,
@@ -99,6 +112,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     setOpenProjectId(null);
     setDetailTarget(null);
     setContextMenu(null);
+    setStudioContextMenu(null);
     setLyricsOpenRequest(null);
     setLyricsReturnContext(null);
   }, [navResetNonce]);
@@ -106,12 +120,34 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
   // Selected version override per groupKey (defaults to latest version)
   const [selectedVersionByGroup, setSelectedVersionByGroup] = useState<Record<string, string>>({});
 
-  // Context Menu, Track Detail Modal & Manual Version Link Modal
+  // Context Menu, Studio Global Context Menu, Track Detail Modal & Manual Version Link Modal
   const [contextMenu, setContextMenu] = useState<TrackContextMenuState | null>(null);
+  const [studioContextMenu, setStudioContextMenu] = useState<StudioContextMenuTarget | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ groupKey: string; trackId: string } | null>(
     null
   );
   const [linkModal, setLinkModal] = useState<LinkVersionModalState | null>(null);
+
+  // Global right-click anywhere on the page (background, sidebar, header, settings, etc.)
+  useEffect(() => {
+    const onGlobalContextMenu = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      setContextMenu(null);
+      setStudioContextMenu({ kind: 'page', x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener('contextmenu', onGlobalContextMenu);
+    return () => window.removeEventListener('contextmenu', onGlobalContextMenu);
+  }, []);
 
   // Google Drive modal state
   const [syncingDrive, setSyncingDrive] = useState(false);
@@ -416,6 +452,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    setStudioContextMenu(null);
     setContextMenu({
       group,
       activeTrackId: trackId,
@@ -524,6 +561,17 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                     <div
                       key={proj.id}
                       onClick={() => setOpenProjectId(proj.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu(null);
+                        setStudioContextMenu({
+                          kind: 'project',
+                          project: proj,
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
+                      }}
                       className="group cursor-pointer space-y-2.5"
                     >
                       <div className="relative aspect-square w-full rounded-[26px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015] group-active:scale-[0.985]">
@@ -588,12 +636,14 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     );
   };
 
-  const hasActiveSubPage = Boolean(showNewProj || detailGroup || openProjectId);
+  const hasActiveSubPage = Boolean(isSettingsOpen || showNewProj || detailGroup || openProjectId);
 
   return (
     <div className="space-y-5 pb-14">
       {/* ================= IN-APP SUB-PAGES (rendered inside <main> alongside sidebar & navbars!) ================= */}
-      {showNewProj ? (
+      {isSettingsOpen ? (
+        <SettingsPage />
+      ) : showNewProj ? (
         <ProjectCreationModal
           open={showNewProj}
           onClose={() => setShowNewProj(false)}
@@ -618,6 +668,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
             setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
           }
           onDetachVersion={handleDetachVersion}
+          onOpenContextMenu={handleOpenContextMenu}
           onClose={() => setDetailTarget(null)}
         />
       ) : openProjectId ? (
@@ -627,6 +678,16 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
           onOpenTrackDetails={(trackId) => {
             const grp = trackGroups.find((g) => g.allTrackIds.includes(trackId));
             if (grp) setDetailTarget({ groupKey: grp.groupKey, trackId });
+          }}
+          onOpenContextMenu={handleOpenContextMenu}
+          onOpenProjectContextMenu={(e, proj) => {
+            setContextMenu(null);
+            setStudioContextMenu({
+              kind: 'project',
+              project: proj,
+              x: e.clientX,
+              y: e.clientY,
+            });
           }}
         />
       ) : null}
@@ -1184,6 +1245,15 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
           openRequest={lyricsOpenRequest}
           resetNonce={navResetNonce}
           backLabel={lyricsReturnContext ? 'Retour' : 'Textes'}
+          onOpenDocContextMenu={(e, doc) => {
+            setContextMenu(null);
+            setStudioContextMenu({
+              kind: 'lyrics',
+              doc,
+              x: e.clientX,
+              y: e.clientY,
+            });
+          }}
           onCloseDoc={() => {
             setLyricsOpenRequest(null);
             updateLastSession({ selectedLyricsId: undefined });
@@ -1212,6 +1282,45 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
           setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
         }
         onDetachVersion={handleDetachVersion}
+      />
+
+      <StudioGlobalContextMenu
+        menu={studioContextMenu}
+        onClose={() => setStudioContextMenu(null)}
+        onNavigateTab={(tab) => {
+          setShowNewProj(false);
+          setDetailTarget(null);
+          setOpenProjectId(null);
+          setSubTab(tab);
+        }}
+        onOpenSettings={onOpenSettings}
+        onOpenProject={(projId) => {
+          setShowNewProj(false);
+          setDetailTarget(null);
+          setOpenProjectId(projId);
+        }}
+        onCreateProject={() => {
+          setDetailTarget(null);
+          setOpenProjectId(null);
+          setShowNewProj(true);
+        }}
+        onOpenLyricsDoc={(docId) => {
+          setShowNewProj(false);
+          setDetailTarget(null);
+          setOpenProjectId(null);
+          setLyricsOpenRequest({ docId, nonce: Date.now() });
+          setSubTab('lyrics');
+        }}
+        onCreateLyricsDoc={() => {
+          const newDocId = addLyricsDoc({ title: 'Nouveau texte' });
+          setShowNewProj(false);
+          setDetailTarget(null);
+          setOpenProjectId(null);
+          setLyricsOpenRequest({ docId: newDocId, nonce: Date.now() });
+          setSubTab('lyrics');
+        }}
+        onOpenDriveManager={() => setPermanentSetupOpen(true)}
+        onSyncDrives={() => void handleSyncAllDrive(true)}
       />
 
       <LinkVersionModal
