@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronDown,
   Disc3,
+  FileText,
   ListMusic,
   Loader2,
   Music2,
@@ -23,7 +24,11 @@ import { getMediaObjectUrl } from '../../lib/mediaDb';
 import { triggerHapticTick } from '../../lib/haptics';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import { groupMusicTracks, parseTrackVersion } from '../../lib/musicVersioning';
-import { findLinkedProjectForTrack, resolveEffectiveTrackCover } from '../../lib/trackCover';
+import {
+  findLinkedLyricsForTrack,
+  findLinkedProjectForTrack,
+  resolveEffectiveTrackCover,
+} from '../../lib/trackCover';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
   { id: 'pink', label: 'Untitled Pink', css: 'from-pink-300 via-fuchsia-400 to-fuchsia-600' },
@@ -77,12 +82,12 @@ export function MiniAudioPlayer() {
     toggleShuffle,
     setExpanded,
     closePlayer,
-    hasFullscreenOverlay,
     requestOpenTrackPage,
   } = useAudioPlayer();
 
   const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
   const [showQueue, setShowQueue] = useState(false);
+  const [desktopSideTab, setDesktopSideTab] = useState<'queue' | 'lyrics'>('queue');
   const [scrubbing, setScrubbing] = useState(false);
 
   // Direct GPU DOM refs updated via 60/120fps requestAnimationFrame (ZERO React re-renders per frame!)
@@ -140,6 +145,19 @@ export function MiniAudioPlayer() {
         ? findLinkedProjectForTrack(currentTrack, state.musicProjects, siblingTracks)
         : null,
     [currentTrack, state.musicProjects, siblingTracks]
+  );
+
+  const linkedLyrics = useMemo(
+    () =>
+      currentTrack
+        ? findLinkedLyricsForTrack(
+            currentTrack,
+            state.lyricsDocs,
+            currentGroup?.allTrackIds,
+            siblingTracks
+          )
+        : null,
+    [currentTrack, state.lyricsDocs, currentGroup?.allTrackIds, siblingTracks]
   );
 
   const effectiveCover = useMemo(
@@ -534,11 +552,7 @@ export function MiniAudioPlayer() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             onWheel={handleMiniWheel}
-            className={`fixed ${
-              hasFullscreenOverlay
-                ? 'bottom-[max(0.75rem,env(safe-area-inset-bottom))]'
-                : 'bottom-[calc(4.15rem+env(safe-area-inset-bottom))]'
-            } md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-50 max-w-2xl md:mx-auto rounded-full bg-[#141418]/96 text-white border border-white/10 shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl px-2 py-1.5 transition-[bottom,left] duration-200 ease-out overflow-hidden`}
+            className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-[#141418]/96 text-white border border-white/10 shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl px-2 py-1.5 transition-[bottom,left] duration-200 ease-out overflow-hidden"
           >
             <div className="flex items-center justify-between gap-2">
               {/* Swipeable Cover Art + Title (Swipe Left = Next · Swipe Right = Prev · Tap = Fullscreen) */}
@@ -689,7 +703,7 @@ export function MiniAudioPlayer() {
             onPointerCancel={finishSheetDrag}
             onWheel={handleSheetWheel}
             style={{ touchAction: 'none' }}
-            className="fixed inset-0 z-50 bg-[#0b0b0e] text-white flex flex-col overflow-hidden select-none will-change-transform"
+            className="fixed inset-0 z-[60] bg-[#0b0b0e] text-white flex flex-col overflow-hidden select-none will-change-transform"
           >
             {/* Subtle Atmospheric Cover Backdrop */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -706,11 +720,11 @@ export function MiniAudioPlayer() {
               <div className="absolute inset-0 bg-gradient-to-b from-[#0b0b0e]/55 via-[#0b0b0e]/85 to-[#0b0b0e]" />
             </div>
 
-            {/* Full-Screen Centered Content Column */}
-            <div className="relative z-10 w-full max-w-md mx-auto flex-1 flex flex-col justify-between px-6 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-              {/* Top Drag Handle + Header Bar */}
-              <div className="space-y-2">
-                <div className="flex justify-center pt-1">
+            {/* Full-Screen Responsive Wrapper: Centered Column on Mobile, Studio 2-Column Widescreen on Desktop */}
+            <div className="relative z-10 w-full max-w-md lg:max-w-6xl mx-auto flex-1 min-h-0 flex flex-col px-6 lg:px-10 pt-[max(0.75rem,env(safe-area-inset-top))] lg:pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:pb-8">
+              {/* Top Drag Handle (mobile) + Header Bar */}
+              <div className="space-y-2 shrink-0">
+                <div className="flex justify-center pt-1 lg:hidden">
                   <div className="h-1 w-10 rounded-full bg-white/20" />
                 </div>
 
@@ -725,7 +739,7 @@ export function MiniAudioPlayer() {
                   </button>
 
                   <div className="min-w-0 flex-1 text-center">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                    <p className="text-[10px] lg:text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
                       {linkedProject?.title || 'En lecture'}
                     </p>
                   </div>
@@ -793,41 +807,54 @@ export function MiniAudioPlayer() {
                     >
                       <Share2 size={17} />
                     </button>
+                    <button
+                      type="button"
+                      onClick={closePlayer}
+                      title="Arrêter et fermer"
+                      aria-label="Arrêter"
+                      className="hidden lg:inline-flex h-10 w-10 rounded-full items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
                   </div>
                 </div>
               </div>
 
-              {/* Large Spotify-Style Square Cover Art (Static, Zero Circular Crop · Tap -> Song Page!) */}
-              <div className="flex-1 flex flex-col items-center justify-center py-3 min-h-0 w-full">
-                <button
-                  type="button"
-                  onClick={handleOpenTrackPageFromCover}
-                  title="Cliquer pour ouvrir la page du morceau"
-                  className="group relative w-full max-w-[340px] sm:max-w-[360px] aspect-square rounded-2xl active:scale-[0.985] transition-transform cursor-pointer focus:outline-none"
-                >
-                  <div
-                    className={`w-full h-full rounded-2xl overflow-hidden border border-white/10 shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
-                      coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
-                    } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
-                  >
-                    {coverUrl ? (
-                      <img
-                        src={coverUrl}
-                        alt={currentTrack.title}
-                        draggable={false}
-                        className="h-full w-full object-cover select-none pointer-events-none"
-                      />
-                    ) : (
-                      <div className="h-full w-full flex items-center justify-center">
-                        <Disc3 size={64} className="text-white/40" strokeWidth={1.3} />
+              {/* Main Body: Single Column on Mobile · Widescreen 2-Column Studio on Desktop */}
+              <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] lg:gap-12 xl:gap-16 lg:items-center lg:py-4">
+                {/* LEFT COLUMN: Cover Art + Title + Waveform + Transport */}
+                <div className="flex-1 min-h-0 flex flex-col justify-between lg:justify-center lg:gap-6 lg:max-w-lg lg:mx-auto lg:w-full">
+                  {/* Large Spotify-Style Square Cover Art (Static, Zero Circular Crop · Tap -> Song Page!) */}
+                  <div className="flex-1 lg:flex-none flex flex-col items-center justify-center py-3 lg:py-0 min-h-0 w-full">
+                    <button
+                      type="button"
+                      onClick={handleOpenTrackPageFromCover}
+                      title="Cliquer pour ouvrir la page du morceau"
+                      className="group relative w-full max-w-[340px] sm:max-w-[360px] lg:max-w-[370px] xl:max-w-[400px] aspect-square rounded-2xl lg:rounded-3xl active:scale-[0.985] transition-transform cursor-pointer focus:outline-none"
+                    >
+                      <div
+                        className={`w-full h-full rounded-2xl lg:rounded-3xl overflow-hidden border border-white/10 shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
+                          coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
+                        } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
+                      >
+                        {coverUrl ? (
+                          <img
+                            src={coverUrl}
+                            alt={currentTrack.title}
+                            draggable={false}
+                            className="h-full w-full object-cover select-none pointer-events-none"
+                          />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center">
+                            <Disc3 size={64} className="text-white/40" strokeWidth={1.3} />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </button>
                   </div>
-                </button>
-              </div>
 
-              {/* Bottom Controls Stack (Title + Waveform + Transport + Queue) */}
-              <div className="space-y-5">
+                  {/* Bottom Controls Stack (Title + Waveform + Transport + Mobile Queue) */}
+                  <div className="space-y-5 lg:space-y-4">
                 {/* Title, Subtitle & Optional Son/Prod Switch */}
                 <div className="flex items-start justify-between gap-3">
                   <button
@@ -1034,8 +1061,8 @@ export function MiniAudioPlayer() {
                   </button>
                 </div>
 
-                {/* Bottom Utility Row (Queue Drawer Toggle + Stop) */}
-                <div className="flex items-center justify-between pt-1">
+                {/* Bottom Utility Row (Mobile only — Desktop has persistent Queue & Lyrics right panel!) */}
+                <div className="flex lg:hidden items-center justify-between pt-1">
                   <button
                     type="button"
                     onClick={() => setShowQueue((v) => !v)}
@@ -1058,6 +1085,108 @@ export function MiniAudioPlayer() {
                     <X size={14} />
                     <span>Arrêter</span>
                   </button>
+                </div>
+              </div>
+                </div>
+
+                {/* RIGHT COLUMN (DESKTOP ONLY): Persistent Glass Panel — File d'attente & Paroles */}
+                <div
+                  data-queue-scroll="true"
+                  className="hidden lg:flex flex-col h-[min(620px,calc(100vh-140px))] rounded-3xl border border-white/10 bg-white/[0.045] backdrop-blur-xl overflow-hidden"
+                >
+                  <div className="px-4 py-3 border-b border-white/10 flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setDesktopSideTab('queue')}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
+                        desktopSideTab === 'queue'
+                          ? 'bg-white text-zinc-950'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/8'
+                      }`}
+                    >
+                      <ListMusic size={14} />
+                      <span>File d’attente ({queue.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDesktopSideTab('lyrics')}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
+                        desktopSideTab === 'lyrics'
+                          ? 'bg-white text-zinc-950'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/8'
+                      }`}
+                    >
+                      <FileText size={14} />
+                      <span>Paroles</span>
+                    </button>
+                  </div>
+
+                  {desktopSideTab === 'queue' ? (
+                    <div
+                      data-queue-scroll="true"
+                      className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 space-y-1"
+                    >
+                      {queue.length === 0 ? (
+                        <p className="py-12 text-center text-xs text-zinc-500">
+                          File d’attente vide.
+                        </p>
+                      ) : (
+                        queue.map((t, i) => {
+                          const active = t.id === currentTrack.id;
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => {
+                                void playTrack(t, 0, queue);
+                                triggerHapticTick(10);
+                              }}
+                              className={`w-full flex items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
+                                active
+                                  ? 'bg-white/14 text-white'
+                                  : 'text-zinc-400 hover:bg-white/8 hover:text-zinc-100'
+                              }`}
+                            >
+                              <span className="flex items-center gap-3 min-w-0">
+                                <span className="font-mono text-[11px] opacity-55 w-5 shrink-0">
+                                  {String(i + 1).padStart(2, '0')}
+                                </span>
+                                <span className="text-sm font-medium truncate">
+                                  {t.manualGroupTitle || t.title}
+                                </span>
+                              </span>
+                              {t.durationSec ? (
+                                <span className="font-mono text-[11px] opacity-55 shrink-0">
+                                  {fmt(t.durationSec)}
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  ) : (
+                    <div
+                      data-queue-scroll="true"
+                      className="flex-1 overflow-y-auto overscroll-contain px-6 py-5 select-text"
+                    >
+                      {linkedLyrics && linkedLyrics.content.trim() ? (
+                        <div className="space-y-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                            {linkedLyrics.title}
+                          </p>
+                          <p className="text-[15px] leading-[1.9] text-zinc-200 whitespace-pre-wrap font-normal">
+                            {linkedLyrics.content}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center gap-2 text-zinc-500">
+                          <FileText size={24} className="opacity-40" />
+                          <p className="text-xs">Aucun texte lié à ce morceau.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

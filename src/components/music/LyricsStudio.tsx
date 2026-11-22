@@ -38,6 +38,7 @@ import { countLyricsFixTags } from '../../lib/trackCover';
 interface LyricsStudioProps {
   initialDocId?: string | null;
   openRequest?: { docId: string; nonce: number } | null;
+  resetNonce?: number;
   onCloseDoc?: () => void;
   backLabel?: string;
 }
@@ -77,6 +78,7 @@ function fmtShortDate(iso?: string) {
 export function LyricsStudio({
   initialDocId,
   openRequest,
+  resetNonce = 0,
   onCloseDoc,
   backLabel,
 }: LyricsStudioProps) {
@@ -119,6 +121,12 @@ export function LyricsStudio({
   const [history, setHistory] = useState<string[]>([]);
   const [historyStep, setHistoryStep] = useState(-1);
   const isUndoing = useRef(false);
+
+  useEffect(() => {
+    if (resetNonce > 0) {
+      setActiveDocId(null);
+    }
+  }, [resetNonce]);
 
   useEffect(() => {
     if (openRequest?.docId) {
@@ -734,8 +742,10 @@ export function LyricsStudio({
       {/* ================= FULL-SCREEN EDITORIAL WRITING PAGE ================= */}
       {activeDoc && (
         <div
-          className={`fixed inset-0 z-40 bg-white dark:bg-[#0c0c0f] flex flex-col overflow-hidden ${
-            player.currentTrack ? 'pb-[calc(4.75rem+env(safe-area-inset-bottom))] md:pb-24' : ''
+          className={`fixed inset-0 z-30 bg-white dark:bg-[#0c0c0f] flex flex-col overflow-hidden ${
+            player.currentTrack
+              ? 'pb-[calc(8.75rem+env(safe-area-inset-bottom))] md:pb-24'
+              : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))] md:pb-0'
           }`}
         >
           {/* Minimalist Safe-Area Header */}

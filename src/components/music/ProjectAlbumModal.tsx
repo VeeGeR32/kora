@@ -527,7 +527,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 18 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
-        className="fixed inset-0 z-40 bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
+        className="fixed inset-0 z-30 bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
       >
         {/* Top Minimalist Circular-Pill Header Bar (exact [untitled] reference!) */}
         <header className="shrink-0 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 px-4 sm:px-6 bg-white dark:bg-[#0c0c0f]">
@@ -630,7 +630,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
         {/* Scrollable Editorial Album Content */}
         <div
           className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-6 ${
-            player.currentTrack ? 'pb-44' : 'pb-16'
+            player.currentTrack ? 'pb-48 md:pb-28' : 'pb-28 md:pb-16'
           }`}
         >
           <div className="max-w-lg mx-auto space-y-5 pt-2">

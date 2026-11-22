@@ -22,6 +22,7 @@ function KoraMusicApp() {
   const [activePage, setActivePageState] = useState<AppPage>(
     () => state.preferences.lastSession?.musicSubTab || 'dashboard'
   );
+  const [navResetNonce, setNavResetNonce] = useState(0);
 
   const bootTimestampRef = useRef<number>(Date.now());
   const localRestoredRef = useRef(false);
@@ -30,6 +31,7 @@ function KoraMusicApp() {
   const setActivePage = useCallback(
     (next: AppPage) => {
       setActivePageState(next);
+      setNavResetNonce((n) => n + 1);
       if (next !== 'settings') {
         updateLastSession({ activeTab: 'music', musicSubTab: next, scrollY: 0 });
       }
@@ -150,7 +152,11 @@ function KoraMusicApp() {
       {activePage === 'settings' ? (
         <SettingsPage />
       ) : (
-        <MusicView subTab={activePage} onSubTabChange={handleMusicSubTabChange} />
+        <MusicView
+          subTab={activePage}
+          onSubTabChange={handleMusicSubTabChange}
+          navResetNonce={navResetNonce}
+        />
       )}
     </Layout>
   );

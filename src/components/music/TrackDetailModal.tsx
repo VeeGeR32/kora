@@ -272,7 +272,7 @@ export function TrackDetailModal({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 16 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
-        className="fixed inset-0 z-[45] bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
+        className="fixed inset-0 z-[35] bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
       >
         {/* Minimalist Top Bar (safe-area aware on iPhone PWA!) */}
         <header className="shrink-0 pt-[calc(env(safe-area-inset-top)+10px)] pb-3 px-4 sm:px-6 border-b border-slate-100 dark:border-zinc-900 bg-white dark:bg-[#0c0c0f]">
@@ -335,7 +335,7 @@ export function TrackDetailModal({
         {/* Scrollable Full Song Page Body */}
         <div
           className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pt-5 ${
-            player.currentTrack ? 'pb-48' : 'pb-16'
+            player.currentTrack ? 'pb-48 md:pb-28' : 'pb-28 md:pb-16'
           }`}
         >
           <div className="max-w-2xl mx-auto space-y-6">

@@ -337,8 +337,8 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
       {/* Persistent Global Mini Audio Player */}
       <MiniAudioPlayer />
 
-      {/* Mobile Docked 4-Tab Music Bottom Bar */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-[#0e0e11]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-zinc-800/90 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around">
+      {/* Mobile Docked 4-Tab Music Bottom Bar (always visible above sub-pages, below maximized player) */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-[45] bg-white/95 dark:bg-[#0e0e11]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-zinc-800/90 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = activePage === item.id;

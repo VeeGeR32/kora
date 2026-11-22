@@ -49,11 +49,12 @@ export type MusicSubTab = 'dashboard' | 'library' | 'projects' | 'lyrics';
 interface MusicViewProps {
   subTab: MusicSubTab;
   onSubTabChange: (next: MusicSubTab) => void;
+  navResetNonce?: number;
 }
 type LibraryFilter = 'all' | 'favorites' | 'todo';
 type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential' | 'gap';
 
-export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
+export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicViewProps) {
   const {
     state,
     lastCloudSyncAt,
@@ -96,6 +97,16 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
       setLyricsReturnContext(null);
     }
   }, [subTab]);
+
+  // Close open Project / Song Page / Text overlays whenever the user explicitly taps a bottom/sidebar nav tab
+  useEffect(() => {
+    if (navResetNonce === 0) return;
+    setOpenProjectId(null);
+    setDetailTarget(null);
+    setContextMenu(null);
+    setLyricsOpenRequest(null);
+    setLyricsReturnContext(null);
+  }, [navResetNonce]);
 
   // Selected version override per groupKey (defaults to latest version)
   const [selectedVersionByGroup, setSelectedVersionByGroup] = useState<Record<string, string>>({});
@@ -1233,6 +1244,7 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
         <LyricsStudio
           initialDocId={null}
           openRequest={lyricsOpenRequest}
+          resetNonce={navResetNonce}
           backLabel={lyricsReturnContext ? 'Retour' : 'Textes'}
           onCloseDoc={() => {
             setLyricsOpenRequest(null);
