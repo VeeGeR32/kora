@@ -193,13 +193,6 @@ export function LyricsStudio({
     }
   }, [activeDocId]);
 
-  // Register full-screen overlay so MiniAudioPlayer docks cleanly at the bottom on mobile
-  const { registerFullscreenOverlay } = player;
-  useEffect(() => {
-    if (!activeDoc) return;
-    return registerFullscreenOverlay();
-  }, [Boolean(activeDoc), registerFullscreenOverlay]);
-
   const handleCloseEditor = () => {
     setActiveDocId(null);
     onCloseDoc?.();
@@ -362,8 +355,10 @@ export function LyricsStudio({
 
   return (
     <div className="space-y-4">
-      {/* Compact Native Kora Toolbar (mirrors Sons) */}
-      <div className="flex flex-wrap items-center gap-2">
+      {!activeDoc && (
+        <>
+          {/* Compact Native Kora Toolbar (mirrors Sons) */}
+          <div className="flex flex-wrap items-center gap-2">
         <div className="flex-1 min-w-[200px] flex items-center gap-2 rounded-2xl bg-white dark:bg-zinc-900/90 border border-slate-200/80 dark:border-zinc-800 px-3.5 py-2.5">
           <Search size={14} className="text-slate-400 shrink-0" />
           <input
@@ -741,19 +736,15 @@ export function LyricsStudio({
           })}
         </div>
       )}
+        </>
+      )}
 
-      {/* ================= FULL-SCREEN EDITORIAL WRITING PAGE ================= */}
+      {/* ================= IN-APP EDITORIAL WRITING PAGE (inside <main> alongside sidebar & navbar!) ================= */}
       {activeDoc && (
-        <div
-          className={`fixed inset-0 z-30 bg-white dark:bg-[#0c0c0f] flex flex-col overflow-hidden ${
-            player.currentTrack
-              ? 'pb-[calc(8.75rem+env(safe-area-inset-bottom))] md:pb-24'
-              : 'pb-[calc(4.25rem+env(safe-area-inset-bottom))] md:pb-0'
-          }`}
-        >
-          {/* Minimalist Safe-Area Header */}
-          <header className="shrink-0 border-b border-slate-100 dark:border-zinc-800/80 bg-white/90 dark:bg-[#0c0c0f]/90 backdrop-blur-md pt-[env(safe-area-inset-top)]">
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
+        <div className="tempo-card rounded-3xl overflow-hidden flex flex-col">
+          {/* Minimalist In-App Studio Header */}
+          <header className="shrink-0 border-b border-slate-100 dark:border-zinc-800/80 bg-white/85 dark:bg-[#111114]/85 backdrop-blur-md">
+            <div className="px-4 sm:px-6 h-14 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <button
                   type="button"

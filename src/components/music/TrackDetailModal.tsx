@@ -264,12 +264,11 @@ export function TrackDetailModal({
     [waveformBars]
   );
 
-  const { registerFullscreenOverlay } = player;
   const isDetailOpen = Boolean(group && activeEntry && track);
   useEffect(() => {
     if (!isDetailOpen) return;
-    return registerFullscreenOverlay();
-  }, [isDetailOpen, registerFullscreenOverlay]);
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, [isDetailOpen, track?.id]);
 
   const linkedLyrics = useMemo(
     () =>
@@ -409,17 +408,17 @@ export function TrackDetailModal({
 
   return (
     <AnimatePresence>
-      {/* Full-Screen Editorial Song Page (sits cleanly at z-[45] above ProjectAlbumModal z-40 and below MiniAudioPlayer z-50!) */}
+      {/* In-App Editorial Song Page (rendered directly inside <main> alongside sidebar & navbars!) */}
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 16 }}
-        transition={{ duration: 0.18, ease: 'easeOut' }}
-        className="fixed inset-0 z-[35] bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
+        exit={{ opacity: 0, y: 10 }}
+        transition={{ duration: 0.16, ease: 'easeOut' }}
+        className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
       >
-        {/* Minimalist Top Bar (safe-area aware on iPhone PWA!) */}
-        <header className="shrink-0 pt-[calc(env(safe-area-inset-top)+10px)] pb-3 px-4 sm:px-6 border-b border-slate-100 dark:border-zinc-900 bg-white dark:bg-[#0c0c0f]">
-          <div className="max-w-2xl mx-auto flex items-center justify-between gap-2">
+        {/* Minimalist In-App Top Bar */}
+        <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
+          <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <button
                 type="button"
@@ -472,13 +471,9 @@ export function TrackDetailModal({
           </div>
         </header>
 
-        {/* Scrollable Full Song Page Body */}
-        <div
-          className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pt-5 ${
-            player.currentTrack ? 'pb-48 md:pb-28' : 'pb-28 md:pb-16'
-          }`}
-        >
-          <div className="max-w-2xl mx-auto space-y-6">
+        {/* In-App Song Page Body */}
+        <div className="px-4 sm:px-7 py-6">
+          <div className="space-y-6">
             {/* Hero Cover + Title + Play */}
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
               <div className="relative group shrink-0">
@@ -815,8 +810,8 @@ export function TrackDetailModal({
                 className="relative w-full h-12 overflow-hidden cursor-grab active:cursor-grabbing select-none"
                 title="Glisser horizontalement pour naviguer dans le son (ou cliquer pour lancer)"
               >
-                <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white dark:from-[#0c0c0f] to-transparent z-20" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white dark:from-[#0c0c0f] to-transparent z-20" />
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[var(--surface)] to-transparent z-20" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--surface)] to-transparent z-20" />
 
                 <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
                   <div

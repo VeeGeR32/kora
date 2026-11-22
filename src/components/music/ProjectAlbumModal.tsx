@@ -177,16 +177,11 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     [projectId, state.musicProjects]
   );
 
-  const { registerFullscreenOverlay } = player;
-  useEffect(() => {
-    if (!project) return;
-    return registerFullscreenOverlay();
-  }, [Boolean(project), registerFullscreenOverlay]);
-
-  // Always default to "Tracklist" first when opening a project
+  // Always default to "Tracklist" first and scroll to top when opening a project
   useEffect(() => {
     if (!project) return;
     setProjectTab('tracklist');
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [project?.id]);
 
   const allGroups = useMemo(
@@ -622,22 +617,17 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
 
   return (
     <AnimatePresence>
-      {/* Full-Screen Spotify-Style Project Page */}
+      {/* In-App Spotify-Style Project Page (rendered inside <main> alongside sidebar & navbars!) */}
       <motion.div
-        initial={{ opacity: 0, y: 18 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 18 }}
-        transition={{ duration: 0.18, ease: 'easeOut' }}
-        className="fixed inset-0 z-30 bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
+        exit={{ opacity: 0, y: 10 }}
+        transition={{ duration: 0.16, ease: 'easeOut' }}
+        className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
       >
-        {/* Scrollable Spotify-Style Editorial Album Content */}
-        <div
-          className={`relative flex-1 min-h-0 overflow-y-auto overscroll-contain ${
-            player.currentTrack ? 'pb-48 md:pb-28' : 'pb-28 md:pb-16'
-          }`}
-        >
+        <div className="relative pb-8">
           {/* Atmospheric Blurred Cover Gradient Wash (Spotify Album Hero Backdrop) */}
-          <div className="pointer-events-none absolute top-0 inset-x-0 h-[390px] sm:h-[430px] overflow-hidden">
+          <div className="pointer-events-none absolute top-0 inset-x-0 h-[370px] sm:h-[410px] overflow-hidden">
             {heroCoverUrl ? (
               <img
                 src={heroCoverUrl}
@@ -648,12 +638,12 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
             ) : (
               <div className={`w-full h-full bg-gradient-to-b ${heroGradientCls} opacity-35 dark:opacity-45`} />
             )}
-            <div className="absolute inset-0 bg-gradient-to-b from-white/35 via-white/75 to-white dark:from-[#0c0c0f]/35 dark:via-[#0c0c0f]/75 dark:to-[#0c0c0f]" />
+            <div className="absolute inset-0 bg-gradient-to-b from-[var(--surface)]/30 via-[var(--surface)]/75 to-[var(--surface)]" />
           </div>
 
-          {/* Floating Safe-Area Top Bar (Spotify circular back button + Studio toggle) */}
-          <div className="sticky top-0 z-20 pt-[calc(env(safe-area-inset-top)+10px)] pb-2 px-4 sm:px-6">
-            <div className="max-w-lg mx-auto flex items-center justify-between gap-2">
+          {/* Top Bar (Spotify circular back button + Studio toggle) */}
+          <div className="relative z-20 pt-4 pb-2 px-4 sm:px-6">
+            <div className="max-w-xl mx-auto flex items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={onClose}
@@ -732,7 +722,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
             </div>
           </div>
 
-          <div className="relative z-10 max-w-lg mx-auto px-5 sm:px-6 space-y-4 pt-1">
+          <div className="relative z-10 max-w-xl mx-auto px-5 sm:px-6 space-y-4 pt-1">
             {/* Centered Large Square Spotify Album Cover */}
             <div className="flex justify-center">
               <div

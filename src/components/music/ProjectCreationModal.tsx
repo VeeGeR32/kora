@@ -237,19 +237,19 @@ export function ProjectCreationModal({ open, onClose, onCreated }: ProjectCreati
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ opacity: 0, y: 22 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 22 }}
-          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-          className="fixed inset-0 z-40 bg-[var(--bg)] text-[var(--text)] flex flex-col overflow-hidden"
+          exit={{ opacity: 0, y: 10 }}
+          transition={{ duration: 0.16, ease: 'easeOut' }}
+          className="max-w-3xl mx-auto tempo-card rounded-3xl text-[var(--text)] overflow-hidden"
         >
           {/* Apple-Style Top Navigation Bar */}
-          <header className="sticky top-0 z-20 shrink-0 pt-[calc(env(safe-area-inset-top)+8px)] pb-2.5 px-4 sm:px-6 bg-[var(--bg)]/85 backdrop-blur-xl border-b border-[var(--border)]">
-            <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+          <header className="px-4 sm:px-6 py-3.5 border-b border-[var(--border)]">
+            <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/8 transition cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer"
               >
                 <ChevronLeft size={16} />
                 <span>Annuler</span>
@@ -276,12 +276,8 @@ export function ProjectCreationModal({ open, onClose, onCreated }: ProjectCreati
             </div>
           </header>
 
-          {/* Scrollable Editorial Creation Body */}
-          <div
-            className={`flex-1 min-h-0 overflow-y-auto overscroll-contain ${
-              player.currentTrack ? 'pb-48 md:pb-28' : 'pb-28 md:pb-16'
-            }`}
-          >
+          {/* In-App Editorial Creation Body */}
+          <div className="pb-8">
             {/* Subtle Ambient Hero Wash */}
             <div className="relative overflow-hidden pt-6 pb-4 px-4 sm:px-6">
               <div className="pointer-events-none absolute top-0 inset-x-0 h-64 overflow-hidden">
@@ -297,7 +293,7 @@ export function ProjectCreationModal({ open, onClose, onCreated }: ProjectCreati
                     className={`w-full h-full bg-gradient-to-b ${heroGradientCls} opacity-25 dark:opacity-35 blur-2xl`}
                   />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[var(--bg)]/70 to-[var(--bg)]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[var(--surface)]/70 to-[var(--surface)]" />
               </div>
 
               {/* Live Album Cover Preview + Gradient / Photo Picker */}

@@ -95,6 +95,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
   // Close open Project / Song Page / Text overlays whenever the user explicitly taps a bottom/sidebar nav tab
   useEffect(() => {
     if (navResetNonce === 0) return;
+    setShowNewProj(false);
     setOpenProjectId(null);
     setDetailTarget(null);
     setContextMenu(null);
@@ -587,8 +588,51 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     );
   };
 
+  const hasActiveSubPage = Boolean(showNewProj || detailGroup || openProjectId);
+
   return (
     <div className="space-y-5 pb-14">
+      {/* ================= IN-APP SUB-PAGES (rendered inside <main> alongside sidebar & navbars!) ================= */}
+      {showNewProj ? (
+        <ProjectCreationModal
+          open={showNewProj}
+          onClose={() => setShowNewProj(false)}
+          onCreated={(newProjectId) => {
+            setShowNewProj(false);
+            setOpenProjectId(newProjectId);
+          }}
+        />
+      ) : detailGroup ? (
+        <TrackDetailModal
+          group={detailGroup}
+          selectedTrackId={detailTarget?.trackId || null}
+          activeProjectId={openProjectId}
+          onSelectVersion={(trackId) => {
+            if (detailGroup) handleSelectVersion(detailGroup.groupKey, trackId, false);
+          }}
+          onOpenLyrics={openLinkedLyrics}
+          onRequestPullVersion={(g, tid) =>
+            setLinkModal({ mode: 'pull-into-group', sourceGroup: g, sourceTrackId: tid })
+          }
+          onRequestAttachToOther={(g, tid) =>
+            setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
+          }
+          onDetachVersion={handleDetachVersion}
+          onClose={() => setDetailTarget(null)}
+        />
+      ) : openProjectId ? (
+        <ProjectAlbumModal
+          projectId={openProjectId}
+          onClose={() => setOpenProjectId(null)}
+          onOpenTrackDetails={(trackId) => {
+            const grp = trackGroups.find((g) => g.allTrackIds.includes(trackId));
+            if (grp) setDetailTarget({ groupKey: grp.groupKey, trackId });
+          }}
+        />
+      ) : null}
+
+      {!hasActiveSubPage && (
+        <>
       {/* Section Header + Compact Drive Sync */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
@@ -1153,44 +1197,10 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
           }}
         />
       )}
+        </>
+      )}
 
-      {/* ================= MODALS & RIGHT-CLICK CONTEXT MENU ================= */}
-      <ProjectCreationModal
-        open={showNewProj}
-        onClose={() => setShowNewProj(false)}
-        onCreated={(newProjectId) => {
-          setShowNewProj(false);
-          setOpenProjectId(newProjectId);
-        }}
-      />
-
-      <ProjectAlbumModal
-        projectId={openProjectId}
-        onClose={() => setOpenProjectId(null)}
-        onOpenTrackDetails={(trackId) => {
-          const grp = trackGroups.find((g) => g.allTrackIds.includes(trackId));
-          if (grp) setDetailTarget({ groupKey: grp.groupKey, trackId });
-        }}
-      />
-
-      <TrackDetailModal
-        group={detailGroup}
-        selectedTrackId={detailTarget?.trackId || null}
-        activeProjectId={openProjectId}
-        onSelectVersion={(trackId) => {
-          if (detailGroup) handleSelectVersion(detailGroup.groupKey, trackId, false);
-        }}
-        onOpenLyrics={openLinkedLyrics}
-        onRequestPullVersion={(g, tid) =>
-          setLinkModal({ mode: 'pull-into-group', sourceGroup: g, sourceTrackId: tid })
-        }
-        onRequestAttachToOther={(g, tid) =>
-          setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
-        }
-        onDetachVersion={handleDetachVersion}
-        onClose={() => setDetailTarget(null)}
-      />
-
+      {/* ================= CONTEXT MENU & UTILITY MODALS ================= */}
       <TrackContextMenu
         menu={contextMenu}
         queueTracks={activeQueueTracks}
