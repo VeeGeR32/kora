@@ -594,7 +594,9 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                             </p>
                             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                               <p className="text-xs text-slate-400 dark:text-zinc-500">
-                                {fmtAddedDate(trk.modifiedAt || trk.addedAt) || trk.artist}
+                                {fmtAddedDate(trk.modifiedAt || trk.addedAt) ||
+                                  state.preferences.name ||
+                                  trk.artist}
                                 {trk.bpm ? ` · ${trk.bpm} BPM` : ''}
                               </p>
                               {lyricsMeta && (

@@ -717,7 +717,9 @@ export function TodayView({
                     <div className="min-w-0">
                       <p className="text-xs font-semibold truncate">{latestTrack.title}</p>
                       <p className="text-[10px] text-slate-500 truncate">
-                        {activeProject ? activeProject.title : latestTrack.artist}
+                        {activeProject
+                    ? activeProject.title
+                    : state.preferences.name || latestTrack.artist}
                       </p>
                     </div>
                   </div>

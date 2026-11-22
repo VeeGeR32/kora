@@ -385,7 +385,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
   const gradCls = getGradientClass(
     activeTrack?.coverGradient || data.project?.coverGradient || 'pink'
   );
-  const subtitle = [data.project?.title, activeTrack?.artist || data.artist]
+  const subtitle = [data.project?.title, data.artist || activeTrack?.artist]
     .filter(Boolean)
     .join(' · ');
   const totalProjectSec = tracks.reduce((acc, t) => acc + (t.durationSec || 0), 0);
@@ -686,7 +686,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
                     <p className="text-[11px] text-zinc-400 truncate mt-0.5">
                       {[fmtDate(trk.addedAt), trk.durationSec ? fmt(trk.durationSec) : '']
                         .filter(Boolean)
-                        .join(' · ') || trk.artist}
+                        .join(' · ') || data.artist || trk.artist}
                     </p>
                   </div>
                 </div>

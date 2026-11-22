@@ -268,7 +268,7 @@ export function MiniAudioPlayer() {
   const subtitle = [
     versionSuffix,
     linkedProject?.title,
-    currentTrack?.artist || state.preferences.name || 'Moi',
+    state.preferences.name || currentTrack?.artist || 'Moi',
   ]
     .filter(Boolean)
     .join(' · ');

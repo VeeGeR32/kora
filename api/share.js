@@ -400,12 +400,12 @@ export default async function handler(req, res) {
         });
       }
 
-      const ownerName = state.preferences?.name || 'Artiste';
+      const ownerName = (state.preferences?.name || '').trim() || 'Artiste';
       const projectCover = resolved.project?.coverDataUrl || null;
       const publicTracks = resolved.tracks.map((t) => ({
         id: t.id,
         title: t.manualGroupTitle || t.title,
-        artist: t.artist || ownerName,
+        artist: ownerName || t.artist || 'Artiste',
         durationSec: t.durationSec || 0,
         // Rule: if the project has a cover, apply it to all its tracks; otherwise keep each track's individual cover
         coverDataUrl: projectCover || t.coverDataUrl || t.cloudCoverUrl || null,

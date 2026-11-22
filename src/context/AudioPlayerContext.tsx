@@ -551,7 +551,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: currentTrack.manualGroupTitle || currentTrack.title,
-        artist: currentTrack.artist || 'Kora Music',
+        artist: state.preferences.name || currentTrack.artist || 'Kora Music',
       });
       navigator.mediaSession.setActionHandler('play', () => void audioRef.current?.play().catch(() => {}));
       navigator.mediaSession.setActionHandler('pause', () => audioRef.current?.pause());

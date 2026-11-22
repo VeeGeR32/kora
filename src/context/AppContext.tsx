@@ -1907,16 +1907,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ===== PREFERENCES =====
   const updatePreferences = useCallback((patch: Partial<UserPreferences>) => {
-    touch((prev) => ({
-      ...prev,
-      preferences: {
-        ...prev.preferences,
-        ...patch,
-        nutritionGoals: patch.nutritionGoals
-          ? { ...prev.preferences.nutritionGoals, ...patch.nutritionGoals }
-          : prev.preferences.nutritionGoals,
-      },
-    }));
+    touch((prev) => {
+      const prevName = (prev.preferences.name || '').trim();
+      const nextName =
+        typeof patch.name === 'string' ? patch.name.trim() : prevName;
+      const renamedArtist =
+        typeof patch.name === 'string' && nextName.length > 0 && nextName !== prevName;
+
+      return {
+        ...prev,
+        musicTracks: renamedArtist
+          ? prev.musicTracks.map((t) => {
+              const curArtist = (t.artist || '').trim();
+              if (
+                !curArtist ||
+                curArtist === prevName ||
+                curArtist.toLowerCase() === 'moi' ||
+                curArtist.toLowerCase() === 'artiste'
+              ) {
+                return { ...t, artist: nextName };
+              }
+              return t;
+            })
+          : prev.musicTracks,
+        preferences: {
+          ...prev.preferences,
+          ...patch,
+          nutritionGoals: patch.nutritionGoals
+            ? { ...prev.preferences.nutritionGoals, ...patch.nutritionGoals }
+            : prev.preferences.nutritionGoals,
+        },
+      };
+    });
   }, []);
 
   const updateLastSession = useCallback((patch: Partial<Omit<LastSessionState, 'savedAt'>>) => {
