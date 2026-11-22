@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Cloud,
@@ -8,6 +8,8 @@ import {
   Home,
   ListMusic,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Sun,
   Undo2,
@@ -19,10 +21,11 @@ import { KoraLogo } from './ui/KoraLogo';
 import { MiniAudioPlayer } from './music/MiniAudioPlayer';
 import type { MusicSubTab } from './music/MusicView';
 
+export type AppPage = MusicSubTab | 'settings';
+
 interface LayoutProps {
-  subTab: MusicSubTab;
-  onSubTabChange: (tab: MusicSubTab) => void;
-  onOpenSettings: () => void;
+  activePage: AppPage;
+  onPageChange: (page: AppPage) => void;
   children: React.ReactNode;
 }
 
@@ -39,14 +42,43 @@ const NAV_ITEMS: {
   { id: 'lyrics', label: 'Textes', mobileLabel: 'Textes', shortcut: '4', icon: FileText },
 ];
 
-export function Layout({
-  subTab,
-  onSubTabChange,
-  onOpenSettings,
-  children,
-}: LayoutProps) {
+export function Layout({ activePage, onPageChange, children }: LayoutProps) {
   const { state, toggleTheme, toast, dismissToast, cloudUser, cloudSyncing } = useApp();
   const { currentTrack } = useAudioPlayer();
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('kora_sidebar_collapsed') === '1';
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('kora_sidebar_collapsed', sidebarCollapsed ? '1' : '0');
+    }
+    document.documentElement.dataset.sidebarCollapsed = sidebarCollapsed ? 'true' : 'false';
+    return () => {
+      delete document.documentElement.dataset.sidebarCollapsed;
+    };
+  }, [sidebarCollapsed]);
+
+  // Ctrl+B / Cmd+B toggles desktop sidebar
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        ) {
+          return;
+        }
+        e.preventDefault();
+        setSidebarCollapsed((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const songGroupsCount = useMemo(
     () => groupMusicTracks(state.musicTracks).length,
@@ -67,10 +99,29 @@ export function Layout({
 
   return (
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-[var(--bg)] text-[var(--text)] transition-colors duration-200">
-      {/* Desktop Dedicated Music Sidebar */}
-      <aside className="hidden md:flex md:flex-col md:w-60 shrink-0 border-r border-slate-200/70 dark:border-zinc-800/80 bg-white/80 dark:bg-[#0e0e11]/92 backdrop-blur-md sticky top-0 h-screen px-4 py-5 justify-between">
-        <div className="space-y-6">
-          {/* Brand Header */}
+      {/* Desktop Floating Open-Sidebar Button (only visible when sidebar is collapsed) */}
+      {sidebarCollapsed && (
+        <button
+          type="button"
+          onClick={() => setSidebarCollapsed(false)}
+          title="Ouvrir la barre latérale (Ctrl+B)"
+          aria-label="Ouvrir la barre latérale"
+          className="hidden md:flex fixed top-4 left-4 z-30 h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white/90 dark:bg-[#121216]/90 backdrop-blur-md text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:border-slate-300 dark:hover:border-zinc-700 shadow-xs transition cursor-pointer"
+        >
+          <PanelLeftOpen size={16} />
+        </button>
+      )}
+
+      {/* Desktop Collapsible Music Sidebar */}
+      <aside
+        className={`hidden md:flex md:flex-col shrink-0 bg-white/80 dark:bg-[#0e0e11]/92 backdrop-blur-md sticky top-0 h-screen justify-between transition-[width,padding,border-color,opacity] duration-200 ease-out overflow-hidden ${
+          sidebarCollapsed
+            ? 'w-0 px-0 py-0 border-r-0 opacity-0 pointer-events-none'
+            : 'w-60 px-4 py-5 border-r border-slate-200/70 dark:border-zinc-800/80 opacity-100'
+        }`}
+      >
+        <div className="space-y-6 min-w-[208px]">
+          {/* Brand Header + Collapse Sidebar Toggle */}
           <div className="flex items-center justify-between px-1.5">
             <div className="flex items-center gap-2.5">
               <KoraLogo size={32} />
@@ -83,34 +134,45 @@ export function Layout({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              title={cloudUser ? `Synchronisé (${cloudUser.email})` : 'Compte & Profil'}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
-            >
-              {cloudUser ? (
-                <Cloud
-                  size={14}
-                  className={cloudSyncing ? 'text-fuchsia-500 animate-pulse' : 'text-emerald-500'}
-                />
-              ) : (
-                <CloudOff size={14} />
-              )}
-            </button>
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => onPageChange('settings')}
+                title={cloudUser ? `Synchronisé (${cloudUser.email})` : 'Compte & Profil'}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+              >
+                {cloudUser ? (
+                  <Cloud
+                    size={14}
+                    className={cloudSyncing ? 'text-fuchsia-500 animate-pulse' : 'text-emerald-500'}
+                  />
+                ) : (
+                  <CloudOff size={14} />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                title="Fermer la barre latérale (Ctrl+B)"
+                aria-label="Fermer la barre latérale"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800/70 transition cursor-pointer"
+              >
+                <PanelLeftClose size={15} />
+              </button>
+            </div>
           </div>
 
           {/* 4-Section Music Navigation */}
           <nav className="space-y-1">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
-              const active = subTab === item.id;
+              const active = activePage === item.id;
               const badge = getBadgeCount(item.id);
               return (
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => onSubTabChange(item.id)}
+                  onClick={() => onPageChange(item.id)}
                   className={`relative w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition cursor-pointer ${
                     active
                       ? 'text-slate-900 dark:text-zinc-50'
@@ -143,12 +205,16 @@ export function Layout({
           </nav>
         </div>
 
-        {/* Bottom Profile & Theme Controls */}
-        <div className="space-y-2.5 pt-4 border-t border-slate-100 dark:border-zinc-800/80">
+        {/* Bottom Profile & Settings Controls */}
+        <div className="space-y-2.5 pt-4 border-t border-slate-100 dark:border-zinc-800/80 min-w-[208px]">
           <button
             type="button"
-            onClick={onOpenSettings}
-            className="w-full flex items-center gap-2.5 rounded-xl p-1.5 hover:bg-slate-100/80 dark:hover:bg-zinc-800/60 transition cursor-pointer text-left"
+            onClick={() => onPageChange('settings')}
+            className={`w-full flex items-center gap-2.5 rounded-xl p-1.5 transition cursor-pointer text-left ${
+              activePage === 'settings'
+                ? 'bg-slate-100 dark:bg-zinc-800/85'
+                : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800/60'
+            }`}
           >
             {state.preferences.avatarUrl || cloudUser?.photoURL ? (
               <img
@@ -198,9 +264,13 @@ export function Layout({
             </button>
             <button
               type="button"
-              onClick={onOpenSettings}
+              onClick={() => onPageChange('settings')}
               aria-label="Paramètres"
-              className="rounded-xl p-2 text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70 transition cursor-pointer"
+              className={`rounded-xl p-2 transition cursor-pointer ${
+                activePage === 'settings'
+                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                  : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
+              }`}
             >
               <Settings size={15} />
             </button>
@@ -211,12 +281,16 @@ export function Layout({
       {/* Mobile Fixed Safe-Area Top Bar */}
       <header className="md:hidden fixed top-0 inset-x-0 z-40 pt-[calc(env(safe-area-inset-top)+10px)] bg-white dark:bg-[#0e0e11] border-b border-slate-200/80 dark:border-zinc-800/90">
         <div className="h-12 px-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onPageChange('dashboard')}
+            className="flex items-center gap-2 cursor-pointer"
+          >
             <KoraLogo size={26} />
             <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-zinc-50">
               Kora
             </span>
-          </div>
+          </button>
 
           <div className="flex items-center gap-1">
             <button
@@ -229,9 +303,13 @@ export function Layout({
             </button>
             <button
               type="button"
-              onClick={onOpenSettings}
-              aria-label="Profil & Paramètres"
-              className="rounded-xl p-1.5 text-slate-600 dark:text-zinc-300 flex items-center gap-1.5"
+              onClick={() => onPageChange(activePage === 'settings' ? 'dashboard' : 'settings')}
+              aria-label="Paramètres"
+              className={`rounded-xl p-1.5 flex items-center gap-1.5 transition ${
+                activePage === 'settings'
+                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-white'
+                  : 'text-slate-600 dark:text-zinc-300'
+              }`}
             >
               {state.preferences.avatarUrl || cloudUser?.photoURL ? (
                 <img
@@ -249,9 +327,9 @@ export function Layout({
 
       {/* Full-Width Standalone Music Main Workspace */}
       <main
-        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.75rem+env(safe-area-inset-top))] md:pt-6 max-w-7xl w-full mx-auto ${
-          currentTrack ? 'pb-44 md:pb-28' : 'pb-24 md:pb-10'
-        }`}
+        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.75rem+env(safe-area-inset-top))] md:pt-6 max-w-7xl w-full mx-auto transition-[padding] duration-200 ${
+          sidebarCollapsed ? 'md:pl-16' : ''
+        } ${currentTrack ? 'pb-44 md:pb-28' : 'pb-24 md:pb-10'}`}
       >
         {children}
       </main>
@@ -263,12 +341,12 @@ export function Layout({
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-[#0e0e11]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-zinc-800/90 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-          const active = subTab === item.id;
+          const active = activePage === item.id;
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => onSubTabChange(item.id)}
+              onClick={() => onPageChange(item.id)}
               className={`relative flex-1 flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10px] font-medium transition ${
                 active ? 'text-slate-900 dark:text-zinc-50' : 'text-slate-400 dark:text-zinc-500'
               }`}

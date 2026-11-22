@@ -889,90 +889,10 @@ export function LyricsStudio({
             </div>
           </header>
 
-          {/* Editorial Body + Optional Tools Sidebar */}
-          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col">
-            <div className="flex-1 min-h-full max-w-5xl w-full mx-auto px-4 sm:px-6 pt-5 sm:pt-7 pb-4 flex flex-col lg:flex-row gap-6">
-              {/* Centered Writing Column */}
-              <div className="flex-1 min-h-0 min-w-0 max-w-2xl mx-auto w-full flex flex-col">
-                <input
-                  type="text"
-                  value={activeDoc.title}
-                  onChange={(e) => updateLyricsDoc(activeDoc.id, { title: e.target.value })}
-                  placeholder="Titre du texte…"
-                  className="w-full text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white bg-transparent outline-none placeholder:text-slate-300 dark:placeholder:text-zinc-700"
-                />
-
-                <div className="mt-2 pb-4 mb-4 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 text-[11px] text-slate-400 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono">
-                      {lineCount} lignes · {wordCount} mots
-                      {activeDoc.lastModified ? ` · ${fmtShortDate(activeDoc.lastModified)}` : ''}
-                    </span>
-                    {countLyricsFixTags(activeDoc.content) > 0 && (
-                      <span className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-2 py-0.5 font-mono text-[10px] font-semibold">
-                        [FIX] ×{countLyricsFixTags(activeDoc.content)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => insertWord('[FIX]')}
-                      className="px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 cursor-pointer"
-                      title="Insérer une balise [FIX]"
-                    >
-                      + [FIX]
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => wrapSelection('**')}
-                      className="px-2 py-0.5 rounded-md font-bold hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
-                      title="Gras"
-                    >
-                      B
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => wrapSelection('*')}
-                      className="px-2 py-0.5 rounded-md italic hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
-                      title="Italique"
-                    >
-                      I
-                    </button>
-                  </div>
-                </div>
-
-                {markdownMode === 'edit' ? (
-                  <textarea
-                    ref={textareaRef}
-                    value={activeDoc.content}
-                    onChange={(e) => handleContentChange(e.target.value)}
-                    placeholder="Commence à écrire tes couplets, refrains, idées de flow…"
-                    spellCheck={false}
-                    className="flex-1 w-full min-h-[68dvh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700 pb-6"
-                  />
-                ) : (
-                  <div
-                    className="flex-1 w-full min-h-[68dvh] text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 pb-6"
-                    dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
-                  />
-                )}
-              </div>
-
-              {/* Optional Right Tools Column (Inspiration + Métronome) */}
-              {toolsOpen && (
-                <aside className="w-full lg:w-72 shrink-0 space-y-3">
-                  <LexCoreInspirationWidget onInsertWord={insertWord} />
-                  <MetronomeWidget initialBpm={linkedTrack?.bpm || 120} />
-                </aside>
-              )}
-            </div>
-          </div>
-
-          {/* Minimalist Integrated Beat / Instru Dock */}
+          {/* Minimalist Integrated Beat / Instru Strip (top-docked under header so it never stacks with MiniAudioPlayer!) */}
           {beatBarOpen && (
-            <div className="shrink-0 px-4 sm:px-6 pb-3 pt-1">
-              <div className="max-w-2xl mx-auto rounded-2xl border border-slate-200/80 dark:border-zinc-800/90 bg-slate-50/90 dark:bg-zinc-900/80 backdrop-blur-md px-3 py-2 space-y-2">
+            <div className="shrink-0 border-b border-slate-100 dark:border-zinc-800/80 bg-slate-50/75 dark:bg-zinc-900/45 px-4 sm:px-6 py-2">
+              <div className="max-w-2xl mx-auto space-y-2">
                 {beatMode === 'youtube' ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
@@ -1115,6 +1035,87 @@ export function LyricsStudio({
               </div>
             </div>
           )}
+
+          {/* Editorial Body + Optional Tools Sidebar */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col">
+            <div className="flex-1 min-h-full max-w-5xl w-full mx-auto px-4 sm:px-6 pt-5 sm:pt-7 pb-4 flex flex-col lg:flex-row gap-6">
+              {/* Centered Writing Column */}
+              <div className="flex-1 min-h-0 min-w-0 max-w-2xl mx-auto w-full flex flex-col">
+                <input
+                  type="text"
+                  value={activeDoc.title}
+                  onChange={(e) => updateLyricsDoc(activeDoc.id, { title: e.target.value })}
+                  placeholder="Titre du texte…"
+                  className="w-full text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white bg-transparent outline-none placeholder:text-slate-300 dark:placeholder:text-zinc-700"
+                />
+
+                <div className="mt-2 pb-4 mb-4 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 text-[11px] text-slate-400 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono">
+                      {lineCount} lignes · {wordCount} mots
+                      {activeDoc.lastModified ? ` · ${fmtShortDate(activeDoc.lastModified)}` : ''}
+                    </span>
+                    {countLyricsFixTags(activeDoc.content) > 0 && (
+                      <span className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-2 py-0.5 font-mono text-[10px] font-semibold">
+                        [FIX] ×{countLyricsFixTags(activeDoc.content)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => insertWord('[FIX]')}
+                      className="px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 cursor-pointer"
+                      title="Insérer une balise [FIX]"
+                    >
+                      + [FIX]
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => wrapSelection('**')}
+                      className="px-2 py-0.5 rounded-md font-bold hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
+                      title="Gras"
+                    >
+                      B
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => wrapSelection('*')}
+                      className="px-2 py-0.5 rounded-md italic hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
+                      title="Italique"
+                    >
+                      I
+                    </button>
+                  </div>
+                </div>
+
+                {markdownMode === 'edit' ? (
+                  <textarea
+                    ref={textareaRef}
+                    value={activeDoc.content}
+                    onChange={(e) => handleContentChange(e.target.value)}
+                    placeholder="Commence à écrire tes couplets, refrains, idées de flow…"
+                    spellCheck={false}
+                    className="flex-1 w-full min-h-[68dvh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700 pb-6"
+                  />
+                ) : (
+                  <div
+                    className="flex-1 w-full min-h-[68dvh] text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 pb-6"
+                    dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
+                  />
+                )}
+              </div>
+
+              {/* Optional Right Tools Column (Inspiration + Métronome) */}
+              {toolsOpen && (
+                <aside className="w-full lg:w-72 shrink-0 space-y-3">
+                  <LexCoreInspirationWidget onInsertWord={insertWord} />
+                  <MetronomeWidget initialBpm={linkedTrack?.bpm || 120} />
+                </aside>
+              )}
+            </div>
+          </div>
+
           {/* Searchable Deduplicated Song Picker Modal */}
           {trackPickerOpen && (
             <div

@@ -538,7 +538,7 @@ export function MiniAudioPlayer() {
               hasFullscreenOverlay
                 ? 'bottom-[max(0.75rem,env(safe-area-inset-bottom))]'
                 : 'bottom-[calc(4.15rem+env(safe-area-inset-bottom))]'
-            } md:bottom-4 left-2.5 right-2.5 md:left-64 md:right-6 z-50 max-w-2xl md:mx-auto rounded-full bg-[#141418]/96 text-white border border-white/10 shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl px-2 py-1.5 transition-[bottom] duration-200 ease-out overflow-hidden`}
+            } md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-50 max-w-2xl md:mx-auto rounded-full bg-[#141418]/96 text-white border border-white/10 shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl px-2 py-1.5 transition-[bottom,left] duration-200 ease-out overflow-hidden`}
           >
             <div className="flex items-center justify-between gap-2">
               {/* Swipeable Cover Art + Title (Swipe Left = Next · Swipe Right = Prev · Tap = Fullscreen) */}

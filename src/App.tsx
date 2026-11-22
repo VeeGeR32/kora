@@ -3,9 +3,9 @@ import { AppProvider, useApp } from './context/AppContext';
 import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
 import { AuthGate } from './components/AuthGate';
 import { KoraLogo } from './components/ui/KoraLogo';
-import { Layout } from './components/Layout';
+import { Layout, type AppPage } from './components/Layout';
 import { MusicView, type MusicSubTab } from './components/music/MusicView';
-import { SettingsModal } from './components/SettingsModal';
+import { SettingsPage } from './components/SettingsModal';
 import { PublicSharePage } from './components/music/PublicSharePage';
 
 function KoraMusicApp() {
@@ -19,21 +19,30 @@ function KoraMusicApp() {
   } = useApp();
   const player = useAudioPlayer();
 
-  const [subTab, setSubTabState] = useState<MusicSubTab>(
+  const [activePage, setActivePageState] = useState<AppPage>(
     () => state.preferences.lastSession?.musicSubTab || 'dashboard'
   );
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const bootTimestampRef = useRef<number>(Date.now());
   const localRestoredRef = useRef(false);
   const cloudRestoredRef = useRef(false);
 
-  const setSubTab = useCallback(
-    (next: MusicSubTab) => {
-      setSubTabState(next);
-      updateLastSession({ activeTab: 'music', musicSubTab: next, scrollY: 0 });
+  const setActivePage = useCallback(
+    (next: AppPage) => {
+      setActivePageState(next);
+      if (next !== 'settings') {
+        updateLastSession({ activeTab: 'music', musicSubTab: next, scrollY: 0 });
+      }
+      window.scrollTo({ top: 0, behavior: 'auto' });
     },
     [updateLastSession]
+  );
+
+  const handleMusicSubTabChange = useCallback(
+    (next: MusicSubTab) => {
+      setActivePage(next);
+    },
+    [setActivePage]
   );
 
   // Restore exact last session (music tab, scroll position & audio track/timestamp) on app launch & cloud hydration
@@ -53,7 +62,7 @@ function KoraMusicApp() {
     if (lastCloudSyncAt) cloudRestoredRef.current = true;
 
     if (ls.musicSubTab) {
-      setSubTabState(ls.musicSubTab);
+      setActivePageState(ls.musicSubTab);
     }
 
     if (ls.audioTrackId && !player.isPlaying) {
@@ -74,6 +83,13 @@ function KoraMusicApp() {
     state.preferences.lastSession?.savedAt,
     state.musicTracks.length,
   ]);
+
+  // If user taps cover art inside the full-screen player while on Settings, switch back to MusicView so the Song Page opens!
+  useEffect(() => {
+    if (player.pendingOpenTrackId && activePage === 'settings') {
+      setActivePageState('dashboard');
+    }
+  }, [player.pendingOpenTrackId, activePage]);
 
   // Persist exact scroll position when leaving / closing the app on any device
   useEffect(() => {
@@ -102,19 +118,19 @@ function KoraMusicApp() {
           target.tagName === 'SELECT' ||
           target.isContentEditable);
 
-      if (isInput || e.metaKey || e.ctrlKey || e.altKey || settingsOpen) {
+      if (isInput || e.metaKey || e.ctrlKey || e.altKey) {
         return;
       }
 
-      if (e.key === '1') setSubTab('dashboard');
-      else if (e.key === '2') setSubTab('library');
-      else if (e.key === '3') setSubTab('projects');
-      else if (e.key === '4') setSubTab('lyrics');
+      if (e.key === '1') setActivePage('dashboard');
+      else if (e.key === '2') setActivePage('library');
+      else if (e.key === '3') setActivePage('projects');
+      else if (e.key === '4') setActivePage('lyrics');
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [setSubTab, settingsOpen]);
+  }, [setActivePage]);
 
   if (cloudConfigured && !authReady) {
     return (
@@ -130,13 +146,12 @@ function KoraMusicApp() {
   }
 
   return (
-    <Layout
-      subTab={subTab}
-      onSubTabChange={setSubTab}
-      onOpenSettings={() => setSettingsOpen(true)}
-    >
-      <MusicView subTab={subTab} onSubTabChange={setSubTab} />
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    <Layout activePage={activePage} onPageChange={setActivePage}>
+      {activePage === 'settings' ? (
+        <SettingsPage />
+      ) : (
+        <MusicView subTab={activePage} onSubTabChange={handleMusicSubTabChange} />
+      )}
     </Layout>
   );
 }
