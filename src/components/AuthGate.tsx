@@ -70,9 +70,9 @@ export function AuthGate() {
         <div className="flex flex-col items-center text-center space-y-2.5">
           <KoraLogo size={46} />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Bienvenue</h1>
+            <h1 className="text-lg font-semibold tracking-tight">Kora Studio</h1>
             <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-              Cours · Sport · Music · IA — synchronisé partout
+              Sons · Projets · Textes — connecté à ton Google Drive
             </p>
           </div>
         </div>
@@ -190,7 +190,7 @@ export function AuthGate() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-2xl bg-indigo-600 text-white py-2.5 text-xs font-semibold hover:bg-indigo-700 transition cursor-pointer disabled:opacity-50"
+            className="w-full rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-2.5 text-xs font-semibold hover:opacity-92 transition cursor-pointer disabled:opacity-50"
           >
             {mode === 'login' ? 'Connexion' : 'Créer mon compte'}
           </button>

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import type {
   AcademicProfile,
@@ -8,6 +8,7 @@ import type {
   AudioMarker,
   CourseDocument,
   CourseSubject,
+  DriveSource,
   EnergyCheckin,
   ExamItem,
   FitnessProfile,
@@ -31,9 +32,11 @@ import type {
   WorkoutSession,
 } from '../types';
 import {
+  extractDriveFolderId,
   fetchPermanentDriveSession,
   isExcludedProdName,
   listAllGoogleDriveAudioFilesWithExclusions,
+  verifyDriveFolderAccess,
 } from '../lib/googleDrive';
 import {
   getDeterministicGradientId,
@@ -164,11 +167,29 @@ interface AppContextValue {
 
   // Music Studio & LexCore
   autoSyncingDrive: boolean;
+  driveSources: DriveSource[];
+  serviceAccountEmail: string | null;
+  connectDriveSource: (
+    folderInput: string,
+    customName?: string
+  ) => Promise<{ ok: boolean; error?: string; source?: DriveSource }>;
+  updateDriveSource: (
+    sourceId: string,
+    patch: { name?: string; folderInput?: string }
+  ) => Promise<{ ok: boolean; error?: string }>;
+  removeDriveSource: (sourceId: string) => Promise<void>;
+  syncAllConnectedDrives: (options?: {
+    overrideSources?: DriveSource[];
+    silent?: boolean;
+    forceRefresh?: boolean;
+    onProgress?: (text: string) => void;
+  }) => Promise<{ added: number; updated: number; removed: number }>;
   addMusicTrack: (track: Omit<MusicTrack, 'id'>) => string;
   syncMusicTracksBatch: (
     incoming: Omit<MusicTrack, 'id'>[],
     excludedDriveIds?: string[],
-    pruneMissingDriveIds?: boolean
+    pruneMissingDriveIds?: boolean,
+    allowEmptyPrune?: boolean
   ) => { added: number; updated: number; removed: number };
   updateMusicTrack: (id: string, patch: Partial<MusicTrack>) => void;
   renameTrackGroup: (trackIds: string[], newTitle: string) => void;
@@ -356,6 +377,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<number | null>(null);
   const [workoutModalOpen, setWorkoutModalOpen] = useState(false);
   const [autoSyncingDrive, setAutoSyncingDrive] = useState(false);
+  const [serviceAccountEmail, setServiceAccountEmail] = useState<string | null>(null);
 
   const lastDriveAutoSyncAtRef = useRef<number>(0);
   const driveSyncInFlightRef = useRef<boolean>(false);
@@ -451,11 +473,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setLastCloudSyncAt(Date.now());
           setCloudError(null);
         } else {
-          // Brand new account in Firestore: seed initial state to cloud
-          const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, {
-            ...latestStateRef.current,
+          // Brand new account in Firestore: start with a clean empty studio state!
+          const defaultName =
+            cloudUser.displayName?.trim() || cloudUser.email?.split('@')[0] || '';
+          const freshEmpty = createEmptyState();
+          const newAccountState: AppState = {
+            ...freshEmpty,
+            preferences: {
+              ...freshEmpty.preferences,
+              name: defaultName,
+              theme: latestStateRef.current.preferences.theme || 'dark',
+            },
             updatedAt: Date.now(),
-          });
+          };
+          ignoreNextPushRef.current = true;
+          latestStateRef.current = newAccountState;
+          setState(newAccountState);
+          const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, newAccountState);
           lastPushedUpdatedAtRef.current = ts;
           setLastCloudSyncAt(Date.now());
           setCloudError(null);
@@ -672,7 +706,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const disconnectGoogleCloud = useCallback(async () => {
     await signOutFirebase(resolvedFbConfig);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(LEGACY_KEY);
+    } catch {
+      // ignore
+    }
+    const clean = { ...createEmptyState(), updatedAt: 0 };
+    latestStateRef.current = clean;
+    setState(clean);
     setLastCloudSyncAt(null);
+    lastDriveAutoSyncAtRef.current = 0;
     notify('Déconnecté');
   }, [resolvedFbConfig, notify]);
 
@@ -1253,13 +1297,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     (
       incoming: Omit<MusicTrack, 'id'>[],
       excludedDriveIds?: string[],
-      pruneMissingDriveIds = false
+      pruneMissingDriveIds = false,
+      allowEmptyPrune = false
     ) => {
       const excludedSet = new Set(excludedDriveIds || []);
       const incomingDriveIdSet = new Set(
         incoming.map((it) => it.googleDriveFileId).filter((id): id is string => Boolean(id))
       );
-      const shouldPruneMissing = pruneMissingDriveIds && incomingDriveIdSet.size > 0;
+      const shouldPruneMissing =
+        pruneMissingDriveIds && (incomingDriveIdSet.size > 0 || allowEmptyPrune);
 
       const isRemovedExisting = (t: MusicTrack) => {
         if (!t.googleDriveFileId) return false;
@@ -1296,7 +1342,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const needsMetaUpdate =
               (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
               (item.modifiedAt && existing.modifiedAt !== item.modifiedAt) ||
-              (item.driveYearFolder && existing.driveYearFolder !== item.driveYearFolder);
+              (item.driveYearFolder && existing.driveYearFolder !== item.driveYearFolder) ||
+              (item.driveSourceId && existing.driveSourceId !== item.driveSourceId);
             if (needsMetaUpdate) {
               const oldAutoTitle = (existing.sourceFilename || '')
                 .replace(/\.[^/.]+$/, '')
@@ -1310,6 +1357,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 ...(shouldUpdateTitle ? { title: item.title } : {}),
                 sourceFilename: item.sourceFilename || existing.sourceFilename,
                 driveYearFolder: item.driveYearFolder || existing.driveYearFolder,
+                driveSourceId: item.driveSourceId || existing.driveSourceId,
                 modifiedAt: item.modifiedAt || existing.modifiedAt,
               };
               updated++;
@@ -1348,6 +1396,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                   ...(shouldUpdateTitle ? { title: item.title } : {}),
                   sourceFilename: item.sourceFilename || ex.sourceFilename,
                   driveYearFolder: item.driveYearFolder || ex.driveYearFolder,
+                  driveSourceId: item.driveSourceId || ex.driveSourceId,
                   modifiedAt: item.modifiedAt || ex.modifiedAt,
                 };
               }
@@ -1371,78 +1420,289 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Automatic silent Google Drive MP3 sync on every page load / refresh (after cloud hydration)
-  // and whenever returning to the app after >= 2 min! Never opens any popup.
-  useEffect(() => {
-    if (!cloudUser || !lastCloudSyncAt) return;
+  const driveSources = useMemo<DriveSource[]>(
+    () => state.preferences.lastSession?.driveSources || [],
+    [state.preferences.lastSession?.driveSources]
+  );
 
-    const runSilentDriveSync = async (force = false) => {
-      if (driveSyncInFlightRef.current) return;
-      const now = Date.now();
-      if (!force && now - lastDriveAutoSyncAtRef.current < 120_000) return;
+  const saveDriveSources = useCallback((nextSources: DriveSource[]) => {
+    setState((prev) => {
+      const curSession: LastSessionState = prev.preferences.lastSession || {
+        activeTab: 'music',
+        savedAt: Date.now(),
+      };
+      return {
+        ...prev,
+        updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+        preferences: {
+          ...prev.preferences,
+          lastSession: {
+            ...curSession,
+            driveSources: nextSources,
+            savedAt: Date.now(),
+          },
+        },
+      };
+    });
+  }, []);
 
+  const syncAllConnectedDrives = useCallback(
+    async (options?: {
+      overrideSources?: DriveSource[];
+      silent?: boolean;
+      forceRefresh?: boolean;
+      onProgress?: (text: string) => void;
+    }): Promise<{ added: number; updated: number; removed: number }> => {
+      if (driveSyncInFlightRef.current) return { added: 0, updated: 0, removed: 0 };
       driveSyncInFlightRef.current = true;
       setAutoSyncingDrive(true);
       try {
         const perm = await fetchPermanentDriveSession(resolvedFbConfig);
-        if (!perm.configured || !perm.hasSharedFiles || !perm.accessToken) return;
+        if (perm.serviceAccountEmail) setServiceAccountEmail(perm.serviceAccountEmail);
 
+        let sources =
+          options?.overrideSources ??
+          latestStateRef.current.preferences.lastSession?.driveSources ??
+          [];
+
+        // Seamless legacy auto-adoption for primary owner who already has Drive tracks synced
+        if (
+          sources.length === 0 &&
+          !options?.overrideSources &&
+          perm.isLegacyOwner &&
+          perm.hasSharedFiles
+        ) {
+          const nowIso = new Date().toISOString();
+          const defaultSource: DriveSource = {
+            id: 'drv_main',
+            folderId: 'root',
+            name: 'Google Drive Principal',
+            addedAt: nowIso,
+          };
+          sources = [defaultSource];
+        }
+
+        // If user has 0 connected Drives (e.g. removed all Drives), prune all Drive tracks cleanly!
+        if (sources.length === 0) {
+          const res = syncMusicTracksBatch([], [], true, true);
+          saveDriveSources([]);
+          if (!options?.silent) {
+            notify(
+              res.removed > 0
+                ? `Drive déconnecté (${res.removed} son${res.removed > 1 ? 's' : ''} retiré${res.removed > 1 ? 's' : ''}) ✓`
+                : 'Aucun Google Drive connecté.'
+            );
+          }
+          return res;
+        }
+
+        if (!perm.configured || !perm.accessToken) {
+          if (!options?.silent) {
+            notify(perm.error || 'Connexion Google Drive indisponible.');
+          }
+          return { added: 0, updated: 0, removed: 0 };
+        }
+
+        options?.onProgress?.('Analyse des dossiers Drive…');
         const { files, excludedFileIds } = await listAllGoogleDriveAudioFilesWithExclusions(
           perm.accessToken,
-          ''
+          '',
+          (count) => options?.onProgress?.(`${count} MP3 détectés…`),
+          12,
+          sources
         );
         lastDriveAutoSyncAtRef.current = Date.now();
-        if (files.length === 0) return;
 
         const artist = latestStateRef.current.preferences.name || 'Moi';
         const nowIso = new Date().toISOString();
+        const countBySource = new Map<string, number>();
+
         const payload = files.map((f) => {
           const cleanTitle = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
           const parsed = parseTrackVersion({ title: cleanTitle, sourceFilename: f.name });
+          if (f.driveSourceId) {
+            countBySource.set(f.driveSourceId, (countBySource.get(f.driveSourceId) || 0) + 1);
+          }
           return {
             title: cleanTitle || f.name,
             artist,
             googleDriveFileId: f.id,
+            driveSourceId: f.driveSourceId,
             sourceFilename: f.name,
             driveYearFolder: f.yearFolder,
             modifiedAt: f.modifiedTime || nowIso,
             coverGradient: getDeterministicGradientId(parsed.groupKey),
-            status: 'maquette' as const,
+            status: 'brouillon' as const,
             tags: ['Google Drive'],
             markers: [],
             addedAt: f.modifiedTime || nowIso,
           };
         });
 
-        const { added, removed } = syncMusicTracksBatch(payload, excludedFileIds, true);
-        if (added > 0 || removed > 0) {
+        // Update per-Drive track count & lastSyncedAt
+        const updatedSources = sources.map((s) => ({
+          ...s,
+          trackCount:
+            s.folderId === 'root' && sources.length === 1
+              ? files.length
+              : countBySource.get(s.id) ?? 0,
+          lastSyncedAt: nowIso,
+        }));
+        saveDriveSources(updatedSources);
+
+        const res = syncMusicTracksBatch(
+          payload,
+          excludedFileIds,
+          true,
+          Boolean(options?.overrideSources)
+        );
+
+        if (!options?.silent) {
+          if (res.added === 0 && res.updated === 0 && res.removed === 0) {
+            notify(`Synchronisé (${files.length} MP3 sur ${updatedSources.length} Drive) ✓`);
+          } else {
+            const parts: string[] = [];
+            if (res.added > 0) parts.push(`+${res.added} ajouté${res.added > 1 ? 's' : ''}`);
+            if (res.updated > 0) parts.push(`${res.updated} mis à jour`);
+            if (res.removed > 0) parts.push(`-${res.removed} retiré${res.removed > 1 ? 's' : ''}`);
+            notify(`Drive synchronisé : ${parts.join(' · ')} ✓`);
+          }
+        } else if (res.added > 0 || res.removed > 0) {
           const parts: string[] = [];
-          if (added > 0) parts.push(`+${added} nouveau${added > 1 ? 'x' : ''} MP3`);
-          if (removed > 0) parts.push(`-${removed} retiré${removed > 1 ? 's' : ''}`);
+          if (res.added > 0) parts.push(`+${res.added} nouveau${res.added > 1 ? 'x' : ''} MP3`);
+          if (res.removed > 0) parts.push(`-${res.removed} retiré${res.removed > 1 ? 's' : ''}`);
           notify(`Drive synchronisé : ${parts.join(' · ')} ✓`);
         }
-      } catch {
-        // Silent background sync: never disturb user with popup/network error on page load
+
+        return res;
+      } catch (err) {
+        if (!options?.silent) {
+          notify(`Drive : ${(err as Error)?.message || 'Erreur de synchronisation'}`);
+        }
+        return { added: 0, updated: 0, removed: 0 };
       } finally {
         driveSyncInFlightRef.current = false;
         setAutoSyncingDrive(false);
       }
-    };
+    },
+    [resolvedFbConfig, syncMusicTracksBatch, saveDriveSources, notify]
+  );
 
-    // Run once right after initial cloud hydration on every page load / refresh
+  const connectDriveSource = useCallback(
+    async (
+      folderInput: string,
+      customName?: string
+    ): Promise<{ ok: boolean; error?: string; source?: DriveSource }> => {
+      const check = await verifyDriveFolderAccess(folderInput, resolvedFbConfig);
+      if (check.serviceAccountEmail) setServiceAccountEmail(check.serviceAccountEmail);
+      if (!check.ok || !check.folderId) {
+        return { ok: false, error: check.error || 'Dossier Google Drive invalide ou non partagé.' };
+      }
+      const curSources = latestStateRef.current.preferences.lastSession?.driveSources || [];
+      if (curSources.some((s) => s.folderId === check.folderId)) {
+        return { ok: false, error: 'Ce dossier Google Drive est déjà connecté.' };
+      }
+      const nowIso = new Date().toISOString();
+      const newSource: DriveSource = {
+        id: uid('drv'),
+        folderId: check.folderId,
+        name: customName?.trim() || check.folderName || 'Google Drive',
+        url: folderInput.trim(),
+        addedAt: nowIso,
+      };
+      const nextSources = [...curSources, newSource];
+      saveDriveSources(nextSources);
+      await syncAllConnectedDrives({ overrideSources: nextSources, silent: false });
+      return { ok: true, source: newSource };
+    },
+    [resolvedFbConfig, saveDriveSources, syncAllConnectedDrives]
+  );
+
+  const updateDriveSource = useCallback(
+    async (
+      sourceId: string,
+      patch: { name?: string; folderInput?: string }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      const curSources = latestStateRef.current.preferences.lastSession?.driveSources || [];
+      const target = curSources.find((s) => s.id === sourceId);
+      if (!target) return { ok: false, error: 'Drive introuvable.' };
+
+      let nextFolderId = target.folderId;
+      let nextName = patch.name !== undefined ? patch.name.trim() || target.name : target.name;
+      let nextUrl = target.url;
+      let folderChanged = false;
+
+      if (patch.folderInput && patch.folderInput.trim()) {
+        const parsedId = extractDriveFolderId(patch.folderInput);
+        if (parsedId && parsedId !== target.folderId) {
+          const check = await verifyDriveFolderAccess(patch.folderInput, resolvedFbConfig);
+          if (!check.ok || !check.folderId) {
+            return { ok: false, error: check.error || 'Nouveau dossier Drive inaccessible.' };
+          }
+          nextFolderId = check.folderId;
+          nextUrl = patch.folderInput.trim();
+          if (!patch.name?.trim() && check.folderName) {
+            nextName = check.folderName;
+          }
+          folderChanged = true;
+        }
+      }
+
+      const nextSources = curSources.map((s) =>
+        s.id === sourceId
+          ? {
+              ...s,
+              name: nextName,
+              folderId: nextFolderId,
+              url: nextUrl,
+            }
+          : s
+      );
+      saveDriveSources(nextSources);
+      if (folderChanged) {
+        await syncAllConnectedDrives({ overrideSources: nextSources, silent: false });
+      } else {
+        notify(`Drive « ${nextName} » mis à jour ✓`);
+      }
+      return { ok: true };
+    },
+    [resolvedFbConfig, saveDriveSources, syncAllConnectedDrives, notify]
+  );
+
+  const removeDriveSource = useCallback(
+    async (sourceId: string): Promise<void> => {
+      const curSources = latestStateRef.current.preferences.lastSession?.driveSources || [];
+      const nextSources = curSources.filter((s) => s.id !== sourceId);
+      saveDriveSources(nextSources);
+      await syncAllConnectedDrives({ overrideSources: nextSources, silent: false });
+    },
+    [saveDriveSources, syncAllConnectedDrives]
+  );
+
+  // Automatic silent Google Drive MP3 sync on every page load / refresh (after cloud hydration)
+  // and whenever returning to the app after >= 2 min! Never opens any popup.
+  useEffect(() => {
+    if (!cloudUser || !lastCloudSyncAt) return;
+
+    void fetchPermanentDriveSession(resolvedFbConfig).then((res) => {
+      if (res.serviceAccountEmail) setServiceAccountEmail(res.serviceAccountEmail);
+    });
+
     if (lastDriveAutoSyncAtRef.current === 0) {
-      void runSilentDriveSync(true);
+      void syncAllConnectedDrives({ silent: true });
     }
 
-    // Also refresh silently when switching back to the app after >= 2 minutes
     const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void runSilentDriveSync(false);
+      if (
+        document.visibilityState === 'visible' &&
+        Date.now() - lastDriveAutoSyncAtRef.current >= 120_000
+      ) {
+        void syncAllConnectedDrives({ silent: true });
       }
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [cloudUser?.uid, Boolean(lastCloudSyncAt), syncMusicTracksBatch, notify]);
+  }, [cloudUser?.uid, Boolean(lastCloudSyncAt), resolvedFbConfig, syncAllConnectedDrives]);
 
   const updateMusicTrack = useCallback((id: string, patch: Partial<MusicTrack>) => {
     touch((prev) => ({
@@ -2317,6 +2577,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addWeight,
         deleteWeight,
         autoSyncingDrive,
+        driveSources,
+        serviceAccountEmail,
+        connectDriveSource,
+        updateDriveSource,
+        removeDriveSource,
+        syncAllConnectedDrives,
         addMusicTrack,
         syncMusicTracksBatch,
         updateMusicTrack,

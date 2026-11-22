@@ -3,6 +3,7 @@ import {
   ArrowDownAZ,
   Calendar,
   GitBranch,
+  HardDrive,
   Layers,
   ListChecks,
   Pause,
@@ -16,15 +17,8 @@ import {
 import type { MusicTrack, ProjectKind } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
+import { DrivePermanentSetupModal, DriveSourcesManager } from './DrivePermanentSetupModal';
 import {
-  DrivePermanentSetupRequiredError,
-  ensureGoogleDriveToken,
-  fetchPermanentDriveSession,
-  listAllGoogleDriveAudioFilesWithExclusions,
-} from '../../lib/googleDrive';
-import { DrivePermanentSetupModal } from './DrivePermanentSetupModal';
-import {
-  getDeterministicGradientId,
   groupMusicTracks,
   parseTrackVersion,
   type TrackGroup,
@@ -59,7 +53,8 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     state,
     lastCloudSyncAt,
     autoSyncingDrive,
-    syncMusicTracksBatch,
+    driveSources,
+    syncAllConnectedDrives,
     updateMusicTrack,
     setTrackGroupFavorite,
     addMusicProject,
@@ -119,25 +114,9 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
   );
   const [linkModal, setLinkModal] = useState<LinkVersionModalState | null>(null);
 
-  // Google Drive Full Sync & Permanent Zero-Popup Setup state
+  // Google Drive modal state
   const [syncingDrive, setSyncingDrive] = useState(false);
-  const [syncProgressText, setSyncProgressText] = useState('');
-  const [permanentDriveEmail, setPermanentDriveEmail] = useState<string | null>(null);
-  const [permanentDriveReady, setPermanentDriveReady] = useState(false);
   const [permanentSetupOpen, setPermanentSetupOpen] = useState(false);
-
-  // Silently check permanent Drive access on mount (zero popups!)
-  useEffect(() => {
-    let active = true;
-    void fetchPermanentDriveSession(state.preferences.firebaseConfig).then((res) => {
-      if (!active || !res.configured) return;
-      setPermanentDriveEmail(res.serviceAccountEmail);
-      setPermanentDriveReady(res.hasSharedFiles);
-    });
-    return () => {
-      active = false;
-    };
-  }, [state.preferences.firebaseConfig]);
 
   // Library search / filter / sort / grouping / year filter
   const [libSearch, setLibSearch] = useState('');
@@ -315,81 +294,18 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     );
   }, [detailTarget, trackGroups, flatTrackGroups]);
 
-  // 1-Click Full Google Drive MP3 Sync (permanent zero-popup token first, excludes drumkit!)
+  // 1-Click Full Google Drive MP3 Sync across all connected Drives
   const handleSyncAllDrive = async (forceRefresh = false) => {
-    if (syncingDrive) return;
+    if (syncingDrive || autoSyncingDrive) return;
+    if (driveSources.length === 0) {
+      setPermanentSetupOpen(true);
+      return;
+    }
     setSyncingDrive(true);
-    setSyncProgressText('Connexion Drive…');
     try {
-      const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig, forceRefresh);
-      setPermanentDriveReady(true);
-      setPermanentSetupOpen(false);
-      setSyncProgressText('Analyse des MP3 (hors drumkit)…');
-      const { files: allFiles, excludedFileIds } = await listAllGoogleDriveAudioFilesWithExclusions(
-        token,
-        '',
-        (count) => {
-          setSyncProgressText(`${count} MP3 trouvés…`);
-        }
-      );
-
-      if (allFiles.length === 0 && excludedFileIds.length === 0) {
-        notify('Aucun fichier MP3 trouvé dans le dossier partagé.');
-        return;
-      }
-
-      const artist = state.preferences.name || 'Moi';
-      const nowIso = new Date().toISOString();
-      const payload = allFiles.map((f) => {
-        const cleanTitle = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
-        const parsed = parseTrackVersion({ title: cleanTitle, sourceFilename: f.name });
-        return {
-          title: cleanTitle || f.name,
-          artist,
-          googleDriveFileId: f.id,
-          sourceFilename: f.name,
-          driveYearFolder: f.yearFolder,
-          modifiedAt: f.modifiedTime || nowIso,
-          coverGradient: getDeterministicGradientId(parsed.groupKey),
-          status: 'maquette' as const,
-          tags: ['Google Drive'],
-          markers: [],
-          addedAt: f.modifiedTime || nowIso,
-        };
-      });
-
-      const { added, updated, removed } = syncMusicTracksBatch(payload, excludedFileIds, true);
-      const uniqueProjects = new Set(
-        allFiles.map((f) => parseTrackVersion({ title: f.name, sourceFilename: f.name }).groupKey)
-      ).size;
-
-      const drumkitNote =
-        removed > 0
-          ? ` · ${removed} prod${removed > 1 ? 's' : ''}/sample${removed > 1 ? 's' : ''} retiré${removed > 1 ? 's' : ''}`
-          : excludedFileIds.length > 0
-          ? ` · prods & drumkit exclus`
-          : '';
-
-      if (added === 0 && updated === 0 && removed === 0) {
-        notify(`Drive à jour (${allFiles.length} MP3 · ${uniqueProjects} projets${drumkitNote}) ✓`);
-      } else {
-        notify(
-          `${added} MP3 chargé${added > 1 ? 's' : ''}${
-            updated > 0 ? ` · ${updated} mis à jour` : ''
-          } (${uniqueProjects} projets${drumkitNote}) ✓`
-        );
-      }
-    } catch (err) {
-      if (err instanceof DrivePermanentSetupRequiredError) {
-        setPermanentDriveEmail(err.serviceAccountEmail);
-        setPermanentDriveReady(false);
-        setPermanentSetupOpen(true);
-      } else {
-        notify(`Google Drive : ${(err as Error).message}`);
-      }
+      await syncAllConnectedDrives({ forceRefresh });
     } finally {
       setSyncingDrive(false);
-      setSyncProgressText('');
     }
   };
 
@@ -582,7 +498,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   <button
                     type="button"
                     onClick={() => setSubTab('projects')}
-                    className="text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 hover:underline cursor-pointer"
+                    className="text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:underline cursor-pointer"
                   >
                     Tout voir ({state.musicProjects.length}) →
                   </button>
@@ -631,7 +547,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   />
                   <button
                     type="submit"
-                    className="rounded-xl bg-fuchsia-600 text-white px-3 py-2 text-xs font-semibold cursor-pointer"
+                    className="rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-2 text-xs font-semibold cursor-pointer"
                   >
                     Créer
                   </button>
@@ -716,7 +632,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                             {proj.title}
                           </h3>
                           {total > 0 && (
-                            <span className="font-mono text-[10px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 shrink-0">
+                            <span className="font-mono text-[10px] font-semibold text-slate-500 dark:text-zinc-400 shrink-0">
                               {done}/{total}
                             </span>
                           )}
@@ -742,41 +658,60 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
           {({ dashboard: 'Accueil', library: 'Sons', projects: 'Projets', lyrics: 'Textes' } as Record<MusicSubTab, string>)[subTab]}
         </h1>
-          {/* Ultra-compact Sync & Drive Setup Controls */}
+          {/* Ultra-compact Sync & Multi-Drive Controls */}
           <div className="flex items-center gap-1.5">
-            {permanentDriveEmail && !permanentDriveReady && (
-              <button
-                type="button"
-                onClick={() => setPermanentSetupOpen(true)}
-                className="inline-flex items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
-              >
-                Configurer Drive
-              </button>
-            )}
             <button
               type="button"
-              disabled={syncingDrive}
-              onClick={() => void handleSyncAllDrive()}
-              title="Synchroniser avec Google Drive"
+              onClick={() => setPermanentSetupOpen(true)}
+              title="Gérer les dossiers Google Drive connectés"
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition cursor-pointer ${
+                driveSources.length === 0
+                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold hover:opacity-90'
+                  : 'border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700 hover:text-slate-900 dark:hover:text-zinc-100'
+              }`}
+            >
+              <HardDrive size={11} />
+              <span>
+                {driveSources.length === 0
+                  ? 'Connecter un Drive'
+                  : `Drives (${driveSources.length})`}
+              </span>
+            </button>
+            <button
+              type="button"
+              disabled={syncingDrive || autoSyncingDrive}
+              onClick={() => void handleSyncAllDrive(true)}
+              title="Synchroniser tous les Google Drives connectés"
               className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-50 transition cursor-pointer"
             >
               <RefreshCw
                 size={11}
-                className={syncingDrive || autoSyncingDrive ? 'animate-spin text-fuchsia-500' : ''}
+                className={syncingDrive || autoSyncingDrive ? 'animate-spin text-slate-900 dark:text-zinc-100' : ''}
               />
               <span>
-                {syncingDrive
-                  ? syncProgressText || 'Sync…'
-                  : autoSyncingDrive
-                  ? 'Maj…'
-                  : 'Sync'}
+                {syncingDrive || autoSyncingDrive ? 'Sync…' : 'Sync'}
               </span>
-              {permanentDriveReady && !syncingDrive && !autoSyncingDrive && (
+              {driveSources.length > 0 && !syncingDrive && !autoSyncingDrive && (
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               )}
             </button>
           </div>
       </div>
+
+      {/* Zero-Drive / Empty Account Instant Onboarding Card */}
+      {driveSources.length === 0 && state.musicTracks.length === 0 && (subTab === 'dashboard' || subTab === 'library') && (
+        <section className="tempo-card rounded-2xl p-5 space-y-3">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+              Bienvenue sur Kora Studio
+            </h2>
+            <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+              Connecte un ou plusieurs dossiers Google Drive pour synchroniser tous tes MP3, versions et projets en quelques secondes.
+            </p>
+          </div>
+          <DriveSourcesManager />
+        </section>
+      )}
 
       {/* ================= TAB 1: DASHBOARD MUSIC (MISE EN AVANT) ================= */}
       {subTab === 'dashboard' && (
@@ -806,8 +741,8 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
                   className={`rounded-full px-3 py-1 font-mono text-xs font-semibold transition cursor-pointer shrink-0 ${
                     yearFilter === year
-                      ? 'bg-fuchsia-600 text-white shadow-xs'
-                      : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-fuchsia-400'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 shadow-xs'
+                      : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400 dark:hover:border-zinc-600'
                   }`}
                 >
                   {year} <span className="opacity-65">({count})</span>
@@ -951,7 +886,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                 <button
                   type="button"
                   onClick={() => setSubTab('library')}
-                  className="text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 hover:underline cursor-pointer"
+                  className="text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:underline cursor-pointer"
                 >
                   Tout voir ({trackGroups.length}) →
                 </button>
@@ -959,18 +894,24 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
             </div>
 
             {recentGroups.length === 0 ? (
-              <div className="tempo-card rounded-3xl p-8 text-center space-y-3">
+              <div className="tempo-card rounded-2xl p-7 text-center space-y-3">
                 <p className="text-xs text-slate-400">
-                  Ta bibliothèque est encore vide. Synchronise ton Google Drive en un clic pour charger tous tes MP3 !
+                  {driveSources.length === 0
+                    ? 'Connecte ton premier dossier Google Drive ci-dessus pour charger tes MP3.'
+                    : 'Aucun MP3 trouvé dans tes dossiers connectés.'}
                 </p>
                 <button
                   type="button"
-                  disabled={syncingDrive}
-                  onClick={() => void handleSyncAllDrive()}
+                  disabled={syncingDrive || autoSyncingDrive}
+                  onClick={() =>
+                    driveSources.length === 0
+                      ? setPermanentSetupOpen(true)
+                      : void handleSyncAllDrive(true)
+                  }
                   className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
                 >
-                  <RefreshCw size={13} className={syncingDrive ? 'animate-spin' : ''} />
-                  Synchroniser Google Drive
+                  <RefreshCw size={13} className={syncingDrive || autoSyncingDrive ? 'animate-spin' : ''} />
+                  {driveSources.length === 0 ? 'Connecter un Google Drive' : 'Synchroniser Google Drive'}
                 </button>
               </div>
             ) : (
@@ -1109,7 +1050,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   onClick={() => setLibSort('recent')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'recent'
-                      ? 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1120,7 +1061,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   onClick={() => setLibSort('name')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'name'
-                      ? 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1132,7 +1073,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                     onClick={() => setLibSort('versions')}
                     className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                       libSort === 'versions'
-                        ? 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
                         : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                     }`}
                   >
@@ -1144,7 +1085,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   onClick={() => setLibSort('rating')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'rating'
-                      ? 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1155,7 +1096,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   onClick={() => setLibSort('potential')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'potential'
-                      ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1167,7 +1108,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                   title="Trier par écart Potentiel − Note actuelle (titres prioritaires)"
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'gap'
-                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1199,8 +1140,8 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                     onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
                     className={`rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold transition cursor-pointer ${
                       yearFilter === year
-                        ? 'bg-fuchsia-600 text-white'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300 hover:bg-fuchsia-500/15'
+                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                        : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                     }`}
                   >
                     {year} <span className="opacity-65">({count})</span>
@@ -1327,9 +1268,6 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
 
       <DrivePermanentSetupModal
         open={permanentSetupOpen}
-        serviceAccountEmail={permanentDriveEmail}
-        syncing={syncingDrive}
-        onVerifyAndSync={() => handleSyncAllDrive(true)}
         onClose={() => setPermanentSetupOpen(false)}
       />
     </div>

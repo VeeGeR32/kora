@@ -283,6 +283,7 @@ export interface MusicTrack {
   cloudAudioUrl?: string;
   cloudCoverUrl?: string;
   googleDriveFileId?: string; // Google Drive file ID for cross-device MP3 sync
+  driveSourceId?: string; // Connected DriveSource id that owns this track
   sourceFilename?: string; // Raw filename e.g. "Project_306_3.2.mp3" for version grouping
   driveYearFolder?: string; // Detected Google Drive year/season folder e.g. "2024/2025"
   manualGroupKey?: string; // User-assigned version group override (e.g. attach track as version of another song)
@@ -458,6 +459,16 @@ export interface LivePlaybackState {
   updatedAt: number;
 }
 
+export interface DriveSource {
+  id: string;
+  folderId: string; // Google Drive folder ID, or 'root' for all shared folders
+  name: string;
+  url?: string;
+  trackCount?: number;
+  lastSyncedAt?: string;
+  addedAt: string;
+}
+
 export interface LastSessionState {
   activeTab: ActiveTab;
   musicSubTab?: 'dashboard' | 'library' | 'projects' | 'lyrics';
@@ -470,6 +481,7 @@ export interface LastSessionState {
   audioExpanded?: boolean;
   scrollY?: number;
   livePlayback?: LivePlaybackState | null;
+  driveSources?: DriveSource[];
   savedAt: number; // epoch ms
 }
 

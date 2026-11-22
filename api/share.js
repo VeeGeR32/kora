@@ -122,9 +122,9 @@ function getSigningSecret(sa) {
     .digest();
 }
 
-function signShareToken(sa, kind, id) {
+function signShareToken(sa, uid, kind, id) {
   const prefix = kind === 'project' ? 'p' : 't';
-  const payload = `${prefix}.${id}`;
+  const payload = `${prefix}.${uid}.${id}`;
   const sig = crypto
     .createHmac('sha256', getSigningSecret(sa))
     .update(payload)
@@ -133,22 +133,39 @@ function signShareToken(sa, kind, id) {
   return `${payload}.${sig}`;
 }
 
-function verifyShareToken(sa, token) {
+function verifyShareToken(sa, token, legacyDefaultUid) {
   const parts = String(token || '').trim().split('.');
-  if (parts.length !== 3) return null;
-  const [prefix, id, sig] = parts;
-  if ((prefix !== 't' && prefix !== 'p') || !id || !/^[a-f0-9]{24}$/i.test(sig)) {
-    return null;
+  if (parts.length === 4) {
+    const [prefix, uid, id, sig] = parts;
+    if ((prefix !== 't' && prefix !== 'p') || !uid || !id || !/^[a-f0-9]{24}$/i.test(sig)) {
+      return null;
+    }
+    const expected = crypto
+      .createHmac('sha256', getSigningSecret(sa))
+      .update(`${prefix}.${uid}.${id}`)
+      .digest('hex')
+      .slice(0, 24);
+    const a = Buffer.from(sig.toLowerCase(), 'utf8');
+    const b = Buffer.from(expected.toLowerCase(), 'utf8');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    return { kind: prefix === 'p' ? 'project' : 'track', uid, id };
   }
-  const expected = crypto
-    .createHmac('sha256', getSigningSecret(sa))
-    .update(`${prefix}.${id}`)
-    .digest('hex')
-    .slice(0, 24);
-  const a = Buffer.from(sig.toLowerCase(), 'utf8');
-  const b = Buffer.from(expected.toLowerCase(), 'utf8');
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  return { kind: prefix === 'p' ? 'project' : 'track', id };
+  if (parts.length === 3 && legacyDefaultUid) {
+    const [prefix, id, sig] = parts;
+    if ((prefix !== 't' && prefix !== 'p') || !id || !/^[a-f0-9]{24}$/i.test(sig)) {
+      return null;
+    }
+    const expected = crypto
+      .createHmac('sha256', getSigningSecret(sa))
+      .update(`${prefix}.${id}`)
+      .digest('hex')
+      .slice(0, 24);
+    const a = Buffer.from(sig.toLowerCase(), 'utf8');
+    const b = Buffer.from(expected.toLowerCase(), 'utf8');
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    return { kind: prefix === 'p' ? 'project' : 'track', uid: legacyDefaultUid, id };
+  }
+  return null;
 }
 
 function fromFirestoreValue(val) {
@@ -336,8 +353,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  const targetUid = process.env.FIREBASE_PUSH_UID;
-  if (!saRaw || !targetUid) {
+  const legacyDefaultUid = (process.env.FIREBASE_PUSH_UID || '').trim();
+  if (!saRaw) {
     return res.status(503).json({
       ok: false,
       error: 'Partage public non configuré sur le serveur.',
@@ -347,7 +364,7 @@ export default async function handler(req, res) {
   try {
     const sa = parseServiceAccount(saRaw);
 
-    // ===== POST /api/share — Owner creates a signed permanent share link =====
+    // ===== POST /api/share — Authenticated user creates a signed permanent share link =====
     if (req.method === 'POST') {
       const authHeader = String(req.headers.authorization || '');
       const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
@@ -355,28 +372,25 @@ export default async function handler(req, res) {
         return res.status(401).json({ ok: false, error: 'Authentification requise.' });
       }
       const verified = await verifyFirebaseIdToken(idToken, sa.project_id);
-      if (verified.sub !== targetUid) {
-        return res.status(403).json({ ok: false, error: 'Non autorisé.' });
-      }
 
       const { kind, id } = req.body || {};
       if ((kind !== 'track' && kind !== 'project') || typeof id !== 'string' || !id.trim()) {
         return res.status(400).json({ ok: false, error: 'Paramètres kind/id invalides.' });
       }
 
-      const token = signShareToken(sa, kind, id.trim());
+      const token = signShareToken(sa, verified.sub, kind, id.trim());
       return res.status(200).json({ ok: true, token });
     }
 
     // ===== GET /api/share?token=... (&stream=trackId) — Public Listener =====
     if (req.method === 'GET') {
       const token = String(req.query?.token || '');
-      const parsed = verifyShareToken(sa, token);
-      if (!parsed) {
+      const parsed = verifyShareToken(sa, token, legacyDefaultUid);
+      if (!parsed || !parsed.uid) {
         return res.status(403).json({ ok: false, error: 'Lien de partage invalide ou expiré.' });
       }
 
-      const state = await fetchOwnerAppState(sa, targetUid);
+      const state = await fetchOwnerAppState(sa, parsed.uid);
       const resolved = resolveSharedTracks(state, parsed);
       if (!resolved) {
         return res.status(404).json({ ok: false, error: 'Ce son ou projet n’existe plus.' });

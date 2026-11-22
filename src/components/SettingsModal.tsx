@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { groupMusicTracks } from '../lib/musicVersioning';
+import { DriveSourcesManager } from './music/DrivePermanentSetupModal';
 
 const AVATAR_COLORS = [
   { id: 'slate', cls: 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950' },
@@ -222,6 +223,19 @@ export function SettingsPage() {
             );
           })}
         </div>
+      </section>
+
+      {/* Google Drives Connectés (Multi-Drive Manager) */}
+      <section className="tempo-card rounded-2xl p-5 space-y-3.5">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Google Drives connectés
+          </h3>
+          <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">
+            Connecte un ou plusieurs dossiers Google Drive. Toute modification resynchronise automatiquement ta bibliothèque.
+          </p>
+        </div>
+        <DriveSourcesManager />
       </section>
 
       {/* Editable Profile Form */}

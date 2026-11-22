@@ -177,8 +177,8 @@ export default async function handler(req, res) {
   }
 
   const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  const targetUid = process.env.FIREBASE_PUSH_UID;
-  if (!saRaw || !targetUid) {
+  const targetUid = (process.env.FIREBASE_PUSH_UID || '').trim();
+  if (!saRaw) {
     return res.status(503).json({
       ok: false,
       configured: false,
@@ -195,17 +195,63 @@ export default async function handler(req, res) {
   try {
     const sa = parseServiceAccount(saRaw);
     const verified = await verifyFirebaseIdToken(idToken, sa.project_id);
-    if (verified.sub !== targetUid) {
-      return res.status(403).json({ ok: false, error: 'Compte non autorisé pour ce Google Drive.' });
-    }
+    const isLegacyOwner = Boolean(targetUid && verified.sub === targetUid);
 
     const { accessToken, expiresIn } = await getDriveReadOnlyAccessToken(sa);
-    const hasSharedFiles = await checkHasSharedAudioFiles(accessToken);
+
+    // Optional folder verification when user connects or edits a specific Google Drive folder URL/ID
+    const folderId = String(req.query?.folderId || '').trim();
+    if (folderId) {
+      const fRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          folderId
+        )}?fields=id,name,mimeType,trashed&supportsAllDrives=true`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!fRes.ok) {
+        return res.status(200).json({
+          ok: true,
+          configured: true,
+          serviceAccountEmail: sa.client_email,
+          folderAccessible: false,
+          accessToken,
+          expiresIn,
+          error: `Ce dossier n'est pas encore accessible. Partage-le en « Lecteur » avec ${sa.client_email} (ou active « Tous les utilisateurs disposant du lien »).`,
+        });
+      }
+      const folderMeta = await fRes.json();
+      if (folderMeta.trashed) {
+        return res.status(200).json({
+          ok: true,
+          configured: true,
+          serviceAccountEmail: sa.client_email,
+          folderAccessible: false,
+          accessToken,
+          expiresIn,
+          error: 'Ce dossier Google Drive est dans la corbeille.',
+        });
+      }
+      return res.status(200).json({
+        ok: true,
+        configured: true,
+        serviceAccountEmail: sa.client_email,
+        folderAccessible: true,
+        folder: {
+          id: folderMeta.id,
+          name: folderMeta.name || 'Google Drive',
+        },
+        accessToken,
+        expiresIn,
+      });
+    }
+
+    const hasSharedFiles = isLegacyOwner ? await checkHasSharedAudioFiles(accessToken) : true;
 
     return res.status(200).json({
       ok: true,
       configured: true,
       serviceAccountEmail: sa.client_email,
+      isLegacyOwner,
       hasSharedFiles,
       accessToken,
       expiresIn,

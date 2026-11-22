@@ -1,4 +1,4 @@
-import type { FirebaseUserConfig } from '../types';
+import type { DriveSource, FirebaseUserConfig } from '../types';
 import { getCurrentFirebaseIdToken, requestGoogleDriveAccessToken } from './firebase';
 
 export interface DriveAudioFile {
@@ -9,12 +9,113 @@ export interface DriveAudioFile {
   modifiedTime: string;
   parents?: string[];
   yearFolder?: string; // e.g. "2024/2025" from Drive folder "24/25"
+  driveSourceId?: string;
 }
 
 export interface PermanentDriveInfo {
   configured: boolean;
   serviceAccountEmail: string | null;
   hasSharedFiles: boolean;
+  isLegacyOwner?: boolean;
+}
+
+/**
+ * Extracts a clean Google Drive folder ID from any Drive folder link or raw folder ID.
+ * Supports:
+ * - https://drive.google.com/drive/folders/1AbCdEfG...
+ * - https://drive.google.com/drive/u/0/folders/1AbCdEfG...
+ * - https://drive.google.com/open?id=1AbCdEfG...
+ * - Raw folder ID (15..80 chars)
+ */
+export function extractDriveFolderId(rawInput: string): string | null {
+  const s = (rawInput || '').trim();
+  if (!s) return null;
+  if (s === 'root') return 'root';
+  const folderPathMatch = s.match(/\/folders\/([A-Za-z0-9_-]{12,100})/);
+  if (folderPathMatch) return folderPathMatch[1];
+  const idParamMatch = s.match(/[?&]id=([A-Za-z0-9_-]{12,100})/);
+  if (idParamMatch) return idParamMatch[1];
+  if (/^[A-Za-z0-9_-]{15,100}$/.test(s)) return s;
+  return null;
+}
+
+export async function verifyDriveFolderAccess(
+  folderInput: string,
+  config?: FirebaseUserConfig | null
+): Promise<{
+  ok: boolean;
+  folderId: string | null;
+  folderName: string | null;
+  serviceAccountEmail: string | null;
+  error?: string;
+}> {
+  const folderId = extractDriveFolderId(folderInput);
+  if (!folderId) {
+    return {
+      ok: false,
+      folderId: null,
+      folderName: null,
+      serviceAccountEmail: cachedPermanentInfo?.serviceAccountEmail || null,
+      error: 'Colle un lien de dossier Google Drive valide (ex. https://drive.google.com/drive/folders/...)',
+    };
+  }
+  const idToken = await getCurrentFirebaseIdToken(config);
+  if (!idToken) {
+    return {
+      ok: false,
+      folderId,
+      folderName: null,
+      serviceAccountEmail: null,
+      error: 'Connecte-toi à ton compte Kora.',
+    };
+  }
+  try {
+    const res = await fetch(`/api/drive?folderId=${encodeURIComponent(folderId)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      serviceAccountEmail?: string;
+      folderAccessible?: boolean;
+      folder?: { id: string; name: string };
+      accessToken?: string;
+      expiresIn?: number;
+      error?: string;
+    };
+    if (data.accessToken) {
+      cachedDriveToken = {
+        token: data.accessToken,
+        expiresAt: Date.now() + Math.max(300, (Number(data.expiresIn) || 3000) - 60) * 1000,
+        permanent: true,
+      };
+    }
+    if (!res.ok || !data.ok || !data.folderAccessible || !data.folder) {
+      return {
+        ok: false,
+        folderId,
+        folderName: null,
+        serviceAccountEmail: data.serviceAccountEmail || cachedPermanentInfo?.serviceAccountEmail || null,
+        error:
+          data.error ||
+          'Dossier inaccessible — partage-le en « Lecteur » avec le compte Kora puis réessaie.',
+      };
+    }
+    return {
+      ok: true,
+      folderId: data.folder.id,
+      folderName: data.folder.name,
+      serviceAccountEmail: data.serviceAccountEmail || null,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      folderId,
+      folderName: null,
+      serviceAccountEmail: cachedPermanentInfo?.serviceAccountEmail || null,
+      error: (err as Error)?.message || 'Erreur réseau lors de la vérification du dossier Drive.',
+    };
+  }
 }
 
 export class DrivePermanentSetupRequiredError extends Error {
@@ -55,6 +156,7 @@ export async function fetchPermanentDriveSession(
   configured: boolean;
   serviceAccountEmail: string | null;
   hasSharedFiles: boolean;
+  isLegacyOwner?: boolean;
   accessToken: string | null;
   expiresIn: number;
   error?: string;
@@ -92,6 +194,7 @@ export async function fetchPermanentDriveSession(
       configured?: boolean;
       serviceAccountEmail?: string;
       hasSharedFiles?: boolean;
+      isLegacyOwner?: boolean;
       accessToken?: string;
       expiresIn?: number;
       error?: string;
@@ -113,6 +216,7 @@ export async function fetchPermanentDriveSession(
       configured: true,
       serviceAccountEmail: data.serviceAccountEmail || null,
       hasSharedFiles: Boolean(data.hasSharedFiles),
+      isLegacyOwner: Boolean(data.isLegacyOwner),
     };
 
     return {
@@ -120,6 +224,7 @@ export async function fetchPermanentDriveSession(
       configured: true,
       serviceAccountEmail: data.serviceAccountEmail || null,
       hasSharedFiles: Boolean(data.hasSharedFiles),
+      isLegacyOwner: Boolean(data.isLegacyOwner),
       accessToken: data.accessToken || null,
       expiresIn: Number(data.expiresIn) || 3000,
     };
@@ -217,6 +322,7 @@ export function parseDriveYearFolderName(folderName: string): string | null {
 interface DriveFolderIndex {
   excludedFolders: Set<string>;
   yearByFolderId: Map<string, string>;
+  childrenByParent: Map<string, string[]>;
 }
 
 /**
@@ -298,7 +404,7 @@ async function buildDriveFolderIndex(token: string): Promise<DriveFolderIndex> {
     }
   }
 
-  return { excludedFolders, yearByFolderId };
+  return { excludedFolders, yearByFolderId, childrenByParent };
 }
 
 function resolveFileYearFolder(
@@ -427,9 +533,37 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
   token: string,
   searchQuery = '',
   onPageLoaded?: (totalSoFar: number) => void,
-  maxPages = 10
+  maxPages = 10,
+  driveSources?: DriveSource[]
 ): Promise<{ files: DriveAudioFile[]; excludedFileIds: string[] }> {
-  const { excludedFolders, yearByFolderId } = await buildDriveFolderIndex(token);
+  const { excludedFolders, yearByFolderId, childrenByParent } = await buildDriveFolderIndex(token);
+
+  // Build folderId -> driveSourceId map when explicit folder sources are configured
+  const explicitSources = (driveSources || []).filter(
+    (s) => s.folderId && s.folderId !== 'root'
+  );
+  const hasRootSource = (driveSources || []).some((s) => s.folderId === 'root');
+  const rootSourceId = (driveSources || []).find((s) => s.folderId === 'root')?.id;
+
+  const sourceIdByFolderId = new Map<string, string>();
+  if (explicitSources.length > 0) {
+    for (const src of explicitSources) {
+      const q = [src.folderId];
+      sourceIdByFolderId.set(src.folderId, src.id);
+      while (q.length > 0) {
+        const cur = q.shift()!;
+        const kids = childrenByParent.get(cur);
+        if (!kids) continue;
+        for (const kid of kids) {
+          if (!sourceIdByFolderId.has(kid)) {
+            sourceIdByFolderId.set(kid, src.id);
+            q.push(kid);
+          }
+        }
+      }
+    }
+  }
+
   const all: DriveAudioFile[] = [];
   const excludedFileIds: string[] = [];
   const seen = new Set<string>();
@@ -442,12 +576,35 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
       seen.add(f.id);
       if (f.parents?.some((pid) => excludedFolders.has(pid)) || isExcludedProdName(f.name)) {
         excludedFileIds.push(f.id);
-      } else {
-        all.push({
-          ...f,
-          yearFolder: resolveFileYearFolder(f.parents, yearByFolderId),
-        });
+        continue;
       }
+
+      let matchedSourceId: string | undefined;
+      if (explicitSources.length > 0) {
+        for (const pid of f.parents || []) {
+          const sid = sourceIdByFolderId.get(pid);
+          if (sid) {
+            matchedSourceId = sid;
+            break;
+          }
+        }
+        if (!matchedSourceId && hasRootSource) {
+          matchedSourceId = rootSourceId;
+        }
+        if (!matchedSourceId) {
+          // Belongs to a folder not connected to this user's active DriveSources -> exclude!
+          excludedFileIds.push(f.id);
+          continue;
+        }
+      } else if (rootSourceId) {
+        matchedSourceId = rootSourceId;
+      }
+
+      all.push({
+        ...f,
+        yearFolder: resolveFileYearFolder(f.parents, yearByFolderId),
+        driveSourceId: matchedSourceId,
+      });
     }
     onPageLoaded?.(all.length);
     if (!res.nextPageToken) break;

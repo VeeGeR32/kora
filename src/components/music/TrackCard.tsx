@@ -160,8 +160,8 @@ export function TrackCard({
       title="Clic sur la carte pour ouvrir la page du morceau · Clic sur ▶ pour lire · Clic droit pour options"
       className={`group relative rounded-2xl border p-3.5 transition-all cursor-pointer select-none flex flex-col justify-between gap-3 ${
         isCurrentTrack
-          ? 'border-fuchsia-400/90 dark:border-fuchsia-500/70 bg-fuchsia-50/45 dark:bg-fuchsia-950/20 shadow-[0_10px_30px_-14px_rgba(217,70,239,0.45)]'
-          : 'border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#131317] hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-md'
+          ? 'border-slate-900/45 dark:border-zinc-200/40 bg-slate-50/90 dark:bg-zinc-900/85 ring-1 ring-slate-900/10 dark:ring-white/10 shadow-sm'
+          : 'border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#121215] hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-sm'
       }`}
     >
       {/* Top Row: Playable Cover + Title + Star / Context Menu Trigger */}
@@ -261,7 +261,7 @@ export function TrackCard({
                 title="Choisir une autre version"
                 className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-900/8 dark:bg-zinc-100/10 hover:bg-slate-900/14 dark:hover:bg-zinc-100/16 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-800 dark:text-zinc-200 transition cursor-pointer"
               >
-                <GitBranch size={9} className="text-fuchsia-500" />
+                <GitBranch size={9} className="text-slate-500 dark:text-zinc-400" />
                 <span>{activeEntry.versionLabel}</span>
                 <span className="opacity-55">· {group.versions.length}</span>
                 <ChevronDown size={10} className="opacity-70" />
@@ -373,7 +373,7 @@ export function TrackCard({
         <button
           type="button"
           onClick={() => onOpenDetails(group, track.id)}
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:text-zinc-400 hover:text-fuchsia-600 dark:hover:text-fuchsia-400 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition cursor-pointer"
+          className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition cursor-pointer"
         >
           <ListChecks size={12} />
           {todoTotal > 0 ? (

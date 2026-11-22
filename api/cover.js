@@ -147,8 +147,8 @@ async function readJsonBody(req) {
 export default async function handler(req, res) {
   try {
     const rawSa = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    const ownerUid = (process.env.FIREBASE_PUSH_UID || '').trim();
-    if (!rawSa || !ownerUid) {
+    const defaultOwnerUid = (process.env.FIREBASE_PUSH_UID || '').trim();
+    if (!rawSa) {
       return res.status(503).json({ ok: false, error: 'Stockage pochettes HD non configuré' });
     }
 
@@ -156,16 +156,17 @@ export default async function handler(req, res) {
     const projectId = sa.project_id;
     const fsToken = await getFirestoreAccessToken(sa);
 
-    // ===== GET /api/cover?id=cov_... -> Serve HD Cover Binary (1-Year Immutable CDN Cache) =====
+    // ===== GET /api/cover?id=cov_... (&uid=...) -> Serve HD Cover Binary (1-Year Immutable CDN Cache) =====
     if (req.method === 'GET') {
       const id = String(req.query?.id || '').trim();
-      if (!/^cov_[a-f0-9]{16,32}$/.test(id)) {
+      const targetUid = String(req.query?.uid || defaultOwnerUid).trim();
+      if (!/^cov_[a-f0-9]{16,32}$/.test(id) || !targetUid || !/^[A-Za-z0-9_-]{6,128}$/.test(targetUid)) {
         return res.status(400).send('Invalid cover id');
       }
 
       const docUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
         projectId
-      )}/databases/(default)/documents/users/${encodeURIComponent(ownerUid)}/covers/${encodeURIComponent(id)}`;
+      )}/databases/(default)/documents/users/${encodeURIComponent(targetUid)}/covers/${encodeURIComponent(id)}`;
 
       const fsRes = await fetch(docUrl, {
         headers: { Authorization: `Bearer ${fsToken}` },
@@ -200,9 +201,7 @@ export default async function handler(req, res) {
       }
 
       const claims = await verifyFirebaseIdToken(idToken, projectId);
-      if (claims.sub !== ownerUid) {
-        return res.status(403).json({ ok: false, error: 'Accès refusé' });
-      }
+      const userUid = claims.sub;
 
       const body = await readJsonBody(req);
       const dataUrl = String(body?.dataUrl || '').trim();
@@ -220,7 +219,7 @@ export default async function handler(req, res) {
       const coverId = `cov_${crypto.randomBytes(12).toString('hex')}`;
       const writeUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
         projectId
-      )}/databases/(default)/documents/users/${encodeURIComponent(ownerUid)}/covers/${encodeURIComponent(
+      )}/databases/(default)/documents/users/${encodeURIComponent(userUid)}/covers/${encodeURIComponent(
         coverId
       )}`;
 
@@ -250,7 +249,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         id: coverId,
-        url: `/api/cover?id=${coverId}`,
+        url: `/api/cover?uid=${encodeURIComponent(userUid)}&id=${coverId}`,
       });
     }
 

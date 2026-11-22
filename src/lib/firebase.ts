@@ -417,6 +417,9 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     if (ls.livePlayback && typeof ls.livePlayback === 'object' && ls.livePlayback.activeDeviceId) {
       cleanSession.livePlayback = ls.livePlayback;
     }
+    if (Array.isArray(ls.driveSources)) {
+      cleanSession.driveSources = ls.driveSources.slice(0, 25);
+    }
     cleanPreferences.lastSession = cleanSession;
   }
 
