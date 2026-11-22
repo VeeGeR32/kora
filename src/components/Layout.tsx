@@ -278,8 +278,8 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
         </div>
       </aside>
 
-      {/* Mobile Fixed Safe-Area Top Bar */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-40 pt-[calc(env(safe-area-inset-top)+10px)] bg-white dark:bg-[#0e0e11] border-b border-slate-200/80 dark:border-zinc-800/90">
+      {/* Mobile Fixed Safe-Area Top Bar (z-20 so Project/Track/Text full-screen pages cover it cleanly) */}
+      <header className="md:hidden fixed top-0 inset-x-0 z-20 pt-[calc(env(safe-area-inset-top)+10px)] bg-white dark:bg-[#0e0e11] border-b border-slate-200/80 dark:border-zinc-800/90">
         <div className="h-12 px-4 flex items-center justify-between">
           <button
             type="button"

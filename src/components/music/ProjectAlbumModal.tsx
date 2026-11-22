@@ -4,10 +4,12 @@ import {
   Archive,
   ArrowUp,
   Camera,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  GitBranch,
   GripVertical,
   Link2,
   ListChecks,
@@ -75,6 +77,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const {
     state,
     updateMusicProject,
+    setProjectTrackVersion,
     toggleMusicProjectStep,
     addMusicProjectStep,
     deleteMusicProjectStep,
@@ -96,6 +99,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const [showBench, setShowBench] = useState(false);
   const [showEditMeta, setShowEditMeta] = useState(false);
   const [openTrackMenuId, setOpenTrackMenuId] = useState<string | null>(null);
+  const [versionPickerTrackId, setVersionPickerTrackId] = useState<string | null>(null);
   const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [sharing, setSharing] = useState(false);
@@ -143,25 +147,44 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const projectTracks = useMemo(() => {
     if (!project) return [];
     const byId = new Map(state.musicTracks.map((t) => [t.id, t]));
+    const groupKeyByTrackId = new Map<string, string>();
+    for (const g of allGroups) {
+      for (const id of g.allTrackIds) groupKeyByTrackId.set(id, g.groupKey);
+    }
     const benchSet = new Set(project.benchTrackIds || []);
     const ordered: typeof state.musicTracks = [];
     const seen = new Set<string>();
+    const seenGroups = new Set<string>();
 
     for (const tid of project.trackIds) {
       const found = byId.get(tid);
-      if (found && !seen.has(found.id) && !benchSet.has(found.id)) {
+      const gk = found ? groupKeyByTrackId.get(found.id) : undefined;
+      if (
+        found &&
+        !seen.has(found.id) &&
+        !benchSet.has(found.id) &&
+        (!gk || !seenGroups.has(gk))
+      ) {
         ordered.push(found);
         seen.add(found.id);
+        if (gk) seenGroups.add(gk);
       }
     }
     for (const t of state.musicTracks) {
-      if (t.linkedProjectId === project.id && !seen.has(t.id) && !benchSet.has(t.id)) {
+      const gk = groupKeyByTrackId.get(t.id);
+      if (
+        t.linkedProjectId === project.id &&
+        !seen.has(t.id) &&
+        !benchSet.has(t.id) &&
+        (!gk || !seenGroups.has(gk))
+      ) {
         ordered.push(t);
         seen.add(t.id);
+        if (gk) seenGroups.add(gk);
       }
     }
     return ordered;
-  }, [project, state.musicTracks]);
+  }, [project, state.musicTracks, allGroups]);
 
   const benchTracks = useMemo(() => {
     if (!project || !project.benchTrackIds || project.benchTrackIds.length === 0) return [];
@@ -244,10 +267,11 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
       done: boolean;
     }[] = [];
     for (const trk of projectTracks) {
+      const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
       for (const td of trk.todos || []) {
         items.push({
           trackId: trk.id,
-          trackTitle: trk.manualGroupTitle || trk.title,
+          trackTitle: grp?.baseTitle || trk.manualGroupTitle || trk.title,
           todoId: td.id,
           label: td.label,
           done: td.done,
@@ -337,17 +361,38 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   };
 
   const handleRemoveFromBench = (trackId: string) => {
-    const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
-    updateMusicProject(project.id, { benchTrackIds: nextBench });
+    const grp = allGroups.find((g) => g.allTrackIds.includes(trackId));
+    const removeSet = new Set(grp ? grp.allTrackIds : [trackId]);
+    const nextBench = (project.benchTrackIds || []).filter((id) => !removeSet.has(id));
+    const nextPins = { ...(project.pinnedVersionByGroup || {}) };
+    if (grp) delete nextPins[grp.groupKey];
+    updateMusicProject(project.id, {
+      benchTrackIds: nextBench,
+      pinnedVersionByGroup: Object.keys(nextPins).length > 0 ? nextPins : undefined,
+    });
     notify('Retiré');
   };
 
   const handleRemoveTrackFromProject = (trackId: string) => {
-    const nextIds = projectTracks.map((t) => t.id).filter((id) => id !== trackId);
-    const nextBench = (project.benchTrackIds || []).filter((id) => id !== trackId);
-    updateMusicProject(project.id, { trackIds: nextIds, benchTrackIds: nextBench });
-    updateMusicTrack(trackId, { linkedProjectId: undefined });
+    const grp = allGroups.find((g) => g.allTrackIds.includes(trackId));
+    const removeSet = new Set(grp ? grp.allTrackIds : [trackId]);
+    const nextIds = projectTracks.map((t) => t.id).filter((id) => !removeSet.has(id));
+    const nextBench = (project.benchTrackIds || []).filter((id) => !removeSet.has(id));
+    const nextPins = { ...(project.pinnedVersionByGroup || {}) };
+    if (grp) delete nextPins[grp.groupKey];
+    updateMusicProject(project.id, {
+      trackIds: nextIds,
+      benchTrackIds: nextBench,
+      pinnedVersionByGroup: Object.keys(nextPins).length > 0 ? nextPins : undefined,
+    });
+    for (const id of removeSet) {
+      const t = state.musicTracks.find((x) => x.id === id);
+      if (t?.linkedProjectId === project.id) {
+        updateMusicTrack(id, { linkedProjectId: undefined });
+      }
+    }
     setOpenTrackMenuId(null);
+    if (versionPickerTrackId === trackId) setVersionPickerTrackId(null);
   };
 
   // Press-and-hold (220ms) OR instant grip-handle drag reordering
@@ -1036,8 +1081,16 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   const isCur = player.currentTrack?.id === trk.id;
                   const playing = isCur && player.isPlaying;
                   const menuOpen = openTrackMenuId === trk.id;
+                  const versionPickerOpen = versionPickerTrackId === trk.id;
                   const isDragging = draggingTrackId === trk.id;
                   const trkGroup = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+                  const displayTitle = trkGroup?.baseTitle || trk.manualGroupTitle || trk.title;
+                  const activeVersionEntry =
+                    trkGroup?.versions.find((v) => v.track.id === trk.id) || null;
+                  const hasMultipleVersions = Boolean(trkGroup && trkGroup.versions.length > 1);
+                  const isPinnedVersion = Boolean(
+                    trkGroup && project.pinnedVersionByGroup?.[trkGroup.groupKey]
+                  );
                   const linkedLyrics = findLinkedLyricsForTrack(
                     trk,
                     state.lyricsDocs,
@@ -1132,7 +1185,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                           {rowThumb && (
                             <img
                               src={rowThumb}
-                              alt={trk.manualGroupTitle || trk.title}
+                              alt={displayTitle}
                               draggable={false}
                               className="h-9 w-9 rounded-lg object-cover border border-slate-200/70 dark:border-zinc-800 shrink-0 pointer-events-none"
                             />
@@ -1145,7 +1198,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                   : 'text-slate-900 dark:text-zinc-100'
                               }`}
                             >
-                              {trk.manualGroupTitle || trk.title}
+                              {displayTitle}
                             </p>
                             <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-0.5 min-w-0">
                               <span className="text-[11px] text-slate-400 dark:text-zinc-500 truncate min-w-0">
@@ -1153,6 +1206,40 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                   state.preferences.name ||
                                   trk.artist}
                               </span>
+                              {hasMultipleVersions && activeVersionEntry && (
+                                <span
+                                  data-no-drag="true"
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenTrackMenuId(null);
+                                    setVersionPickerTrackId(versionPickerOpen ? null : trk.id);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setOpenTrackMenuId(null);
+                                      setVersionPickerTrackId(versionPickerOpen ? null : trk.id);
+                                    }
+                                  }}
+                                  title={
+                                    isPinnedVersion
+                                      ? `Version fixée (${activeVersionEntry.versionLabel}) — cliquer pour changer`
+                                      : `Version auto (${activeVersionEntry.versionLabel}) — cliquer pour changer`
+                                  }
+                                  className={`shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold transition cursor-pointer ${
+                                    isPinnedVersion
+                                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25'
+                                      : 'bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/20'
+                                  }`}
+                                >
+                                  <GitBranch size={9} className="shrink-0" />
+                                  <span>{activeVersionEntry.versionLabel}</span>
+                                  <ChevronDown size={9} className="opacity-70 shrink-0" />
+                                </span>
+                              )}
                               <span
                                 className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkStatusMeta.badge}`}
                               >
@@ -1204,13 +1291,114 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                           )}
                           <button
                             type="button"
-                            onClick={() => setOpenTrackMenuId(menuOpen ? null : trk.id)}
+                            onClick={() => {
+                              setVersionPickerTrackId(null);
+                              setOpenTrackMenuId(menuOpen ? null : trk.id);
+                            }}
                             className="p-2 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-900 cursor-pointer"
                           >
                             <MoreHorizontal size={16} />
                           </button>
                         </div>
                       </div>
+
+                      {versionPickerOpen && trkGroup && hasMultipleVersions && (
+                        <div
+                          data-no-drag="true"
+                          className="mt-2 ml-8 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/90 dark:bg-zinc-900/85 p-2.5 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2 px-1">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <GitBranch size={11} className="text-fuchsia-500 shrink-0" />
+                              <span className="text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
+                                Version dans ce projet
+                              </span>
+                              <span
+                                className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold shrink-0 ${
+                                  isPinnedVersion
+                                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                    : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                }`}
+                              >
+                                {isPinnedVersion ? 'Fixée' : 'Auto'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setVersionPickerTrackId(null)}
+                              className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-pointer"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+
+                          <div className="max-h-48 overflow-y-auto space-y-1">
+                            {trkGroup.versions.map((v) => {
+                              const selected = v.track.id === trk.id;
+                              return (
+                                <button
+                                  key={v.track.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setProjectTrackVersion(
+                                      project.id,
+                                      trkGroup.groupKey,
+                                      v.track.id,
+                                      v.isLatest ? 'auto' : 'pin'
+                                    );
+                                    if (isCur) {
+                                      const nextQueue = projectTracks.map((pt) =>
+                                        pt.id === trk.id ? v.track : pt
+                                      );
+                                      void player.playTrack(v.track, 0, nextQueue);
+                                    }
+                                    notify(
+                                      v.isLatest
+                                        ? `Version ${v.versionLabel} (auto) activée pour « ${project.title} » ✓`
+                                        : `Version ${v.versionLabel} fixée pour « ${project.title} » ✓`
+                                    );
+                                    setVersionPickerTrackId(null);
+                                  }}
+                                  className={`w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition cursor-pointer ${
+                                    selected
+                                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                                      : 'bg-white dark:bg-zinc-950/70 border border-slate-200/70 dark:border-zinc-800/80 text-slate-700 dark:text-zinc-200 hover:border-slate-400 dark:hover:border-zinc-600'
+                                  }`}
+                                >
+                                  <span className="flex items-center gap-1.5 min-w-0">
+                                    <span className="font-mono font-semibold truncate">
+                                      {v.versionLabel}
+                                    </span>
+                                    {v.isLatest && (
+                                      <span
+                                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+                                          selected
+                                            ? 'bg-white/20 text-white dark:bg-black/15 dark:text-zinc-950'
+                                            : 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                                        }`}
+                                      >
+                                        Dernière · Auto
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="flex items-center gap-1.5 shrink-0">
+                                    {(v.track.modifiedAt || v.track.addedAt) && (
+                                      <span
+                                        className={`font-mono text-[10px] ${
+                                          selected ? 'opacity-70' : 'text-slate-400'
+                                        }`}
+                                      >
+                                        {fmtAddedDate(v.track.modifiedAt || v.track.addedAt)}
+                                      </span>
+                                    )}
+                                    {selected && <Check size={12} />}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {menuOpen && (
                         <div data-no-drag="true" className="mt-2 ml-9 space-y-2">
@@ -1225,6 +1413,18 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                 className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
                               >
                                 Page du son
+                              </button>
+                            )}
+                            {hasMultipleVersions && activeVersionEntry && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenTrackMenuId(null);
+                                  setVersionPickerTrackId(trk.id);
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
+                              >
+                                <GitBranch size={11} /> Version ({activeVersionEntry.versionLabel})
                               </button>
                             )}
                             <button

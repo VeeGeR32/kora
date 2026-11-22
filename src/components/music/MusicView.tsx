@@ -63,6 +63,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     updateMusicTrack,
     setTrackGroupFavorite,
     addMusicProject,
+    updateMusicProject,
     addLyricsDoc,
     updateLastSession,
     notify,
@@ -466,9 +467,63 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     if (detailTarget?.groupKey === groupKey) {
       setDetailTarget({ groupKey, trackId });
     }
+
+    // Persist the chosen version inside any project / backlog / sprint that references this song group
+    const grp = trackGroups.find((g) => g.groupKey === groupKey);
+    const groupIds = grp && grp.allTrackIds.length > 0 ? grp.allTrackIds : [trackId];
+    const groupIdSet = new Set(groupIds);
+    let inheritedProjectId: string | undefined;
+
+    for (const proj of state.musicProjects) {
+      const hasInTrackIds = proj.trackIds.some((id) => groupIdSet.has(id));
+      const hasInBench = (proj.benchTrackIds || []).some((id) => groupIdSet.has(id));
+      const hasInSprints = (proj.sprints || []).some((s) =>
+        s.trackIds.some((id) => groupIdSet.has(id))
+      );
+      if (hasInTrackIds || hasInBench || hasInSprints) {
+        if (hasInTrackIds && !inheritedProjectId) inheritedProjectId = proj.id;
+        const nextTrackIds = Array.from(
+          new Set(proj.trackIds.map((id) => (groupIdSet.has(id) ? trackId : id)))
+        );
+        const nextBench = proj.benchTrackIds
+          ? Array.from(
+              new Set(proj.benchTrackIds.map((id) => (groupIdSet.has(id) ? trackId : id)))
+            )
+          : undefined;
+        const nextSprints = proj.sprints
+          ? proj.sprints.map((s) => ({
+              ...s,
+              trackIds: Array.from(
+                new Set(s.trackIds.map((id) => (groupIdSet.has(id) ? trackId : id)))
+              ),
+            }))
+          : undefined;
+        updateMusicProject(proj.id, {
+          trackIds: nextTrackIds,
+          ...(nextBench ? { benchTrackIds: nextBench } : {}),
+          ...(nextSprints ? { sprints: nextSprints } : {}),
+        });
+      }
+    }
+
+    // Also keep linkedProjectId strictly on the chosen version so old siblings don't reappear in project tracklists
+    if (grp) {
+      const existingLinkedProjId =
+        inheritedProjectId ||
+        grp.versions.find((v) => Boolean(v.track.linkedProjectId))?.track.linkedProjectId;
+      if (existingLinkedProjId) {
+        for (const v of grp.versions) {
+          if (v.track.id === trackId && v.track.linkedProjectId !== existingLinkedProjId) {
+            updateMusicTrack(v.track.id, { linkedProjectId: existingLinkedProjId });
+          } else if (v.track.id !== trackId && v.track.linkedProjectId === existingLinkedProjId) {
+            updateMusicTrack(v.track.id, { linkedProjectId: undefined });
+          }
+        }
+      }
+    }
+
     if (autoPlay) {
       const targetTrack = state.musicTracks.find((t) => t.id === trackId);
-      const grp = trackGroups.find((g) => g.groupKey === groupKey);
       if (targetTrack) {
         void player.playTrack(
           targetTrack,
@@ -1273,6 +1328,7 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
       <TrackDetailModal
         group={detailGroup}
         selectedTrackId={detailTarget?.trackId || null}
+        activeProjectId={openProjectId}
         onSelectVersion={(trackId) => {
           if (detailGroup) handleSelectVersion(detailGroup.groupKey, trackId, false);
         }}
