@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Camera,
@@ -28,6 +28,7 @@ import type { MusicTrack, TrackMood, TrackStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
+import { triggerHapticTick } from '../../lib/haptics';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import {
   countLyricsFixTags,
@@ -75,6 +76,10 @@ function fmtDate(iso?: string): string {
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
+const BAR_COUNT = 110;
+const BAR_STEP_PX = 4.5;
+const TOTAL_TAPE_PX = BAR_COUNT * BAR_STEP_PX;
 
 export function TrackDetailModal({
   group,
@@ -163,14 +168,101 @@ export function TrackDetailModal({
 
   const waveformBars = useMemo(() => {
     const id = track?.id || 'kora';
-    let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 23);
-    return Array.from({ length: 56 }, (_, idx) => {
+    let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 31);
+    return Array.from({ length: BAR_COUNT }, (_, idx) => {
       seed = (seed * 9301 + 49297) % 233280;
-      const base = 20 + Math.round((seed / 233280) * 80);
-      const edge = Math.min(1, Math.min(idx + 3, 56 - idx + 2) / 6);
-      return Math.max(16, Math.round(base * (0.55 + 0.45 * edge)));
+      const base = 18 + Math.round((seed / 233280) * 82);
+      const edge = Math.min(1, Math.min(idx + 3, BAR_COUNT - idx + 2) / 7);
+      return Math.max(14, Math.round(base * (0.5 + 0.5 * edge)));
     });
   }, [track?.id]);
+
+  // 60fps Scrolling Tape Waveform refs & state (identical to MiniAudioPlayer!)
+  const tapePlayedRef = useRef<HTMLDivElement | null>(null);
+  const tapeUnplayedRef = useRef<HTMLDivElement | null>(null);
+  const timeTextRef = useRef<HTMLParagraphElement | null>(null);
+  const scrubPillTextRef = useRef<HTMLSpanElement | null>(null);
+  const scrubbingRef = useRef(false);
+  const scrubTimeRef = useRef(0);
+  const [scrubbing, setScrubbing] = useState(false);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startTime: number;
+    lastTickBar: number;
+    moved: boolean;
+  } | null>(null);
+
+  const isCurrentTrack = Boolean(track && player.currentTrack?.id === track.id);
+  const isPlayingTrack = isCurrentTrack && player.isPlaying;
+  const effectiveDurationVal =
+    (isCurrentTrack && player.duration > 0 ? player.duration : track?.durationSec) || 0;
+
+  const applyVisualFrame = (t: number, dur: number) => {
+    const r = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
+    const tx = -r * TOTAL_TAPE_PX;
+    const tapeTransform = `translate3d(${tx.toFixed(2)}px, 0, 0)`;
+    if (tapePlayedRef.current) tapePlayedRef.current.style.transform = tapeTransform;
+    if (tapeUnplayedRef.current) tapeUnplayedRef.current.style.transform = tapeTransform;
+
+    const label = dur > 0 ? `${fmt(t)} / ${fmt(dur)}` : `${fmt(t)} / —`;
+    if (timeTextRef.current && timeTextRef.current.textContent !== label) {
+      timeTextRef.current.textContent = label;
+    }
+    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== label) {
+      scrubPillTextRef.current.textContent = label;
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (!track) return;
+    const liveT = isCurrentTrack ? player.getLiveTime() : 0;
+    applyVisualFrame(scrubbingRef.current ? scrubTimeRef.current : liveT, effectiveDurationVal);
+  }, [track?.id, isCurrentTrack, isPlayingTrack, effectiveDurationVal, player]);
+
+  useEffect(() => {
+    if (!track || !isCurrentTrack || !isPlayingTrack) return;
+    let rafId = 0;
+    const tick = () => {
+      if (!scrubbingRef.current) {
+        applyVisualFrame(player.getLiveTime(), effectiveDurationVal);
+      }
+      rafId = window.requestAnimationFrame(tick);
+    };
+    rafId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [track?.id, isCurrentTrack, isPlayingTrack, effectiveDurationVal, player]);
+
+  const playedBarsEl = useMemo(
+    () =>
+      waveformBars.map((h, i) => (
+        <div
+          key={i}
+          style={{ width: `${BAR_STEP_PX}px` }}
+          className="h-full flex items-center justify-center shrink-0"
+        >
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-slate-900 dark:bg-white" />
+        </div>
+      )),
+    [waveformBars]
+  );
+
+  const unplayedBarsEl = useMemo(
+    () =>
+      waveformBars.map((h, i) => (
+        <div
+          key={i}
+          style={{ width: `${BAR_STEP_PX}px` }}
+          className="h-full flex items-center justify-center shrink-0"
+        >
+          <div
+            style={{ height: `${h}%` }}
+            className="w-[2px] rounded-full bg-slate-900/20 dark:bg-white/25"
+          />
+        </div>
+      )),
+    [waveformBars]
+  );
 
   const { registerFullscreenOverlay } = player;
   const isDetailOpen = Boolean(group && activeEntry && track);
@@ -223,10 +315,6 @@ export function TrackDetailModal({
   const isCurrent = player.currentTrack?.id === track.id;
   const isPlaying = isCurrent && player.isPlaying;
   const effectiveDuration = (isCurrent && player.duration > 0 ? player.duration : track.durationSec) || 0;
-  const progressPct =
-    isCurrent && effectiveDuration > 0
-      ? Math.min(100, Math.max(0, (player.currentTime / effectiveDuration) * 100))
-      : 0;
   const todos = track.todos || [];
   const doneTodos = todos.filter((td) => td.done).length;
   const todoPct = todos.length > 0 ? Math.round((doneTodos / todos.length) * 100) : 0;
@@ -639,39 +727,155 @@ export function TrackDetailModal({
               </div>
             </div>
 
-            {/* Interactive Page Waveform (click anywhere to play / seek!) */}
-            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/70 dark:bg-zinc-900/45 p-3.5 space-y-2">
+            {/* 60fps Scrolling Tape Waveform (Exact same precision player bar as MiniAudioPlayer!) */}
+            <section className="w-full py-1 space-y-2">
+              <div className="h-4 flex items-center justify-center">
+                <span
+                  ref={scrubPillTextRef}
+                  className={`rounded-full bg-[#FF5500] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
+                    scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  }`}
+                />
+              </div>
+
               <div
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                  const targetSec = ratio * (effectiveDuration || 180);
-                  if (isCurrent) player.seek(targetSec);
-                  else void player.playTrack(track, targetSec, group.versions.map((v) => v.track));
+                onPointerDown={(e) => {
+                  const dur = effectiveDuration || 180;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  const liveT = isCurrent ? player.getLiveTime() : 0;
+                  const startBar = Math.floor((liveT / dur) * BAR_COUNT);
+                  dragRef.current = {
+                    pointerId: e.pointerId,
+                    startX: e.clientX,
+                    startTime: liveT,
+                    lastTickBar: startBar,
+                    moved: false,
+                  };
+                  scrubTimeRef.current = liveT;
+                  scrubbingRef.current = true;
+                  setScrubbing(true);
+                  applyVisualFrame(liveT, dur);
+                  triggerHapticTick(10);
                 }}
-                className="h-11 flex items-center gap-[2.5px] cursor-pointer select-none"
-                title="Cliquer pour avancer dans le morceau"
+                onPointerMove={(e) => {
+                  const drag = dragRef.current;
+                  const dur = effectiveDuration || 180;
+                  if (!drag || drag.pointerId !== e.pointerId) return;
+                  const dx = drag.startX - e.clientX;
+                  if (Math.abs(dx) > 3) drag.moved = true;
+                  const deltaSec = (dx / TOTAL_TAPE_PX) * dur;
+                  const nextSec = Math.max(0, Math.min(dur, drag.startTime + deltaSec));
+                  scrubTimeRef.current = nextSec;
+                  applyVisualFrame(nextSec, dur);
+
+                  const barIndex = Math.floor((nextSec / dur) * BAR_COUNT);
+                  if (barIndex !== drag.lastTickBar) {
+                    drag.lastTickBar = barIndex;
+                    triggerHapticTick(24);
+                  }
+                }}
+                onPointerUp={(e) => {
+                  const drag = dragRef.current;
+                  if (!drag || drag.pointerId !== e.pointerId) return;
+                  dragRef.current = null;
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                  const targetSec = scrubTimeRef.current;
+                  const wasMoved = drag.moved;
+                  scrubbingRef.current = false;
+                  setScrubbing(false);
+                  if (isCurrent) {
+                    if (wasMoved) {
+                      player.seek(targetSec);
+                      applyVisualFrame(targetSec, effectiveDuration);
+                    } else {
+                      player.togglePlay();
+                    }
+                  } else {
+                    void player.playTrack(
+                      track,
+                      wasMoved ? targetSec : 0,
+                      group.versions.map((v) => v.track)
+                    );
+                  }
+                  triggerHapticTick(10);
+                }}
+                onPointerCancel={(e) => {
+                  const drag = dragRef.current;
+                  if (!drag || drag.pointerId !== e.pointerId) return;
+                  dragRef.current = null;
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                  scrubbingRef.current = false;
+                  setScrubbing(false);
+                }}
+                style={{ touchAction: 'none' }}
+                className="relative w-full h-12 overflow-hidden cursor-grab active:cursor-grabbing select-none"
+                title="Glisser horizontalement pour naviguer dans le son (ou cliquer pour lancer)"
               >
-                {waveformBars.map((h, i) => {
-                  const barPct = ((i + 0.5) / waveformBars.length) * 100;
-                  const played = isCurrent && barPct <= progressPct;
-                  return (
-                    <div
-                      key={i}
-                      style={{ height: `${h}%` }}
-                      className={`flex-1 rounded-full transition-colors ${
-                        played
-                          ? 'bg-[#FF5500]'
-                          : 'bg-slate-300/80 dark:bg-zinc-700 hover:bg-slate-400 dark:hover:bg-zinc-600'
-                      }`}
-                    />
-                  );
-                })}
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white dark:from-[#0c0c0f] to-transparent z-20" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white dark:from-[#0c0c0f] to-transparent z-20" />
+
+                <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
+                  <div
+                    ref={tapePlayedRef}
+                    style={{ width: `${TOTAL_TAPE_PX}px` }}
+                    className="absolute inset-y-0 left-full flex items-center will-change-transform"
+                  >
+                    {playedBarsEl}
+                  </div>
+                </div>
+
+                <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 overflow-hidden">
+                  <div
+                    ref={tapeUnplayedRef}
+                    style={{ width: `${TOTAL_TAPE_PX}px` }}
+                    className="absolute inset-y-0 left-0 flex items-center will-change-transform"
+                  >
+                    {unplayedBarsEl}
+                  </div>
+                </div>
+
+                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#FF5500] z-30" />
               </div>
-              <div className="flex items-center justify-between font-mono text-[10px] text-slate-400">
-                <span>{isCurrent ? fmt(player.currentTime) : '0:00'}</span>
-                <span>{effectiveDuration > 0 ? fmt(effectiveDuration) : 'Clique pour écouter'}</span>
-              </div>
+
+              <p
+                ref={timeTextRef}
+                className="text-center font-mono text-xs text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]"
+              >
+                {`${isCurrent ? fmt(player.currentTime) : '0:00'} / ${
+                  effectiveDuration > 0 ? fmt(effectiveDuration) : '—'
+                }`}
+              </p>
+
+              {track.markers.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-1.5 pt-0.5">
+                  {track.markers.map((mk) => (
+                    <button
+                      key={mk.id}
+                      type="button"
+                      onClick={() => {
+                        if (isCurrent) {
+                          player.seek(mk.timeSec);
+                          applyVisualFrame(mk.timeSec, effectiveDuration);
+                        } else {
+                          void player.playTrack(
+                            track,
+                            mk.timeSec,
+                            group.versions.map((v) => v.track)
+                          );
+                        }
+                        triggerHapticTick(10);
+                      }}
+                      className="rounded-full bg-slate-900/8 dark:bg-white/10 hover:bg-slate-900/14 dark:hover:bg-white/20 px-2.5 py-0.5 font-mono text-[10px] text-slate-700 dark:text-zinc-200 transition cursor-pointer"
+                    >
+                      {fmt(mk.timeSec)} · {mk.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* 5-Stage Strict Sequential Production Pipeline + Mood Tag */}
