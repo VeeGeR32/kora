@@ -9,6 +9,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Eye,
+  EyeOff,
   GitBranch,
   GripVertical,
   Link2,
@@ -66,6 +68,13 @@ function fmtTotalDuration(sec: number): string {
   return `${m}m ${s}s`;
 }
 
+function fmtTrackDuration(sec?: number): string {
+  if (!sec || !isFinite(sec)) return '';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 function fmtAddedDate(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -92,7 +101,25 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const coverInputRef = useRef<HTMLInputElement>(null);
   const todoSectionRef = useRef<HTMLDivElement>(null);
   const [todoInput, setTodoInput] = useState('');
-  const [projectTab, setProjectTab] = useState<'sprint' | 'tracklist' | 'harmonization'>('tracklist');
+  const [projectTab, setProjectTab] = useState<'tracklist' | 'sprint' | 'harmonization'>('tracklist');
+  const [showTracklistDetails, setShowTracklistDetails] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('kora_project_tracklist_details') !== '0';
+  });
+  const toggleTracklistDetails = () => {
+    setShowTracklistDetails((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('kora_project_tracklist_details', next ? '1' : '0');
+      }
+      if (!next) {
+        setShowAddTrack(false);
+        setOpenTrackMenuId(null);
+        setVersionPickerTrackId(null);
+      }
+      return next;
+    });
+  };
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [addTrackSearch, setAddTrackSearch] = useState('');
   const [addTrackSort, setAddTrackSort] = useState<'recent' | 'potential' | 'gap'>('potential');
@@ -132,11 +159,10 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     return registerFullscreenOverlay();
   }, [Boolean(project), registerFullscreenOverlay]);
 
-  // Default to "Sprint actif" view when opening a project that has an active sprint
+  // Always default to "Tracklist" first when opening a project
   useEffect(() => {
     if (!project) return;
-    const hasActiveSprint = (project.sprints || []).some((s) => !s.completedAt);
-    setProjectTab(hasActiveSprint ? 'sprint' : 'tracklist');
+    setProjectTab('tracklist');
   }, [project?.id]);
 
   const allGroups = useMemo(
@@ -617,6 +643,25 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               </button>
               <button
                 type="button"
+                onClick={toggleTracklistDetails}
+                title={
+                  showTracklistDetails
+                    ? 'Masquer les détails (vue plateforme / Spotify)'
+                    : 'Afficher les détails studio'
+                }
+                aria-label={
+                  showTracklistDetails ? 'Passer en vue épurée Spotify' : 'Afficher les détails studio'
+                }
+                className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
+                  !showTracklistDetails
+                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                    : 'bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
+                }`}
+              >
+                {showTracklistDetails ? <Eye size={16} /> : <EyeOff size={16} />}
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   const nextLocked = !isLocked;
                   updateMusicProject(project.id, { isTracklistLocked: nextLocked });
@@ -643,6 +688,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 type="button"
                 onClick={() => {
                   setProjectTab('tracklist');
+                  setShowTracklistDetails(true);
                   window.setTimeout(
                     () => todoSectionRef.current?.scrollIntoView({ behavior: 'smooth' }),
                     60
@@ -829,7 +875,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     {projectTracks.length > 1 ? 'titres' : 'titre'}
                     {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
                   </span>
-                  {isLocked && (
+                  {isLocked && showTracklistDetails && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/12 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-semibold">
                       <Lock size={9} /> Figée
                     </span>
@@ -851,19 +897,19 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               </button>
             </div>
 
-            {/* Minimalist Project Sub-Tabs: Sprint actif | Tracklist | Harmonisation */}
+            {/* Minimalist Project Sub-Tabs: Tracklist (default) | Sprint actif | Harmonisation */}
             <nav
               aria-label="Vues du projet"
               className="flex items-center gap-5 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               {(
                 [
+                  ['tracklist', 'Tracklist', String(projectTracks.length)],
                   [
                     'sprint',
                     'Sprint actif',
                     activeSprint ? `${activeSprint.trackIds.length}/3` : null,
                   ],
-                  ['tracklist', 'Tracklist', String(projectTracks.length)],
                   [
                     'harmonization',
                     'Harmonisation',
@@ -927,10 +973,11 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               />
             )}
 
-            {/* ================= SUB-TAB 2: TRACKLIST + BACKLOG + ROLL-UP TODO ================= */}
+            {/* ================= SUB-TAB 1: TRACKLIST + BACKLOG + ROLL-UP TODO ================= */}
             {projectTab === 'tracklist' && (
               <>
-            {/* Full-Width Soft Action Pill (routes to Backlog when tracklist is locked!) */}
+            {/* Full-Width Soft Action Pill (hidden in clean Spotify streaming view!) */}
+            {showTracklistDetails && (
             <button
               type="button"
               onClick={() => setShowAddTrack((v) => !v)}
@@ -943,10 +990,11 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   : 'Ajouter un son à ce projet'}
               </span>
             </button>
+            )}
 
             {/* Collapsible Library Track Picker with Analytical Sort */}
             <AnimatePresence>
-              {showAddTrack && (
+              {showTracklistDetails && showAddTrack && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -1200,85 +1248,96 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                             >
                               {displayTitle}
                             </p>
-                            <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-0.5 min-w-0">
-                              <span className="text-[11px] text-slate-400 dark:text-zinc-500 truncate min-w-0">
-                                {fmtAddedDate(trk.modifiedAt || trk.addedAt) ||
-                                  state.preferences.name ||
-                                  trk.artist}
-                              </span>
-                              {hasMultipleVersions && activeVersionEntry && (
-                                <span
-                                  data-no-drag="true"
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setOpenTrackMenuId(null);
-                                    setVersionPickerTrackId(versionPickerOpen ? null : trk.id);
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      e.preventDefault();
+                            {showTracklistDetails ? (
+                              <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-0.5 min-w-0">
+                                <span className="text-[11px] text-slate-400 dark:text-zinc-500 truncate min-w-0">
+                                  {fmtAddedDate(trk.modifiedAt || trk.addedAt) ||
+                                    state.preferences.name ||
+                                    trk.artist}
+                                </span>
+                                {hasMultipleVersions && activeVersionEntry && (
+                                  <span
+                                    data-no-drag="true"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
                                       e.stopPropagation();
                                       setOpenTrackMenuId(null);
                                       setVersionPickerTrackId(versionPickerOpen ? null : trk.id);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setOpenTrackMenuId(null);
+                                        setVersionPickerTrackId(versionPickerOpen ? null : trk.id);
+                                      }
+                                    }}
+                                    title={
+                                      isPinnedVersion
+                                        ? `Version fixée (${activeVersionEntry.versionLabel}) — cliquer pour changer`
+                                        : `Version auto (${activeVersionEntry.versionLabel}) — cliquer pour changer`
                                     }
-                                  }}
-                                  title={
-                                    isPinnedVersion
-                                      ? `Version fixée (${activeVersionEntry.versionLabel}) — cliquer pour changer`
-                                      : `Version auto (${activeVersionEntry.versionLabel}) — cliquer pour changer`
-                                  }
-                                  className={`shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold transition cursor-pointer ${
-                                    isPinnedVersion
-                                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25'
-                                      : 'bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/20'
-                                  }`}
-                                >
-                                  <GitBranch size={9} className="shrink-0" />
-                                  <span>{activeVersionEntry.versionLabel}</span>
-                                  <ChevronDown size={9} className="opacity-70 shrink-0" />
-                                </span>
-                              )}
-                              <span
-                                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkStatusMeta.badge}`}
-                              >
-                                {trkStatusMeta.shortLabel}
-                              </span>
-                              {(trkRatings.current !== null || trkRatings.potential !== null) && (
+                                    className={`shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold transition cursor-pointer ${
+                                      isPinnedVersion
+                                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 hover:bg-amber-500/25'
+                                        : 'bg-fuchsia-500/12 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-500/20'
+                                    }`}
+                                  >
+                                    <GitBranch size={9} className="shrink-0" />
+                                    <span>{activeVersionEntry.versionLabel}</span>
+                                    <ChevronDown size={9} className="opacity-70 shrink-0" />
+                                  </span>
+                                )}
                                 <span
-                                  title={`Note actuelle : ${trkRatings.current ?? '—'}/10 · Potentiel : ${trkRatings.potential ?? '—'}/10`}
-                                  className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
+                                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkStatusMeta.badge}`}
                                 >
-                                  {trkRatings.current !== null && <span>{trkRatings.current}</span>}
-                                  {trkRatings.current !== null && trkRatings.potential !== null && (
-                                    <span className="opacity-35">·</span>
-                                  )}
-                                  {trkRatings.potential !== null && (
-                                    <span className="text-violet-600 dark:text-violet-400">
-                                      ↗{trkRatings.potential}
-                                    </span>
-                                  )}
+                                  {trkStatusMeta.shortLabel}
                                 </span>
-                              )}
-                              {trkMoodMeta && (
-                                <span
-                                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkMoodMeta.badge}`}
-                                >
-                                  {trkMoodMeta.emoji}
-                                </span>
-                              )}
-                              {trkFixCount > 0 && (
-                                <span className="shrink-0 rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
-                                  [FIX] ×{trkFixCount}
-                                </span>
-                              )}
-                            </div>
+                                {(trkRatings.current !== null || trkRatings.potential !== null) && (
+                                  <span
+                                    title={`Note actuelle : ${trkRatings.current ?? '—'}/10 · Potentiel : ${trkRatings.potential ?? '—'}/10`}
+                                    className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
+                                  >
+                                    {trkRatings.current !== null && <span>{trkRatings.current}</span>}
+                                    {trkRatings.current !== null && trkRatings.potential !== null && (
+                                      <span className="opacity-35">·</span>
+                                    )}
+                                    {trkRatings.potential !== null && (
+                                      <span className="text-violet-600 dark:text-violet-400">
+                                        ↗{trkRatings.potential}
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                                {trkMoodMeta && (
+                                  <span
+                                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkMoodMeta.badge}`}
+                                  >
+                                    {trkMoodMeta.emoji}
+                                  </span>
+                                )}
+                                {trkFixCount > 0 && (
+                                  <span className="shrink-0 rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                                    [FIX] ×{trkFixCount}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-400 dark:text-zinc-500 truncate mt-0.5">
+                                {artistName}
+                              </p>
+                            )}
                           </div>
                         </button>
 
-                        <div data-no-drag="true" className="flex items-center gap-0.5 shrink-0">
-                          {onOpenTrackDetails && (
+                        <div data-no-drag="true" className="flex items-center gap-1 shrink-0">
+                          {trk.durationSec ? (
+                            <span className="font-mono text-[11px] text-slate-400 dark:text-zinc-500 tabular-nums pr-0.5">
+                              {fmtTrackDuration(trk.durationSec)}
+                            </span>
+                          ) : null}
+                          {showTracklistDetails && onOpenTrackDetails && (
                             <button
                               type="button"
                               onClick={() => onOpenTrackDetails(trk.id)}
@@ -1527,7 +1586,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
             </div>
 
             {/* Ultra-Discreet Collapsible "Mis de côté" (Maybe / Bench) Drawer */}
-            {benchTracks.length > 0 && (
+            {showTracklistDetails && benchTracks.length > 0 && (
               <div className="pt-1">
                 <button
                   type="button"
@@ -1633,7 +1692,8 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               </div>
             )}
 
-            {/* Integrated Project TODO Checklist */}
+            {/* Integrated Project TODO Checklist (hidden in clean Spotify streaming view!) */}
+            {showTracklistDetails && (
             <section
               ref={todoSectionRef}
               className="pt-4 border-t border-slate-100 dark:border-zinc-900 space-y-3"
@@ -1741,6 +1801,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 )}
               </form>
             </section>
+            )}
               </>
             )}
           </div>
