@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Circle,
@@ -21,6 +23,7 @@ import {
   Sparkles,
   Trash2,
   Undo,
+  Unlink,
   Upload,
   X,
 } from 'lucide-react';
@@ -33,6 +36,7 @@ import { groupMusicTracks } from '../../lib/musicVersioning';
 
 interface LyricsStudioProps {
   initialDocId?: string | null;
+  openRequest?: { docId: string; nonce: number } | null;
 }
 
 const STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
@@ -67,7 +71,7 @@ function fmtShortDate(iso?: string) {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
+export function LyricsStudio({ initialDocId, openRequest }: LyricsStudioProps) {
   const {
     state,
     addLyricsFolder,
@@ -78,12 +82,16 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
     restoreLyricsDoc,
     permanentDeleteLyricsDoc,
     emptyLyricsTrash,
+    updateMusicTrack,
+    notify,
   } = useApp();
 
   const player = useAudioPlayer();
 
-  // Only open the full-screen editor when a doc is explicitly opened (or passed via initialDocId)
-  const [activeDocId, setActiveDocId] = useState<string | null>(initialDocId || null);
+  // Only open the full-screen editor when a doc is explicitly opened (or passed via openRequest / initialDocId)
+  const [activeDocId, setActiveDocId] = useState<string | null>(
+    openRequest?.docId || initialDocId || null
+  );
   const [toolsOpen, setToolsOpen] = useState(false);
   const [beatBarOpen, setBeatBarOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'docs' | 'trash'>('docs');
@@ -94,6 +102,8 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
   const [beatMode, setBeatMode] = useState<'mp3' | 'youtube'>('mp3');
   const [newFolderInput, setNewFolderInput] = useState<string | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [trackPickerOpen, setTrackPickerOpen] = useState(false);
+  const [trackPickerSearch, setTrackPickerSearch] = useState('');
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -103,11 +113,14 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
   const isUndoing = useRef(false);
 
   useEffect(() => {
-    if (initialDocId) {
+    if (openRequest?.docId) {
+      setActiveDocId(openRequest.docId);
+      setViewMode('docs');
+    } else if (initialDocId) {
       setActiveDocId(initialDocId);
       setViewMode('docs');
     }
-  }, [initialDocId]);
+  }, [initialDocId, openRequest?.docId, openRequest?.nonce]);
 
   const activeDoc = useMemo(
     () => state.lyricsDocs.find((d) => d.id === activeDocId && !d.deletedAt) || null,
@@ -131,9 +144,19 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
     return map;
   }, [trackGroups]);
 
+  const linkedGroup = useMemo(() => {
+    if (!activeDoc?.linkedTrackId) return null;
+    return trackGroups.find((g) => g.allTrackIds.includes(activeDoc.linkedTrackId!)) || null;
+  }, [trackGroups, activeDoc?.linkedTrackId]);
+
   const linkedTrack = useMemo(
-    () => state.musicTracks.find((t) => t.id === activeDoc?.linkedTrackId) || null,
-    [state.musicTracks, activeDoc?.linkedTrackId]
+    () =>
+      (activeDoc?.linkedTrackId
+        ? state.musicTracks.find((t) => t.id === activeDoc.linkedTrackId)
+        : null) ||
+      linkedGroup?.latestTrack ||
+      null,
+    [state.musicTracks, activeDoc?.linkedTrackId, linkedGroup]
   );
 
   const linkedProdTrack = useMemo(
@@ -964,30 +987,35 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
                         )}
                       </button>
 
-                      {/* Clean Inline Track Selector */}
-                      <div className="flex-1 min-w-0 flex items-center gap-2">
-                        <select
-                          value={activeDoc.linkedTrackId || ''}
-                          onChange={(e) =>
-                            updateLyricsDoc(activeDoc.id, { linkedTrackId: e.target.value || undefined })
-                          }
-                          className="min-w-0 flex-1 bg-transparent text-xs font-medium text-slate-800 dark:text-zinc-100 outline-none cursor-pointer truncate"
+                      {/* Clean Clickable Searchable Track Picker Trigger (deduplicated songs!) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTrackPickerSearch('');
+                          setTrackPickerOpen(true);
+                        }}
+                        className="flex-1 min-w-0 flex items-center gap-1.5 text-left rounded-lg px-1.5 py-1 hover:bg-slate-200/60 dark:hover:bg-zinc-800/80 transition cursor-pointer"
+                        title="Choisir ou changer le son associé"
+                      >
+                        <span
+                          className={`text-xs font-medium truncate ${
+                            linkedTrack
+                              ? 'text-slate-800 dark:text-zinc-100'
+                              : 'text-slate-400 dark:text-zinc-500'
+                          }`}
                         >
-                          <option value="" className="bg-white dark:bg-zinc-900">
-                            Associer un son…
-                          </option>
-                          {state.musicTracks.map((t) => (
-                            <option key={t.id} value={t.id} className="bg-white dark:bg-zinc-900">
-                              {t.manualGroupTitle || t.title}
-                            </option>
-                          ))}
-                        </select>
+                          {linkedGroup?.baseTitle ||
+                            linkedTrack?.manualGroupTitle ||
+                            linkedTrack?.title ||
+                            'Associer un son…'}
+                        </span>
                         {linkedTrack?.bpm ? (
                           <span className="hidden sm:inline font-mono text-[10px] text-slate-400 shrink-0">
-                            {linkedTrack.bpm} BPM
+                            · {linkedTrack.bpm} BPM
                           </span>
                         ) : null}
-                      </div>
+                        <ChevronDown size={12} className="text-slate-400 shrink-0 ml-auto" />
+                      </button>
 
                       {/* 1-Tap Linked Prod Playback Button (when a *_prod exists for this song!) */}
                       {linkedProdTrack && (
@@ -1060,6 +1088,158 @@ export function LyricsStudio({ initialDocId }: LyricsStudioProps) {
                     )}
                   </>
                 )}
+              </div>
+            </div>
+          )}
+          {/* Searchable Deduplicated Song Picker Modal */}
+          {trackPickerOpen && (
+            <div
+              onClick={() => setTrackPickerOpen(false)}
+              className="fixed inset-0 z-[60] bg-slate-950/50 dark:bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#141418] border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[80dvh]"
+              >
+                <div className="px-4 py-3.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                    Associer un son ({trackGroups.length})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setTrackPickerOpen(false)}
+                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+
+                <div className="p-3 border-b border-slate-100 dark:border-zinc-800 space-y-2">
+                  <div className="flex items-center gap-2 rounded-xl bg-slate-100/80 dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-3 py-2">
+                    <Search size={13} className="text-slate-400 shrink-0" />
+                    <input
+                      autoFocus
+                      type="text"
+                      value={trackPickerSearch}
+                      onChange={(e) => setTrackPickerSearch(e.target.value)}
+                      placeholder="Rechercher un morceau…"
+                      className="w-full bg-transparent text-xs outline-none text-slate-900 dark:text-zinc-100 placeholder:text-slate-400"
+                    />
+                    {trackPickerSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setTrackPickerSearch('')}
+                        className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {linkedTrack && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (linkedGroup) {
+                          for (const id of linkedGroup.allTrackIds) {
+                            const t = state.musicTracks.find((x) => x.id === id);
+                            if (t?.linkedLyricsId === activeDoc.id) {
+                              updateMusicTrack(id, { linkedLyricsId: undefined });
+                            }
+                          }
+                        } else if (linkedTrack.linkedLyricsId === activeDoc.id) {
+                          updateMusicTrack(linkedTrack.id, { linkedLyricsId: undefined });
+                        }
+                        updateLyricsDoc(activeDoc.id, { linkedTrackId: undefined });
+                        notify('Son dissocié');
+                        setTrackPickerOpen(false);
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 dark:border-rose-900/60 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                    >
+                      <Unlink size={12} /> Dissocier « {linkedGroup?.baseTitle || linkedTrack.title} »
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                  {(() => {
+                    const q = trackPickerSearch.trim().toLowerCase();
+                    const matches = trackGroups.filter((g) => {
+                      if (!q) return true;
+                      return (
+                        g.baseTitle.toLowerCase().includes(q) ||
+                        g.versions.some((v) => v.track.title.toLowerCase().includes(q))
+                      );
+                    });
+                    if (matches.length === 0) {
+                      return (
+                        <p className="py-8 text-center text-xs text-slate-400">
+                          Aucun morceau trouvé.
+                        </p>
+                      );
+                    }
+                    return matches.map((g) => {
+                      const isSelected = Boolean(
+                        activeDoc.linkedTrackId && g.allTrackIds.includes(activeDoc.linkedTrackId)
+                      );
+                      return (
+                        <button
+                          key={g.groupKey}
+                          type="button"
+                          onClick={() => {
+                            // Clear previous track's reverse link if different
+                            if (linkedGroup && linkedGroup.groupKey !== g.groupKey) {
+                              for (const id of linkedGroup.allTrackIds) {
+                                const t = state.musicTracks.find((x) => x.id === id);
+                                if (t?.linkedLyricsId === activeDoc.id) {
+                                  updateMusicTrack(id, { linkedLyricsId: undefined });
+                                }
+                              }
+                            }
+                            updateLyricsDoc(activeDoc.id, { linkedTrackId: g.latestTrack.id });
+                            updateMusicTrack(g.latestTrack.id, { linkedLyricsId: activeDoc.id });
+                            notify(`Son « ${g.baseTitle} » associé ✓`);
+                            setTrackPickerOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              : 'hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-800 dark:text-zinc-100'
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-semibold truncate">{g.baseTitle}</span>
+                              {g.hasMultipleVersions && (
+                                <span
+                                  className={`font-mono text-[9px] rounded-full px-1.5 py-0.5 shrink-0 ${
+                                    isSelected
+                                      ? 'bg-white/15 dark:bg-black/15'
+                                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400'
+                                  }`}
+                                >
+                                  {g.latestVersionLabel} · {g.versions.length}
+                                </span>
+                              )}
+                              {g.prodTrack && (
+                                <span
+                                  className={`text-[9px] font-semibold rounded-full px-1.5 py-0.5 shrink-0 ${
+                                    isSelected
+                                      ? 'bg-emerald-500/30 text-emerald-200 dark:text-emerald-700'
+                                      : 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  Prod
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {isSelected && <Check size={14} className="shrink-0" />}
+                        </button>
+                      );
+                    });
+                  })()}
+                </div>
               </div>
             </div>
           )}

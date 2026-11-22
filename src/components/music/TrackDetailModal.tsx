@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Camera,
+  Check,
   ChevronLeft,
   Disc3,
   ExternalLink,
@@ -14,6 +15,7 @@ import {
   Pause,
   Play,
   Plus,
+  Search,
   Share2,
   Star,
   Tag,
@@ -86,6 +88,7 @@ export function TrackDetailModal({
     deleteTrackMarker,
     deleteMusicTrack,
     updateMusicProject,
+    updateLyricsDoc,
     notify,
   } = useApp();
   const player = useAudioPlayer();
@@ -95,6 +98,8 @@ export function TrackDetailModal({
   const [markerLabel, setMarkerLabel] = useState('');
   const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
   const [songTitleDraft, setSongTitleDraft] = useState('');
+  const [lyricsPickerOpen, setLyricsPickerOpen] = useState(false);
+  const [lyricsSearch, setLyricsSearch] = useState('');
 
   useEffect(() => {
     setSongTitleDraft(group?.baseTitle || '');
@@ -194,7 +199,7 @@ export function TrackDetailModal({
   const handleUploadCover = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const dataUrl = await compressCoverImage(file, 360);
+      const dataUrl = await compressCoverImage(file);
       setTrackGroupCover(allGroupTrackIds, { coverDataUrl: dataUrl });
       notify('Pochette du son mise à jour ✓');
     } catch {
@@ -464,27 +469,51 @@ export function TrackDetailModal({
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenLyrics(track);
-                      onClose();
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
-                  >
-                    <FileText size={13} className="text-fuchsia-500" />
-                    {linkedLyricsMeta ? (
-                      <>
+                  {linkedLyrics ? (
+                    <div className="inline-flex items-center rounded-full border border-slate-200 dark:border-zinc-800 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenLyrics(track);
+                          onClose();
+                        }}
+                        className="inline-flex items-center gap-1.5 pl-3.5 pr-2.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
+                      >
+                        <FileText size={13} className="text-fuchsia-500" />
                         <span>Texte</span>
-                        <span className={`h-1.5 w-1.5 rounded-full ${linkedLyricsMeta.dot}`} />
-                        <span className="opacity-75">{linkedLyricsMeta.label}</span>
-                      </>
-                    ) : track.linkedLyricsId ? (
-                      'Ouvrir le texte'
-                    ) : (
-                      '+ Texte'
-                    )}
-                  </button>
+                        {linkedLyricsMeta && (
+                          <>
+                            <span className={`h-1.5 w-1.5 rounded-full ${linkedLyricsMeta.dot}`} />
+                            <span className="opacity-75">{linkedLyricsMeta.label}</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLyricsSearch('');
+                          setLyricsPickerOpen(true);
+                        }}
+                        title="Changer ou dissocier le texte lié"
+                        aria-label="Changer le texte lié"
+                        className="px-2.5 py-2 border-l border-slate-200 dark:border-zinc-800 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
+                      >
+                        <Link2 size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLyricsSearch('');
+                        setLyricsPickerOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
+                    >
+                      <FileText size={13} className="text-fuchsia-500" />
+                      <span>+ Lier / Créer texte</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
@@ -882,6 +911,178 @@ export function TrackDetailModal({
             </section>
           </div>
         </div>
+        {/* Searchable Lyrics Picker Modal */}
+        {lyricsPickerOpen && (
+          <div
+            onClick={() => setLyricsPickerOpen(false)}
+            className="fixed inset-0 z-[60] bg-slate-950/50 dark:bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#141418] border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[80dvh]"
+            >
+              <div className="px-4 py-3.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                    Associer un texte à « {group.baseTitle} »
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLyricsPickerOpen(false)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="p-3 border-b border-slate-100 dark:border-zinc-800 space-y-2">
+                <div className="flex items-center gap-2 rounded-xl bg-slate-100/80 dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-3 py-2">
+                  <Search size={13} className="text-slate-400 shrink-0" />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={lyricsSearch}
+                    onChange={(e) => setLyricsSearch(e.target.value)}
+                    placeholder="Rechercher un texte existant…"
+                    className="w-full bg-transparent text-xs outline-none text-slate-900 dark:text-zinc-100 placeholder:text-slate-400"
+                  />
+                  {lyricsSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLyricsSearch('')}
+                      className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLyricsPickerOpen(false);
+                      onOpenLyrics(track);
+                      onClose();
+                    }}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-2 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+                  >
+                    <Plus size={13} />
+                    {linkedLyrics ? 'Ouvrir le texte lié' : 'Créer un nouveau texte'}
+                  </button>
+                  {linkedLyrics && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        for (const id of allGroupTrackIds) {
+                          const t = state.musicTracks.find((x) => x.id === id);
+                          if (t?.linkedLyricsId === linkedLyrics.id) {
+                            updateMusicTrack(id, { linkedLyricsId: undefined });
+                          }
+                        }
+                        if (
+                          linkedLyrics.linkedTrackId &&
+                          allGroupTrackIds.includes(linkedLyrics.linkedTrackId)
+                        ) {
+                          updateLyricsDoc(linkedLyrics.id, { linkedTrackId: undefined });
+                        }
+                        notify('Texte dissocié');
+                        setLyricsPickerOpen(false);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-xl border border-rose-200 dark:border-rose-900/60 px-3 py-2 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                    >
+                      <Unlink size={12} /> Dissocier
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {(() => {
+                  const q = lyricsSearch.trim().toLowerCase();
+                  const docs = state.lyricsDocs
+                    .filter((d) => !d.deletedAt)
+                    .filter(
+                      (d) =>
+                        !q ||
+                        d.title.toLowerCase().includes(q) ||
+                        d.content.toLowerCase().includes(q)
+                    )
+                    .sort(
+                      (a, b) =>
+                        new Date(b.lastModified || 0).getTime() -
+                        new Date(a.lastModified || 0).getTime()
+                    );
+                  if (docs.length === 0) {
+                    return (
+                      <p className="py-8 text-center text-xs text-slate-400">
+                        Aucun texte trouvé.
+                      </p>
+                    );
+                  }
+                  return docs.map((doc) => {
+                    const isSelected = linkedLyrics?.id === doc.id;
+                    const st = LYRICS_STATUS_META[doc.status || 1];
+                    const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        onClick={() => {
+                          // Unlink previous doc if different
+                          if (linkedLyrics && linkedLyrics.id !== doc.id) {
+                            if (
+                              linkedLyrics.linkedTrackId &&
+                              allGroupTrackIds.includes(linkedLyrics.linkedTrackId)
+                            ) {
+                              updateLyricsDoc(linkedLyrics.id, { linkedTrackId: undefined });
+                            }
+                          }
+                          updateMusicTrack(track.id, { linkedLyricsId: doc.id });
+                          updateLyricsDoc(doc.id, { linkedTrackId: track.id });
+                          notify(`Texte « ${doc.title || 'Sans titre'} » associé ✓`);
+                          setLyricsPickerOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            : 'hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-800 dark:text-zinc-100'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-semibold truncate">
+                              {doc.title || 'Sans titre'}
+                            </span>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium shrink-0 ${
+                                isSelected
+                                  ? 'bg-white/15 dark:bg-black/15 text-current'
+                                  : st.badge
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+                              {st.label}
+                            </span>
+                          </div>
+                          <p
+                            className={`text-[10px] truncate mt-0.5 ${
+                              isSelected ? 'opacity-70' : 'text-slate-400'
+                            }`}
+                          >
+                            {doc.content.trim().slice(0, 65) || `${words} mots`}
+                          </p>
+                        </div>
+                        {isSelected && <Check size={14} className="shrink-0" />}
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
       </motion.div>
     </AnimatePresence>
   );

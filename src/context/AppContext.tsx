@@ -1436,15 +1436,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setTrackGroupCover = useCallback(
     (trackIds: string[], cover: { coverDataUrl?: string | null; coverGradient?: string }) => {
+      if (trackIds.length === 0) return;
       const idSet = new Set(trackIds);
+      // Store inline coverDataUrl on ONLY ONE representative track in the group to avoid
+      // duplicating base64 image data across 5-15 versions (keeps Firestore well under 1 MiB!).
+      // resolveEffectiveTrackCover automatically shares it across all sibling versions.
+      const primaryId = trackIds[0];
       touch((prev) => ({
         ...prev,
         musicTracks: prev.musicTracks.map((t) => {
           if (!idSet.has(t.id)) return t;
           const next = { ...t };
           if ('coverDataUrl' in cover) {
-            next.coverDataUrl = cover.coverDataUrl || undefined;
-            if (!cover.coverDataUrl) {
+            if (cover.coverDataUrl) {
+              next.coverDataUrl = t.id === primaryId ? cover.coverDataUrl : undefined;
+            } else {
+              next.coverDataUrl = undefined;
               next.coverMediaId = undefined;
               next.cloudCoverUrl = undefined;
             }

@@ -39,7 +39,7 @@ import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu
 import { TrackDetailModal } from './TrackDetailModal';
 import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
-import { getProjectTrackIndividualCovers } from '../../lib/trackCover';
+import { findLinkedLyricsForTrack, getProjectTrackIndividualCovers } from '../../lib/trackCover';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import type { QuickAddContext } from '../QuickAddModal';
 
@@ -78,6 +78,12 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     setSubTabState(next);
     updateLastSession({ musicSubTab: next });
   };
+
+  const [lyricsOpenRequest, setLyricsOpenRequest] = useState<{
+    docId: string;
+    nonce: number;
+  } | null>(null);
+  const [showAllFavoritesMobile, setShowAllFavoritesMobile] = useState(false);
 
   const setSelectedLyricsId = (id: string | null) => {
     setSelectedLyricsIdState(id);
@@ -349,18 +355,33 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   };
 
   const openLinkedLyrics = (track: MusicTrack) => {
-    if (track.linkedLyricsId) {
-      setSelectedLyricsId(track.linkedLyricsId);
+    // Always close Song Page AND Project Page so the Text opens immediately on top!
+    setDetailTarget(null);
+    setOpenProjectId(null);
+
+    const grp = trackGroups.find((g) => g.allTrackIds.includes(track.id));
+    const existingDoc = findLinkedLyricsForTrack(
+      track,
+      state.lyricsDocs,
+      grp?.allTrackIds,
+      grp?.versions.map((v) => v.track)
+    );
+
+    if (existingDoc) {
+      setSelectedLyricsId(existingDoc.id);
+      setLyricsOpenRequest({ docId: existingDoc.id, nonce: Date.now() });
       setSubTab('lyrics');
       return;
     }
+
     const newDocId = addLyricsDoc({
-      title: track.title,
+      title: grp?.baseTitle || track.manualGroupTitle || track.title,
       linkedTrackId: track.id,
       linkedProjectId: track.linkedProjectId,
     });
     updateMusicTrack(track.id, { linkedLyricsId: newDocId });
     setSelectedLyricsId(newDocId);
+    setLyricsOpenRequest({ docId: newDocId, nonce: Date.now() });
     setSubTab('lyrics');
   };
 
@@ -607,41 +628,36 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
             </div>
           )}
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="tempo-card rounded-2xl p-4">
-              <p className="text-[11px] text-slate-400">Sons (dernière ver.)</p>
-              <div className="flex items-baseline gap-2 mt-1">
-                <p className="font-mono text-2xl font-semibold tabular-nums">
-                  {trackGroups.length}
-                </p>
-                {state.musicTracks.length > trackGroups.length && (
-                  <span className="font-mono text-[10px] text-slate-400">
-                    ({state.musicTracks.length} MP3)
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="tempo-card rounded-2xl p-4">
-              <p className="text-[11px] text-slate-400 flex items-center gap-1">
-                <Star size={11} className="text-amber-400" fill="currentColor" /> Favoris
-              </p>
-              <p className="font-mono text-2xl font-semibold tabular-nums text-amber-500 mt-1">
+          {/* Compact Minimalist Stats Strip */}
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-slate-400 dark:text-zinc-500 px-0.5">
+            <span>
+              <strong className="font-mono font-semibold text-slate-700 dark:text-zinc-200 tabular-nums">
+                {trackGroups.length}
+              </strong>{' '}
+              sons
+            </span>
+            <span className="opacity-40">·</span>
+            <span className="inline-flex items-center gap-1">
+              <Star size={10} className="text-amber-400" fill="currentColor" />
+              <strong className="font-mono font-semibold text-slate-700 dark:text-zinc-200 tabular-nums">
                 {favoriteGroups.length}
-              </p>
-            </div>
-            <div className="tempo-card rounded-2xl p-4">
-              <p className="text-[11px] text-slate-400">Textes</p>
-              <p className="font-mono text-2xl font-semibold tabular-nums mt-1">
+              </strong>{' '}
+              favoris
+            </span>
+            <span className="opacity-40">·</span>
+            <span>
+              <strong className="font-mono font-semibold text-slate-700 dark:text-zinc-200 tabular-nums">
                 {state.lyricsDocs.filter((d) => !d.deletedAt).length}
-              </p>
-            </div>
-            <div className="tempo-card rounded-2xl p-4">
-              <p className="text-[11px] text-slate-400">Albums / EPs</p>
-              <p className="font-mono text-2xl font-semibold tabular-nums mt-1">
+              </strong>{' '}
+              textes
+            </span>
+            <span className="opacity-40">·</span>
+            <span>
+              <strong className="font-mono font-semibold text-slate-700 dark:text-zinc-200 tabular-nums">
                 {state.musicProjects.length}
-              </p>
-            </div>
+              </strong>{' '}
+              projets
+            </span>
           </div>
 
           {/* ===== FEATURED SECTION 1: FAVORIS ★ ===== */}
@@ -681,38 +697,53 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {favoriteGroups.map((group) => {
-                  const activeTrack = getActiveTrackForGroup(group);
-                  const isCurrent = player.currentTrack?.id === activeTrack.id;
-                  const isPlayingProd = Boolean(
-                    group.prodTrack &&
-                      player.currentTrack?.id === group.prodTrack.id &&
-                      player.isPlaying
-                  );
-                  const favQueue = favoriteGroups.map(getActiveTrackForGroup);
-                  return (
-                    <TrackCard
-                      key={group.groupKey}
-                      group={group}
-                      selectedTrackId={activeTrack.id}
-                      isCurrentTrack={isCurrent}
-                      isPlaying={isCurrent && player.isPlaying}
-                      isPlayingProd={isPlayingProd}
-                      onPlay={(trk) =>
-                        player.currentTrack?.id === trk.id
-                          ? player.togglePlay()
-                          : void player.playTrack(trk, 0, favQueue)
-                      }
-                      onPlayProd={(pt) => handlePlayProd(pt, activeTrack)}
-                      onToggleFavorite={handleToggleFavorite}
-                      onOpenDetails={(g, tid) =>
-                        setDetailTarget({ groupKey: g.groupKey, trackId: tid })
-                      }
-                      onOpenContextMenu={handleOpenContextMenu}
-                    />
-                  );
-                })}
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {favoriteGroups.map((group, idx) => {
+                    const activeTrack = getActiveTrackForGroup(group);
+                    const isCurrent = player.currentTrack?.id === activeTrack.id;
+                    const isPlayingProd = Boolean(
+                      group.prodTrack &&
+                        player.currentTrack?.id === group.prodTrack.id &&
+                        player.isPlaying
+                    );
+                    const favQueue = favoriteGroups.map(getActiveTrackForGroup);
+                    const hideOnMobile = !showAllFavoritesMobile && idx >= 3;
+                    return (
+                      <div key={group.groupKey} className={hideOnMobile ? 'hidden sm:block' : ''}>
+                        <TrackCard
+                          group={group}
+                          selectedTrackId={activeTrack.id}
+                          isCurrentTrack={isCurrent}
+                          isPlaying={isCurrent && player.isPlaying}
+                          isPlayingProd={isPlayingProd}
+                          onPlay={(trk) =>
+                            player.currentTrack?.id === trk.id
+                              ? player.togglePlay()
+                              : void player.playTrack(trk, 0, favQueue)
+                          }
+                          onPlayProd={(pt) => handlePlayProd(pt, activeTrack)}
+                          onToggleFavorite={handleToggleFavorite}
+                          onOpenDetails={(g, tid) =>
+                            setDetailTarget({ groupKey: g.groupKey, trackId: tid })
+                          }
+                          onOpenContextMenu={handleOpenContextMenu}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {favoriteGroups.length > 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllFavoritesMobile((v) => !v)}
+                    className="sm:hidden w-full py-2 rounded-xl border border-slate-200/80 dark:border-zinc-800 text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 transition cursor-pointer"
+                  >
+                    {showAllFavoritesMobile
+                      ? 'Réduire les favoris'
+                      : `Voir tous les favoris (${favoriteGroups.length})`}
+                  </button>
+                )}
               </div>
             )}
           </section>
@@ -764,7 +795,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {recentGroups.map((group) => {
+                {recentGroups.map((group, idx) => {
                   const activeTrack = getActiveTrackForGroup(group);
                   const isCurrent = player.currentTrack?.id === activeTrack.id;
                   const isPlayingProd = Boolean(
@@ -774,25 +805,26 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                   );
                   const recentQueue = recentGroups.map(getActiveTrackForGroup);
                   return (
-                    <TrackCard
-                      key={group.groupKey}
-                      group={group}
-                      selectedTrackId={activeTrack.id}
-                      isCurrentTrack={isCurrent}
-                      isPlaying={isCurrent && player.isPlaying}
-                      isPlayingProd={isPlayingProd}
-                      onPlay={(trk) =>
-                        player.currentTrack?.id === trk.id
-                          ? player.togglePlay()
-                          : void player.playTrack(trk, 0, recentQueue)
-                      }
-                      onPlayProd={(pt) => handlePlayProd(pt, activeTrack)}
-                      onToggleFavorite={handleToggleFavorite}
-                      onOpenDetails={(g, tid) =>
-                        setDetailTarget({ groupKey: g.groupKey, trackId: tid })
-                      }
-                      onOpenContextMenu={handleOpenContextMenu}
-                    />
+                    <div key={group.groupKey} className={idx >= 4 ? 'hidden sm:block' : ''}>
+                      <TrackCard
+                        group={group}
+                        selectedTrackId={activeTrack.id}
+                        isCurrentTrack={isCurrent}
+                        isPlaying={isCurrent && player.isPlaying}
+                        isPlayingProd={isPlayingProd}
+                        onPlay={(trk) =>
+                          player.currentTrack?.id === trk.id
+                            ? player.togglePlay()
+                            : void player.playTrack(trk, 0, recentQueue)
+                        }
+                        onPlayProd={(pt) => handlePlayProd(pt, activeTrack)}
+                        onToggleFavorite={handleToggleFavorite}
+                        onOpenDetails={(g, tid) =>
+                          setDetailTarget({ groupKey: g.groupKey, trackId: tid })
+                        }
+                        onOpenContextMenu={handleOpenContextMenu}
+                      />
+                    </div>
                   );
                 })}
               </div>
@@ -1152,8 +1184,10 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
         </div>
       )}
 
-      {/* ================= TAB 3: LEXCORE STUDIO ÉCRITURE ================= */}
-      {subTab === 'lyrics' && <LyricsStudio initialDocId={selectedLyricsId} />}
+      {/* ================= TAB 3: TEXTES STUDIO ÉCRITURE ================= */}
+      {subTab === 'lyrics' && (
+        <LyricsStudio initialDocId={selectedLyricsId} openRequest={lyricsOpenRequest} />
+      )}
 
       {/* ================= MODALS & RIGHT-CLICK CONTEXT MENU ================= */}
       <ProjectAlbumModal

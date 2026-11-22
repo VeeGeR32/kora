@@ -55,7 +55,7 @@ function fmtAddedDate(iso?: string): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-async function resizeProjectCover(file: File, maxSize = 520): Promise<string> {
+async function resizeProjectCover(file: File, maxSize = 320): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -67,7 +67,7 @@ async function resizeProjectCover(file: File, maxSize = 520): Promise<string> {
         canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
       };
       img.onerror = reject;
       img.src = String(reader.result);
@@ -537,6 +537,15 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     trkGroup?.versions.map((v) => v.track)
                   );
                   const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+                  const trkOwnCover =
+                    trk.coverDataUrl ||
+                    trk.cloudCoverUrl ||
+                    trkGroup?.versions.find((v) => Boolean(v.track.coverDataUrl))?.track
+                      .coverDataUrl ||
+                    trkGroup?.versions.find((v) => Boolean(v.track.cloudCoverUrl))?.track
+                      .cloudCoverUrl ||
+                    null;
+                  const rowThumb = project.coverDataUrl || trkOwnCover;
                   return (
                     <div key={trk.id} className="py-3">
                       <div className="flex items-center justify-between gap-3">
@@ -566,9 +575,9 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                             )}
                           </span>
                           {/* Track Cover Thumbnail: project cover if set, otherwise each track's individual cover */}
-                          {(project.coverDataUrl || trk.coverDataUrl || trk.cloudCoverUrl) && (
+                          {rowThumb && (
                             <img
-                              src={project.coverDataUrl || trk.coverDataUrl || trk.cloudCoverUrl}
+                              src={rowThumb}
                               alt={trk.manualGroupTitle || trk.title}
                               className="h-9 w-9 rounded-lg object-cover border border-slate-200/70 dark:border-zinc-800 shrink-0"
                             />

@@ -293,7 +293,7 @@ export function TrackContextMenu({
               e.target.value = '';
               if (!file) return;
               try {
-                const dataUrl = await compressCoverImage(file, 360);
+                const dataUrl = await compressCoverImage(file);
                 setTrackGroupCover(allIds, { coverDataUrl: dataUrl });
                 notify(`Pochette de « ${group.baseTitle} » mise à jour ✓`);
                 onClose();

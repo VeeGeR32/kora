@@ -29,7 +29,9 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
-import type { AppState, FirebaseUserConfig } from '../types';
+import type { AppState, FirebaseUserConfig, MusicProject, MusicTrack } from '../types';
+import { groupMusicTracks } from './musicVersioning';
+import { recompressDataUrl } from './trackCover';
 
 export interface FirebaseBundle {
   app: FirebaseApp;
@@ -483,6 +485,37 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
       ? Math.floor(raw.updatedAt)
       : Date.now();
 
+  // Deduplicate coverDataUrl across sibling versions of each song group so
+  // base64 covers are stored only ONCE per song (prevents Firestore 1 MiB limit errors!)
+  const rawTracks: MusicTrack[] = Array.isArray(raw.musicTracks)
+    ? raw.musicTracks.slice(0, 500)
+    : [];
+  const dedupedTracks = rawTracks.map((t) => ({ ...t }));
+  if (dedupedTracks.length > 0) {
+    const groups = groupMusicTracks(dedupedTracks);
+    const trackById = new Map(dedupedTracks.map((t) => [t.id, t]));
+    for (const grp of groups) {
+      const ids = grp.allTrackIds;
+      let keptCover: string | undefined;
+      for (const id of ids) {
+        const trk = trackById.get(id);
+        if (trk?.coverDataUrl) {
+          keptCover = trk.coverDataUrl;
+          break;
+        }
+      }
+      if (keptCover) {
+        const ownerId = grp.latestTrack?.id || ids[0];
+        for (const id of ids) {
+          const trk = trackById.get(id);
+          if (!trk) continue;
+          if (id === ownerId) trk.coverDataUrl = keptCover;
+          else delete trk.coverDataUrl;
+        }
+      }
+    }
+  }
+
   return {
     events: Array.isArray(raw.events) ? raw.events.slice(0, 1000) : [],
     homework: Array.isArray(raw.homework) ? raw.homework.slice(0, 1000) : [],
@@ -499,7 +532,7 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     mealPresets: Array.isArray(raw.mealPresets) ? raw.mealPresets.slice(0, 200) : [],
     weights: Array.isArray(raw.weights) ? raw.weights.slice(0, 1500) : [],
     waterMlByDate: raw.waterMlByDate && typeof raw.waterMlByDate === 'object' ? raw.waterMlByDate : {},
-    musicTracks: Array.isArray(raw.musicTracks) ? raw.musicTracks.slice(0, 500) : [],
+    musicTracks: dedupedTracks,
     lyricsFolders: Array.isArray(raw.lyricsFolders) ? raw.lyricsFolders.slice(0, 200) : [],
     lyricsDocs: Array.isArray(raw.lyricsDocs) ? raw.lyricsDocs.slice(0, 500) : [],
     musicProjects: Array.isArray(raw.musicProjects) ? raw.musicProjects.slice(0, 200) : [],
@@ -546,6 +579,32 @@ export async function pushStateToCloud(
   if (!bundle) return state.updatedAt || Date.now();
   const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
   const cleanPayload = sanitizeStateForFirestore(state);
+
+  // Safety guard against Firestore's 1,048,576 byte document limit:
+  // If inline cover images push the payload near the limit, auto-recompress them cleanly.
+  const estimateBytes = (obj: Record<string, unknown>) =>
+    new TextEncoder().encode(JSON.stringify(obj)).length;
+
+  const passes: Array<[number, number]> = [
+    [200, 0.62],
+    [150, 0.52],
+  ];
+  for (const [maxPx, q] of passes) {
+    if (estimateBytes(cleanPayload) <= 920_000) break;
+    const tracks = cleanPayload.musicTracks as MusicTrack[];
+    for (const t of tracks) {
+      if (t.coverDataUrl && t.coverDataUrl.length > 10_000) {
+        t.coverDataUrl = await recompressDataUrl(t.coverDataUrl, maxPx, q);
+      }
+    }
+    const projects = cleanPayload.musicProjects as MusicProject[];
+    for (const p of projects) {
+      if (p.coverDataUrl && p.coverDataUrl.length > 16_000) {
+        p.coverDataUrl = await recompressDataUrl(p.coverDataUrl, maxPx + 40, q);
+      }
+    }
+  }
+
   await setDoc(refDoc, cleanPayload);
   return cleanPayload.updatedAt as number;
 }

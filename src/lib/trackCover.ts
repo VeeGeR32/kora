@@ -44,7 +44,11 @@ export function findLinkedLyricsForTrack(
 }
 
 /** Compresses any uploaded cover image cleanly for instant cross-device Firestore sync */
-export async function compressCoverImage(file: File, maxSize = 360): Promise<string> {
+export async function compressCoverImage(
+  file: File,
+  maxSize = 240,
+  quality = 0.7
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -56,13 +60,41 @@ export async function compressCoverImage(file: File, maxSize = 360): Promise<str
         canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.78));
+        resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = reject;
       img.src = String(reader.result);
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+/** Recompresses an existing inline data URL to shrink Firestore document size if needed */
+export async function recompressDataUrl(
+  dataUrl: string,
+  maxSize = 200,
+  quality = 0.62
+): Promise<string> {
+  if (typeof document === 'undefined' || !dataUrl.startsWith('data:image/')) return dataUrl;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const smaller = canvas.toDataURL('image/jpeg', quality);
+        resolve(smaller.length < dataUrl.length ? smaller : dataUrl);
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
   });
 }
 
