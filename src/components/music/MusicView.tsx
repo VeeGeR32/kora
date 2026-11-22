@@ -68,14 +68,12 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
   } = useApp();
 
   const player = useAudioPlayer();
-  const [selectedLyricsId, setSelectedLyricsIdState] = useState<string | null>(
-    () => state.preferences.lastSession?.selectedLyricsId || null
-  );
   const musicCloudSyncedRef = useRef(false);
 
   const setSubTab = (next: MusicSubTab) => {
     if (next !== 'lyrics') {
       setLyricsReturnContext(null);
+      setLyricsOpenRequest(null);
     }
     onSubTabChange(next);
   };
@@ -91,10 +89,13 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
   } | null>(null);
   const [showAllFavoritesMobile, setShowAllFavoritesMobile] = useState(false);
 
-  const setSelectedLyricsId = (id: string | null) => {
-    setSelectedLyricsIdState(id);
-    updateLastSession({ selectedLyricsId: id || undefined });
-  };
+  // Clear any pending lyrics open request when navigating away from the Textes tab
+  useEffect(() => {
+    if (subTab !== 'lyrics') {
+      setLyricsOpenRequest(null);
+      setLyricsReturnContext(null);
+    }
+  }, [subTab]);
 
   // Selected version override per groupKey (defaults to latest version)
   const [selectedVersionByGroup, setSelectedVersionByGroup] = useState<Record<string, string>>({});
@@ -155,7 +156,6 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
     if (!ls) return;
     if (ls.musicSubTab) onSubTabChange(ls.musicSubTab);
     if (ls.openMusicProjectId) setOpenProjectIdState(ls.openMusicProjectId);
-    if (ls.selectedLyricsId) setSelectedLyricsIdState(ls.selectedLyricsId);
   }, [lastCloudSyncAt]);
 
   // Grouped tracks (deduplicated by project/base name, latest version promoted to front!)
@@ -415,7 +415,6 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
     );
 
     if (existingDoc) {
-      setSelectedLyricsId(existingDoc.id);
       setLyricsOpenRequest({ docId: existingDoc.id, nonce: Date.now() });
       setSubTab('lyrics');
       return;
@@ -427,7 +426,6 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
       linkedProjectId: track.linkedProjectId,
     });
     updateMusicTrack(track.id, { linkedLyricsId: newDocId });
-    setSelectedLyricsId(newDocId);
     setLyricsOpenRequest({ docId: newDocId, nonce: Date.now() });
     setSubTab('lyrics');
   };
@@ -1233,20 +1231,20 @@ export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
       {/* ================= TAB 3: TEXTES STUDIO ÉCRITURE ================= */}
       {subTab === 'lyrics' && (
         <LyricsStudio
-          initialDocId={selectedLyricsId}
+          initialDocId={null}
           openRequest={lyricsOpenRequest}
           backLabel={lyricsReturnContext ? 'Retour' : 'Textes'}
-          onCloseDoc={
-            lyricsReturnContext
-              ? () => {
-                  const ctx = lyricsReturnContext;
-                  setLyricsReturnContext(null);
-                  onSubTabChange(ctx.prevSubTab);
-                  setOpenProjectId(ctx.openProjectId);
-                  setDetailTarget(ctx.detailTarget);
-                }
-              : undefined
-          }
+          onCloseDoc={() => {
+            setLyricsOpenRequest(null);
+            updateLastSession({ selectedLyricsId: undefined });
+            if (lyricsReturnContext) {
+              const ctx = lyricsReturnContext;
+              setLyricsReturnContext(null);
+              onSubTabChange(ctx.prevSubTab);
+              setOpenProjectId(ctx.openProjectId);
+              setDetailTarget(ctx.detailTarget);
+            }
+          }}
         />
       )}
 
