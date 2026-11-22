@@ -627,7 +627,7 @@ export function TrackDetailModal({
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="space-y-0.5">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    Pipeline · Étape {currentStepIdx + 1}/5
+                    Pipeline · Étape {TRACK_STATUS_META[workflow.status].step}/5
                   </span>
                   <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
                     {TRACK_STATUS_META[workflow.status].label}{' '}
@@ -673,8 +673,8 @@ export function TrackDetailModal({
                 </div>
               </div>
 
-              {/* Strict 5-Step Progress Track (adjacent steps clickable sequentially) */}
-              <div className="grid grid-cols-5 gap-1">
+              {/* Strict 6-Stage Progress Track (v0 Brouillon -> v4 Masterisé, adjacent steps clickable) */}
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
                 {TRACK_PIPELINE_ORDER.map((st, idx) => {
                   const meta = TRACK_STATUS_META[st];
                   const active = idx === currentStepIdx;

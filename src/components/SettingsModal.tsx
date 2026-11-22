@@ -2,34 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
-  Bell,
-  BellRing,
-  CalendarDays,
   Camera,
   Check,
   Disc3,
-  Dumbbell,
+  FileText,
+  ListMusic,
   Loader2,
   LogOut,
   Mail,
   Moon,
   Save,
-  Smartphone,
+  Star,
   Sun,
-  Timer,
   Trash2,
   X,
 } from 'lucide-react';
-import type { NotificationSettings } from '../types';
 import { useApp } from '../context/AppContext';
-import {
-  DEFAULT_NOTIFICATION_SETTINGS,
-  getNotificationEnvironment,
-  requestKoraNotificationPermission,
-  sendKoraNotification,
-  subscribeWebPush,
-  triggerServerClosedAppPush,
-} from '../lib/notifications';
 
 interface SettingsModalProps {
   open: boolean;
@@ -87,12 +75,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [bio, setBio] = useState('');
   const [avatarColor, setAvatarColor] = useState('slate');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [notifCfg, setNotifCfg] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
-  const [notifStatusMsg, setNotifStatusMsg] = useState<string | null>(null);
-  const [testingClosedPush, setTestingClosedPush] = useState(false);
   const [savedPulse, setSavedPulse] = useState(false);
 
-  const notifEnv = getNotificationEnvironment();
 
   // Sync draft state cleanly ONLY when modal opens (never clobbering active typing on avatar/theme updates!)
   useEffect(() => {
@@ -101,75 +85,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       setBio(state.preferences.bio || '');
       setAvatarColor(state.preferences.avatarColor || 'slate');
       setAvatarUrl(state.preferences.avatarUrl || '');
-      setNotifCfg({
-        ...DEFAULT_NOTIFICATION_SETTINGS,
-        ...(state.preferences.notifications || {}),
-      });
-      setNotifStatusMsg(null);
       setSavedPulse(false);
     }
     wasOpenRef.current = open;
   }, [open, state.preferences, cloudUser?.displayName]);
 
-  const handleEnableNotifications = async () => {
-    setNotifStatusMsg(null);
-    const res = await requestKoraNotificationPermission();
-    setNotifStatusMsg(res.message);
-    if (res.ok) {
-      const next: NotificationSettings = {
-        ...notifCfg,
-        enabled: true,
-        pushSubscription: res.subscription || notifCfg.pushSubscription,
-      };
-      setNotifCfg(next);
-      await forceSaveCloud({ notifications: next });
-      await sendKoraNotification({
-        title: 'Notifications Kora actives ✓',
-        body: 'Tu recevras tes rappels de cours, chronos gym & focus et briefings du jour.',
-        tag: 'kora-welcome-notif',
-      });
-    }
-  };
-
-  const handleTestClosedAppPush = async () => {
-    setTestingClosedPush(true);
-    setNotifStatusMsg('Connexion au serveur Push…');
-    try {
-      let sub = notifCfg.pushSubscription || (await subscribeWebPush());
-      if (!sub) {
-        const resPerm = await requestKoraNotificationPermission();
-        sub = resPerm.subscription || null;
-      }
-      if (!sub) {
-        setNotifStatusMsg(
-          'Abonnement Push indisponible sur cet appareil (sur iPhone, ouvre Kora depuis l’icône sur ton écran d’accueil).'
-        );
-        return;
-      }
-      if (!notifCfg.pushSubscription || notifCfg.pushSubscription.endpoint !== sub.endpoint) {
-        const next = { ...notifCfg, enabled: true, pushSubscription: sub };
-        setNotifCfg(next);
-        void forceSaveCloud({ notifications: next });
-      }
-      const result = await triggerServerClosedAppPush(sub, { delaySec: 10 });
-      setNotifStatusMsg(result.message);
-    } finally {
-      setTestingClosedPush(false);
-    }
-  };
-
-  const handleTestNotification = async () => {
-    const ok = await sendKoraNotification({
-      title: 'Test notification · Kora',
-      body: 'Parfait ! Les notifications push fonctionnent sur cet appareil.',
-      tag: `kora-test-${Date.now()}`,
-    });
-    setNotifStatusMsg(
-      ok
-        ? 'Notification de test envoyée ✓'
-        : 'Impossible d’envoyer : vérifie les autorisations de notification sur ton appareil.'
-    );
-  };
 
   const handleAvatarUpload = async (file: File | undefined) => {
     if (!file) return;
@@ -188,7 +108,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       bio: bio.trim() || undefined,
       avatarColor,
       avatarUrl: avatarUrl || undefined,
-      notifications: notifCfg,
     });
     setSavedPulse(true);
     window.setTimeout(() => setSavedPulse(false), 1800);
@@ -206,10 +125,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const providerLabel = cloudUser?.providerData?.[0]?.providerId === 'google.com' ? 'Google' : 'Email';
 
   const stats = [
-    { label: 'Créneaux', value: state.events.length, icon: CalendarDays },
-    { label: 'Séances', value: state.workouts.filter((w) => w.completed).length, icon: Dumbbell },
-    { label: 'Titres', value: state.musicTracks.length, icon: Disc3 },
-    { label: 'Focus', value: state.focusSessions.length, icon: Timer },
+    { label: 'Sons', value: state.musicTracks.length, icon: ListMusic },
+    { label: 'Projets', value: state.musicProjects.length, icon: Disc3 },
+    { label: 'Textes', value: state.lyricsDocs.filter((d) => !d.deletedAt).length, icon: FileText },
+    { label: 'Favoris', value: state.musicTracks.filter((t) => t.isFavorite).length, icon: Star },
   ];
 
   const inputCls =
@@ -350,7 +269,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     maxLength={160}
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    placeholder="Ex. L2 Info · Gym · Music"
+                    placeholder="Ex. Rappeur · Beatmaker · Paris"
                     className={inputCls}
                   />
                 </div>
@@ -412,151 +331,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                   {state.preferences.theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
                   {state.preferences.theme === 'dark' ? 'Clair' : 'Sombre'}
                 </button>
-              </div>
-
-              {/* iPhone & Web Push Notifications Card */}
-              <div className="rounded-xl border border-slate-200/70 dark:border-zinc-800/80 p-3.5 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Bell size={14} className="text-slate-600 dark:text-zinc-300 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
-                        Notifications Push (iPhone & Web)
-                      </p>
-                      <p className="text-[10px] text-slate-400 truncate">
-                        {notifEnv.permission === 'granted' && notifCfg.enabled
-                          ? 'Actives sur cet appareil'
-                          : notifEnv.needsHomeScreenInstall
-                          ? 'Ajoute l’app à l’écran d’accueil iPhone'
-                          : 'Rappels utiles de ta journée'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {notifEnv.permission === 'granted' ? (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => void handleTestNotification()}
-                        className="rounded-lg border border-slate-200 dark:border-zinc-700 px-2 py-1 text-[10px] font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
-                      >
-                        Tester
-                      </button>
-                      <button
-                        type="button"
-                        disabled={testingClosedPush}
-                        onClick={() => void handleTestClosedAppPush()}
-                        title="Envoie une vraie push Apple/Web dans 10s pour tester app fermée"
-                        className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2 py-1 text-[10px] font-semibold hover:opacity-90 disabled:opacity-50 cursor-pointer"
-                      >
-                        {testingClosedPush ? '10s…' : 'App fermée (10s)'}
-                      </button>
-                      <input
-                        type="checkbox"
-                        checked={notifCfg.enabled}
-                        onChange={(e) => setNotifCfg((c) => ({ ...c, enabled: e.target.checked }))}
-                        className="accent-slate-900 dark:accent-zinc-100 h-4 w-4 cursor-pointer"
-                      />
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => void handleEnableNotifications()}
-                      className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1.5 text-[11px] font-semibold cursor-pointer shrink-0"
-                    >
-                      <BellRing size={11} /> Activer
-                    </button>
-                  )}
-                </div>
-
-                {notifEnv.needsHomeScreenInstall && (
-                  <div className="rounded-lg bg-slate-50 dark:bg-zinc-900/70 border border-slate-200/70 dark:border-zinc-800 px-2.5 py-2 text-[11px] text-slate-600 dark:text-zinc-300 flex items-start gap-2 leading-relaxed">
-                    <Smartphone size={13} className="shrink-0 mt-0.5 text-indigo-500" />
-                    <span>
-                      Sur iPhone (iOS 16.4+), ouvre Safari → <strong>Partager</strong> →{' '}
-                      <strong>Sur l’écran d’accueil</strong>, puis ouvre Kora depuis ton écran d’accueil pour activer les push.
-                    </span>
-                  </div>
-                )}
-
-                {notifStatusMsg && (
-                  <p className="text-[11px] text-slate-600 dark:text-zinc-300 leading-relaxed">
-                    {notifStatusMsg}
-                  </p>
-                )}
-
-                {/* Useful Notification Cases Toggles */}
-                <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-zinc-800/80">
-                  <label className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-zinc-300 cursor-pointer py-0.5">
-                    <span>Rappel 15 min avant chaque créneau (Cours, Sport, RDV)</span>
-                    <input
-                      type="checkbox"
-                      checked={notifCfg.eventsBeforeMin > 0}
-                      onChange={(e) =>
-                        setNotifCfg((c) => ({ ...c, eventsBeforeMin: e.target.checked ? 15 : 0 }))
-                      }
-                      className="accent-slate-900 dark:accent-zinc-100 h-3.5 w-3.5 cursor-pointer"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-zinc-300 cursor-pointer py-0.5">
-                    <span>Fin de chrono Repos Gym & Mode Focus</span>
-                    <input
-                      type="checkbox"
-                      checked={notifCfg.timers}
-                      onChange={(e) => setNotifCfg((c) => ({ ...c, timers: e.target.checked }))}
-                      className="accent-slate-900 dark:accent-zinc-100 h-3.5 w-3.5 cursor-pointer"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-zinc-300 cursor-pointer py-0.5">
-                    <span>Devoirs à rendre & Évals / DS proches</span>
-                    <input
-                      type="checkbox"
-                      checked={notifCfg.homeworkAndExams}
-                      onChange={(e) =>
-                        setNotifCfg((c) => ({ ...c, homeworkAndExams: e.target.checked }))
-                      }
-                      className="accent-slate-900 dark:accent-zinc-100 h-3.5 w-3.5 cursor-pointer"
-                    />
-                  </label>
-
-                  <label className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-zinc-300 cursor-pointer py-0.5">
-                    <span>Rappel Hydratation & Protéines (après-midi)</span>
-                    <input
-                      type="checkbox"
-                      checked={notifCfg.hydrationAndMacros}
-                      onChange={(e) =>
-                        setNotifCfg((c) => ({ ...c, hydrationAndMacros: e.target.checked }))
-                      }
-                      className="accent-slate-900 dark:accent-zinc-100 h-3.5 w-3.5 cursor-pointer"
-                    />
-                  </label>
-
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-slate-700 dark:text-zinc-300 py-0.5">
-                    <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
-                      <span>Briefing matin & Bilan soir</span>
-                    </label>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <input
-                        type="time"
-                        value={notifCfg.morningHour}
-                        onChange={(e) =>
-                          setNotifCfg((c) => ({ ...c, morningHour: e.target.value || '07:45' }))
-                        }
-                        className="rounded-md border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px]"
-                      />
-                      <input
-                        type="checkbox"
-                        checked={notifCfg.dailyBriefing}
-                        onChange={(e) =>
-                          setNotifCfg((c) => ({ ...c, dailyBriefing: e.target.checked }))
-                        }
-                        className="accent-slate-900 dark:accent-zinc-100 h-3.5 w-3.5 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
               </div>
 
               {/* Sync Error Alert (only if an actual error occurs) */}

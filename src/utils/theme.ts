@@ -95,6 +95,7 @@ export const WORKOUT_FOCUSES: WorkoutFocus[] = [
 ];
 
 export const TRACK_PIPELINE_ORDER: TrackStatus[] = [
+  'brouillon',
   'squelette',
   'maquette',
   'rec-final',
@@ -105,7 +106,7 @@ export const TRACK_PIPELINE_ORDER: TrackStatus[] = [
 export const TRACK_STATUS_META: Record<
   TrackStatus,
   {
-    step: 1 | 2 | 3 | 4 | 5;
+    step: 0 | 1 | 2 | 3 | 4 | 5;
     label: string;
     shortLabel: string;
     hint: string;
@@ -113,12 +114,20 @@ export const TRACK_STATUS_META: Record<
     dot: string;
   }
 > = {
+  brouillon: {
+    step: 0,
+    label: 'Brouillon (v0)',
+    shortLabel: 'Brouillon v0',
+    hint: 'Idée brute ou structure en cours (squelette pas encore complet)',
+    badge: 'bg-zinc-500/12 text-zinc-500 dark:text-zinc-400',
+    dot: 'bg-zinc-400',
+  },
   squelette: {
     step: 1,
     label: 'Squelette',
     shortLabel: 'Squelette',
     hint: '100 % de la structure écrite, balises [FIX] autorisées',
-    badge: 'bg-slate-500/12 text-slate-600 dark:text-zinc-300',
+    badge: 'bg-slate-500/12 text-slate-700 dark:text-zinc-200',
     dot: 'bg-slate-400',
   },
   maquette: {
@@ -157,8 +166,10 @@ export const TRACK_STATUS_META: Record<
 
 export function normalizeTrackStatus(raw?: string | null): TrackStatus {
   switch (raw) {
-    case 'squelette':
+    case 'brouillon':
     case 'idee':
+      return 'brouillon';
+    case 'squelette':
     case 'ecriture':
       return 'squelette';
     case 'maquette':
@@ -174,7 +185,7 @@ export function normalizeTrackStatus(raw?: string | null): TrackStatus {
     case 'sorti':
       return 'masterise';
     default:
-      return 'maquette';
+      return 'brouillon';
   }
 }
 

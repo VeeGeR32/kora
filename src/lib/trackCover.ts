@@ -8,7 +8,7 @@ import type {
 } from '../types';
 import { getCurrentFirebaseIdToken } from './firebase';
 import { getDeterministicGradientId } from './musicVersioning';
-import { normalizeTrackStatus, TRACK_PIPELINE_ORDER } from '../utils/theme';
+import { normalizeTrackStatus } from '../utils/theme';
 
 export const LYRICS_STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
   1: {
@@ -80,13 +80,9 @@ export function resolveTrackWorkflow(
   track: MusicTrack,
   siblingTracks?: MusicTrack[]
 ): { status: TrackStatus; mood: TrackMood | null } {
-  const candidates = [track, ...(siblingTracks || [])];
-  let bestIdx = TRACK_PIPELINE_ORDER.indexOf(normalizeTrackStatus(track.status));
-  for (const s of candidates) {
-    const idx = TRACK_PIPELINE_ORDER.indexOf(normalizeTrackStatus(s.status));
-    if (idx > bestIdx) bestIdx = idx;
-  }
-  const status = TRACK_PIPELINE_ORDER[Math.max(0, bestIdx)] || 'maquette';
+  const rawStatus =
+    track.status || siblingTracks?.find((s) => Boolean(s.status))?.status || 'brouillon';
+  const status = normalizeTrackStatus(rawStatus);
   const mood =
     track.mood ||
     siblingTracks?.find((s) => Boolean(s.mood))?.mood ||

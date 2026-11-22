@@ -23,7 +23,13 @@ export type QuickAddMode =
 
 export type SetType = 'warmup' | 'normal' | 'failure';
 
-export type TrackStatus = 'squelette' | 'maquette' | 'rec-final' | 'pre-mix' | 'masterise';
+export type TrackStatus =
+  | 'brouillon'
+  | 'squelette'
+  | 'maquette'
+  | 'rec-final'
+  | 'pre-mix'
+  | 'masterise';
 export type TrackMood = 'energetic' | 'chill' | 'experimental';
 
 export type ProjectKind = 'single' | 'ep' | 'album' | 'mixtape';
@@ -425,7 +431,7 @@ export interface ActiveFocusSession {
 
 export interface LastSessionState {
   activeTab: ActiveTab;
-  musicSubTab?: 'dashboard' | 'library' | 'lyrics';
+  musicSubTab?: 'dashboard' | 'library' | 'projects' | 'lyrics';
   sportSubTab?: 'gym' | 'nutrition' | 'poids';
   studiesSubTab?: 'exams' | 'cursus' | 'docs' | 'pronote';
   openMusicProjectId?: string;

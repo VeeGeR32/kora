@@ -415,8 +415,8 @@ export function ProjectSprintView({
                       </div>
                     </div>
 
-                    {/* Inline 1-Tap Sequential Pipeline Bar (1..5) */}
-                    <div className="flex items-center gap-1">
+                    {/* Inline 1-Tap Sequential Pipeline Bar (0..5: Brouillon v0 -> Master v4) */}
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
                       {TRACK_PIPELINE_ORDER.map((st, idx) => {
                         const meta = TRACK_STATUS_META[st];
                         const active = idx === stepIdx;

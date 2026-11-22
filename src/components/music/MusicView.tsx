@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import {
   ArrowDownAZ,
   Calendar,
-  CalendarPlus,
   GitBranch,
   Layers,
   ListChecks,
@@ -31,7 +29,7 @@ import {
   parseTrackVersion,
   type TrackGroup,
 } from '../../lib/musicVersioning';
-import { todayISO, uid } from '../../utils/dates';
+import { uid } from '../../utils/dates';
 import { LyricsStudio } from './LyricsStudio';
 import { ProjectAlbumModal } from './ProjectAlbumModal';
 import { TrackCard } from './TrackCard';
@@ -45,17 +43,17 @@ import {
   resolveTrackRatings,
 } from '../../lib/trackCover';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
-import type { QuickAddContext } from '../QuickAddModal';
+
+export type MusicSubTab = 'dashboard' | 'library' | 'projects' | 'lyrics';
 
 interface MusicViewProps {
-  onOpenQuickAdd: (ctx?: QuickAddContext) => void;
+  subTab: MusicSubTab;
+  onSubTabChange: (next: MusicSubTab) => void;
 }
-
-type MusicSubTab = 'dashboard' | 'library' | 'lyrics';
 type LibraryFilter = 'all' | 'favorites' | 'todo';
 type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential' | 'gap';
 
-export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
+export function MusicView({ subTab, onSubTabChange }: MusicViewProps) {
   const {
     state,
     lastCloudSyncAt,
@@ -70,9 +68,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   } = useApp();
 
   const player = useAudioPlayer();
-  const [subTab, setSubTabState] = useState<MusicSubTab>(
-    () => state.preferences.lastSession?.musicSubTab || 'dashboard'
-  );
   const [selectedLyricsId, setSelectedLyricsIdState] = useState<string | null>(
     () => state.preferences.lastSession?.selectedLyricsId || null
   );
@@ -82,8 +77,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     if (next !== 'lyrics') {
       setLyricsReturnContext(null);
     }
-    setSubTabState(next);
-    updateLastSession({ musicSubTab: next });
+    onSubTabChange(next);
   };
 
   const [lyricsOpenRequest, setLyricsOpenRequest] = useState<{
@@ -159,7 +153,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     musicCloudSyncedRef.current = true;
     const ls = state.preferences.lastSession;
     if (!ls) return;
-    if (ls.musicSubTab) setSubTabState(ls.musicSubTab);
+    if (ls.musicSubTab) onSubTabChange(ls.musicSubTab);
     if (ls.openMusicProjectId) setOpenProjectIdState(ls.openMusicProjectId);
     if (ls.selectedLyricsId) setSelectedLyricsIdState(ls.selectedLyricsId);
   }, [lastCloudSyncAt]);
@@ -549,17 +543,179 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     [subTab, filteredLibraryGroups, trackGroups, selectedVersionByGroup]
   );
 
+  const renderProjectsSection = (compact: boolean) => {
+    const list = compact ? state.musicProjects.slice(0, 4) : state.musicProjects;
+    return (
+          <section className="space-y-3.5 pt-1">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                {compact ? 'Projets' : 'Albums, EP, Singles & Mixtapes'}
+              </h2>
+              {compact ? (
+                state.musicProjects.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSubTab('projects')}
+                    className="text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 hover:underline cursor-pointer"
+                  >
+                    Tout voir ({state.musicProjects.length}) →
+                  </button>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowNewProj((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-xs font-semibold cursor-pointer"
+                >
+                  <Plus size={13} /> Nouveau projet
+                </button>
+              )}
+            </div>
+
+            {!compact && showNewProj && (
+              <form
+                onSubmit={handleCreateProject}
+                className="tempo-card rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-2.5"
+              >
+                <input
+                  autoFocus
+                  type="text"
+                  required
+                  value={newProjTitle}
+                  onChange={(e) => setNewProjTitle(e.target.value)}
+                  placeholder="Nom du projet (ex. EP Minuit)"
+                  className="sm:col-span-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 text-xs"
+                />
+                <select
+                  value={newProjKind}
+                  onChange={(e) => setNewProjKind(e.target.value as ProjectKind)}
+                  className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 text-xs"
+                >
+                  <option value="single">Single</option>
+                  <option value="ep">EP</option>
+                  <option value="album">Album</option>
+                  <option value="mixtape">Mixtape</option>
+                </select>
+                <div className="flex gap-1.5">
+                  <input
+                    type="date"
+                    value={newProjDate}
+                    onChange={(e) => setNewProjDate(e.target.value)}
+                    className="flex-1 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2 py-2 font-mono text-xs"
+                  />
+                  <button
+                    type="submit"
+                    className="rounded-xl bg-fuchsia-600 text-white px-3 py-2 text-xs font-semibold cursor-pointer"
+                  >
+                    Créer
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {state.musicProjects.length === 0 ? (
+              <div className="tempo-card rounded-3xl p-7 text-center space-y-2">
+                <p className="text-xs text-slate-400">
+                  Crée un projet (Single, EP, Album) pour regrouper plusieurs sons, sa pochette et sa TODO globale.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSubTab('projects');
+                    setShowNewProj(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold cursor-pointer"
+                >
+                  <Plus size={13} /> Créer un projet
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
+                {list.map((proj) => {
+                  const done = proj.steps.filter((s) => s.done).length;
+                  const total = proj.steps.length;
+                  const linkedTracks = state.musicTracks.filter(
+                    (t) => t.linkedProjectId === proj.id || proj.trackIds.includes(t.id)
+                  );
+                  const isPlayingProj =
+                    player.isPlaying &&
+                    linkedTracks.some((t) => t.id === player.currentTrack?.id);
+
+                  return (
+                    <div
+                      key={proj.id}
+                      onClick={() => setOpenProjectId(proj.id)}
+                      className="group cursor-pointer space-y-2.5"
+                    >
+                      <div className="relative aspect-square w-full rounded-[26px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015] group-active:scale-[0.985]">
+                        <ProjectCoverArtwork
+                          title={proj.title}
+                          projectCoverUrl={proj.coverDataUrl}
+                          trackCoverUrls={getProjectTrackIndividualCovers(linkedTracks)}
+                          gradientId={proj.coverGradient}
+                        />
+
+                        <span className="absolute top-2.5 left-2.5 rounded-full bg-black/35 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
+                          {proj.kind}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (linkedTracks.length === 0) {
+                              setOpenProjectId(proj.id);
+                              return;
+                            }
+                            if (isPlayingProj) {
+                              player.togglePlay();
+                            } else {
+                              void player.playTrack(linkedTracks[0], 0, linkedTracks);
+                            }
+                          }}
+                          aria-label={`Lire ${proj.title}`}
+                          className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-slate-950/80 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg backdrop-blur-xs cursor-pointer"
+                        >
+                          {isPlayingProj ? (
+                            <Pause size={16} fill="currentColor" />
+                          ) : (
+                            <Play size={16} fill="currentColor" className="ml-0.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="px-0.5 space-y-0.5">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                            {proj.title}
+                          </h3>
+                          {total > 0 && (
+                            <span className="font-mono text-[10px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 shrink-0">
+                              {done}/{total}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-400 dark:text-zinc-500 truncate">
+                          {state.preferences.name || 'Moi'} · {linkedTracks.length} son
+                          {linkedTracks.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+    );
+  };
+
   return (
     <div className="space-y-5 pb-14">
-      {/* Minimalist Header + Compact Sync + Fluid Underline Tabs */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-zinc-50">
-              Music
-            </h1>
-          </div>
-
+      {/* Section Header + Compact Drive Sync */}
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
+          {({ dashboard: 'Accueil', library: 'Sons', projects: 'Projets', lyrics: 'Textes' } as Record<MusicSubTab, string>)[subTab]}
+        </h1>
           {/* Ultra-compact Sync & Drive Setup Controls */}
           <div className="flex items-center gap-1.5">
             {permanentDriveEmail && !permanentDriveReady && (
@@ -594,53 +750,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               )}
             </button>
           </div>
-        </div>
-
-        {/* Minimalist Fluid Underline Tab Bar */}
-        <nav
-          aria-label="Sections Music"
-          className="flex items-center gap-6 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {(
-            [
-              ['dashboard', 'Aperçu', null],
-              ['library', 'Sons', trackGroups.length],
-              ['lyrics', 'Textes', state.lyricsDocs.filter((d) => !d.deletedAt).length],
-            ] as const
-          ).map(([id, label, count]) => {
-            const active = subTab === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setSubTab(id)}
-                className={`relative pb-2.5 text-[13px] font-medium transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  active
-                    ? 'text-slate-950 dark:text-white'
-                    : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                }`}
-              >
-                <span>{label}</span>
-                {count !== null && count > 0 && (
-                  <span
-                    className={`font-mono text-[10px] ${
-                      active ? 'text-slate-500 dark:text-zinc-400' : 'opacity-65'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                )}
-                {active && (
-                  <motion.span
-                    layoutId="musicMinimalTabUnderline"
-                    transition={{ type: 'spring', stiffness: 520, damping: 36 }}
-                    className="absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-slate-950 dark:bg-white"
-                  />
-                )}
-              </button>
-            );
-          })}
-        </nav>
       </div>
 
       {/* ================= TAB 1: DASHBOARD MUSIC (MISE EN AVANT) ================= */}
@@ -815,14 +924,6 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => onOpenQuickAdd({ mode: 'music', date: todayISO() })}
-                  className="inline-flex items-center gap-1 rounded-xl border border-slate-200 dark:border-zinc-800 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
-                >
-                  <CalendarPlus size={13} />
-                  Session
-                </button>
-                <button
-                  type="button"
                   onClick={() => setSubTab('library')}
                   className="text-xs font-medium text-fuchsia-600 dark:text-fuchsia-400 hover:underline cursor-pointer"
                 >
@@ -884,154 +985,12 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
             )}
           </section>
 
-          {/* ===== SECTION 3: PROJETS / ALBUMS / EPS ([UNTITLED] STYLE) ===== */}
-          <section className="space-y-3.5 pt-1">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                Projets & Albums (EP, Singles, Mixtapes)
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowNewProj((v) => !v)}
-                className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-xs font-semibold cursor-pointer"
-              >
-                <Plus size={13} /> Nouveau projet
-              </button>
-            </div>
-
-            {showNewProj && (
-              <form
-                onSubmit={handleCreateProject}
-                className="tempo-card rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-2.5"
-              >
-                <input
-                  autoFocus
-                  type="text"
-                  required
-                  value={newProjTitle}
-                  onChange={(e) => setNewProjTitle(e.target.value)}
-                  placeholder="Nom du projet (ex. EP Minuit)"
-                  className="sm:col-span-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 text-xs"
-                />
-                <select
-                  value={newProjKind}
-                  onChange={(e) => setNewProjKind(e.target.value as ProjectKind)}
-                  className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 text-xs"
-                >
-                  <option value="single">Single</option>
-                  <option value="ep">EP</option>
-                  <option value="album">Album</option>
-                  <option value="mixtape">Mixtape</option>
-                </select>
-                <div className="flex gap-1.5">
-                  <input
-                    type="date"
-                    value={newProjDate}
-                    onChange={(e) => setNewProjDate(e.target.value)}
-                    className="flex-1 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2 py-2 font-mono text-xs"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-xl bg-fuchsia-600 text-white px-3 py-2 text-xs font-semibold cursor-pointer"
-                  >
-                    Créer
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {state.musicProjects.length === 0 ? (
-              <div className="tempo-card rounded-3xl p-7 text-center space-y-2">
-                <p className="text-xs text-slate-400">
-                  Crée un projet (Single, EP, Album) pour regrouper plusieurs sons, sa pochette et sa TODO globale.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowNewProj(true)}
-                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold cursor-pointer"
-                >
-                  <Plus size={13} /> Créer un projet
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
-                {state.musicProjects.map((proj) => {
-                  const done = proj.steps.filter((s) => s.done).length;
-                  const total = proj.steps.length;
-                  const linkedTracks = state.musicTracks.filter(
-                    (t) => t.linkedProjectId === proj.id || proj.trackIds.includes(t.id)
-                  );
-                  const isPlayingProj =
-                    player.isPlaying &&
-                    linkedTracks.some((t) => t.id === player.currentTrack?.id);
-
-                  return (
-                    <div
-                      key={proj.id}
-                      onClick={() => setOpenProjectId(proj.id)}
-                      className="group cursor-pointer space-y-2.5"
-                    >
-                      <div className="relative aspect-square w-full rounded-[26px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015] group-active:scale-[0.985]">
-                        <ProjectCoverArtwork
-                          title={proj.title}
-                          projectCoverUrl={proj.coverDataUrl}
-                          trackCoverUrls={getProjectTrackIndividualCovers(linkedTracks)}
-                          gradientId={proj.coverGradient}
-                        />
-
-                        <span className="absolute top-2.5 left-2.5 rounded-full bg-black/35 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
-                          {proj.kind}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (linkedTracks.length === 0) {
-                              setOpenProjectId(proj.id);
-                              return;
-                            }
-                            if (isPlayingProj) {
-                              player.togglePlay();
-                            } else {
-                              void player.playTrack(linkedTracks[0], 0, linkedTracks);
-                            }
-                          }}
-                          aria-label={`Lire ${proj.title}`}
-                          className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-slate-950/80 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg backdrop-blur-xs cursor-pointer"
-                        >
-                          {isPlayingProj ? (
-                            <Pause size={16} fill="currentColor" />
-                          ) : (
-                            <Play size={16} fill="currentColor" className="ml-0.5" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="px-0.5 space-y-0.5">
-                        <div className="flex items-center justify-between gap-1.5">
-                          <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                            {proj.title}
-                          </h3>
-                          {total > 0 && (
-                            <span className="font-mono text-[10px] font-semibold text-fuchsia-600 dark:text-fuchsia-400 shrink-0">
-                              {done}/{total}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-400 dark:text-zinc-500 truncate">
-                          {state.preferences.name || 'Moi'} · {linkedTracks.length} son
-                          {linkedTracks.length > 1 ? 's' : ''}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+          {renderProjectsSection(true)}
         </div>
       )}
+
+      {/* ================= TAB: PROJETS (ALBUMS, EP, SINGLES, MIXTAPES) ================= */}
+      {subTab === 'projects' && <div className="space-y-6">{renderProjectsSection(false)}</div>}
 
       {/* ================= TAB 2: BIBLIOTHÈQUE COMPLÈTE (CARTES CLIQUABLES + VERSIONS) ================= */}
       {subTab === 'library' && (
@@ -1282,8 +1241,7 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
               ? () => {
                   const ctx = lyricsReturnContext;
                   setLyricsReturnContext(null);
-                  setSubTabState(ctx.prevSubTab);
-                  updateLastSession({ musicSubTab: ctx.prevSubTab });
+                  onSubTabChange(ctx.prevSubTab);
                   setOpenProjectId(ctx.openProjectId);
                   setDetailTarget(ctx.detailTarget);
                 }
