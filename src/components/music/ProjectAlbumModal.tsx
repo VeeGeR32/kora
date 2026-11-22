@@ -711,7 +711,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
-                      Tes MP3 disponibles ({availableTracks.length})
+                      Tes sons disponibles ({availableTrackGroups.length})
                     </span>
                     <button
                       type="button"
