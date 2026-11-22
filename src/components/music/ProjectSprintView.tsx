@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  ArrowUp,
   Calendar,
   Check,
   CheckCircle2,
@@ -55,10 +56,12 @@ export function ProjectSprintView({
   const player = useAudioPlayer();
 
   const sprints = project.sprints || [];
-  const activeSprint = useMemo(
-    () => sprints.find((s) => !s.completedAt) || null,
+  const pendingSprints = useMemo(
+    () => sprints.filter((s) => !s.completedAt),
     [sprints]
   );
+  const activeSprint = pendingSprints[0] || null;
+  const upcomingSprints = useMemo(() => pendingSprints.slice(1), [pendingSprints]);
   const completedSprints = useMemo(
     () => sprints.filter((s) => Boolean(s.completedAt)),
     [sprints]
@@ -74,6 +77,17 @@ export function ProjectSprintView({
     () => new Map(projectTracks.map((t) => [t.id, t])),
     [projectTracks]
   );
+
+  // Track -> Sprint title map for pending sprints so composer highlights unassigned songs first!
+  const assignedSprintByTrackId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const spr of pendingSprints) {
+      for (const tid of spr.trackIds) {
+        if (!map.has(tid)) map.set(tid, spr.title);
+      }
+    }
+    return map;
+  }, [pendingSprints]);
 
   const getTrackContext = (trk: MusicTrack) => {
     const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
@@ -136,6 +150,29 @@ export function ProjectSprintView({
     });
   };
 
+  // Candidate tracks: prioritize unassigned + not-yet-v3 tracks!
+  const sprintCandidates = useMemo(() => {
+    return [...projectTracks].sort((a, b) => {
+      const aAssigned = assignedSprintByTrackId.has(a.id) ? 1 : 0;
+      const bAssigned = assignedSprintByTrackId.has(b.id) ? 1 : 0;
+      if (aAssigned !== bAssigned) return aAssigned - bAssigned;
+      const sa = getTrackContext(a).workflow.status;
+      const sb = getTrackContext(b).workflow.status;
+      const ra = isReadyForHarmonization(sa) ? 1 : 0;
+      const rb = isReadyForHarmonization(sb) ? 1 : 0;
+      return ra - rb;
+    });
+  }, [projectTracks, allGroups, assignedSprintByTrackId]);
+
+  const openComposer = () => {
+    const unassigned = sprintCandidates.filter((t) => !assignedSprintByTrackId.has(t.id));
+    const seedList = unassigned.length > 0 ? unassigned : sprintCandidates;
+    setSelectedIds(seedList.slice(0, Math.min(MAX_SPRINT_TRACKS, seedList.length)).map((t) => t.id));
+    setSprintTitle('');
+    setTargetDate('');
+    setCreating(true);
+  };
+
   const handleCreateSprint = () => {
     if (selectedIds.length === 0) {
       notify('Sélectionne au moins 1 titre (max 3)');
@@ -154,7 +191,11 @@ export function ProjectSprintView({
     setSprintTitle('');
     setTargetDate('');
     setSelectedIds([]);
-    notify(`${newSprint.title} lancé (${newSprint.trackIds.length} titre${newSprint.trackIds.length > 1 ? 's' : ''}) ✓`);
+    notify(
+      activeSprint
+        ? `${newSprint.title} planifié à la suite ✓`
+        : `${newSprint.title} lancé (${newSprint.trackIds.length} titre${newSprint.trackIds.length > 1 ? 's' : ''}) ✓`
+    );
   };
 
   const handleValidateActiveSprint = () => {
@@ -164,7 +205,21 @@ export function ProjectSprintView({
       s.id === activeSprint.id ? { ...s, completedAt: nowIso } : s
     );
     updateMusicProject(project.id, { sprints: nextSprints });
-    notify(`${activeSprint.title} validé ✓ (tous les titres en Pré-mix v3+)`);
+    notify(
+      upcomingSprints.length > 0
+        ? `${activeSprint.title} validé ✓ · ${upcomingSprints[0].title} devient actif`
+        : `${activeSprint.title} validé ✓`
+    );
+  };
+
+  const handlePromoteSprintToActive = (sprintId: string) => {
+    const target = sprints.find((s) => s.id === sprintId && !s.completedAt);
+    if (!target) return;
+    const rest = sprints.filter((s) => s.id !== sprintId);
+    const completed = rest.filter((s) => Boolean(s.completedAt));
+    const otherPending = rest.filter((s) => !s.completedAt);
+    updateMusicProject(project.id, { sprints: [target, ...otherPending, ...completed] });
+    notify(`${target.title} passé en sprint actif ✓`);
   };
 
   const handleDeleteSprint = (sprintId: string) => {
@@ -174,28 +229,18 @@ export function ProjectSprintView({
     notify('Sprint supprimé');
   };
 
-  const handleRemoveTrackFromActiveSprint = (trackId: string) => {
-    if (!activeSprint) return;
-    const nextIds = activeSprint.trackIds.filter((id) => id !== trackId);
+  const handleRemoveTrackFromSprint = (sprintId: string, trackId: string) => {
+    const target = sprints.find((s) => s.id === sprintId);
+    if (!target) return;
+    const nextIds = target.trackIds.filter((id) => id !== trackId);
     if (nextIds.length === 0) {
-      handleDeleteSprint(activeSprint.id);
+      handleDeleteSprint(sprintId);
       return;
     }
     updateMusicProject(project.id, {
-      sprints: sprints.map((s) => (s.id === activeSprint.id ? { ...s, trackIds: nextIds } : s)),
+      sprints: sprints.map((s) => (s.id === sprintId ? { ...s, trackIds: nextIds } : s)),
     });
   };
-
-  // Candidate tracks for a new sprint (prioritize tracks not yet in Pré-mix v3)
-  const sprintCandidates = useMemo(() => {
-    return [...projectTracks].sort((a, b) => {
-      const sa = getTrackContext(a).workflow.status;
-      const sb = getTrackContext(b).workflow.status;
-      const ra = isReadyForHarmonization(sa) ? 1 : 0;
-      const rb = isReadyForHarmonization(sb) ? 1 : 0;
-      return ra - rb;
-    });
-  }, [projectTracks, allGroups]);
 
   return (
     <div className="space-y-4">
@@ -215,7 +260,7 @@ export function ProjectSprintView({
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
                   Focus sur {activeSprintTracks.length}/{MAX_SPRINT_TRACKS} titre
-                  {activeSprintTracks.length > 1 ? 's' : ''} · objectif : atteindre{' '}
+                  {activeSprintTracks.length > 1 ? 's' : ''} · objectif :{' '}
                   <strong className="text-slate-600 dark:text-zinc-300">Pré-mix (v3)</strong>
                   {activeSprint.targetDate ? ` · échéance ${fmtTargetDate(activeSprint.targetDate)}` : ''}
                 </p>
@@ -269,7 +314,7 @@ export function ProjectSprintView({
               />
             </div>
 
-            {/* Focused Tracklist (ONLY the 1-3 Sprint tracks!) */}
+            {/* Focused Tracklist (ONLY the 1-3 Active Sprint tracks!) */}
             <div className="space-y-2 pt-1">
               {activeSprintTracks.map((trk) => {
                 const { workflow, fixCount, allIds, thumb } = getTrackContext(trk);
@@ -361,7 +406,7 @@ export function ProjectSprintView({
                         )}
                         <button
                           type="button"
-                          onClick={() => handleRemoveTrackFromActiveSprint(trk.id)}
+                          onClick={() => handleRemoveTrackFromSprint(activeSprint.id, trk.id)}
                           title="Retirer du sprint"
                           className="p-1.5 rounded-full text-slate-400 hover:text-rose-500 cursor-pointer"
                         >
@@ -415,17 +460,12 @@ export function ProjectSprintView({
             Aucun sprint actif sur ce projet
           </p>
           <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-            Regroupe jusqu’à <strong>3 titres max</strong> pour avancer en micro-batch sans dispersion jusqu’à <strong>Pré-mix (v3)</strong>.
+            Découpe ta tracklist en sprints de <strong>3 titres max</strong> pour avancer en micro-batch jusqu’à <strong>Pré-mix (v3)</strong>.
           </p>
           <button
             type="button"
             disabled={projectTracks.length === 0}
-            onClick={() => {
-              setSelectedIds(
-                sprintCandidates.slice(0, Math.min(MAX_SPRINT_TRACKS, sprintCandidates.length)).map((t) => t.id)
-              );
-              setCreating(true);
-            }}
+            onClick={openComposer}
             className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-35 transition cursor-pointer"
           >
             <Plus size={13} /> Lancer un sprint (max 3 titres)
@@ -433,12 +473,108 @@ export function ProjectSprintView({
         </div>
       ) : null}
 
-      {/* CREATE SPRINT COMPOSER */}
-      {creating && !activeSprint && (
+      {/* UPCOMING / PLANNED SPRINTS ROADMAP OVERVIEW */}
+      {upcomingSprints.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Sprints planifiés ({upcomingSprints.length})
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {upcomingSprints.map((spr) => {
+              const sprTracks = spr.trackIds
+                .map((id) => byId.get(id))
+                .filter((t): t is MusicTrack => Boolean(t));
+              return (
+                <div
+                  key={spr.id}
+                  className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-white/70 dark:bg-zinc-900/30 p-3.5 space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-zinc-400 shrink-0">
+                        À venir
+                      </span>
+                      <span className="text-xs font-bold text-slate-800 dark:text-zinc-100 truncate">
+                        {spr.title}
+                      </span>
+                      {spr.targetDate && (
+                        <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                          · {fmtTargetDate(spr.targetDate)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handlePromoteSprintToActive(spr.id)}
+                        title="Passer en sprint actif"
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-800 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:text-zinc-300 hover:bg-slate-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-950 transition cursor-pointer"
+                      >
+                        <ArrowUp size={10} /> Activer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSprint(spr.id)}
+                        title="Supprimer ce sprint"
+                        className="p-1.5 text-slate-400 hover:text-rose-500 cursor-pointer"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {sprTracks.map((trk) => {
+                      const { workflow } = getTrackContext(trk);
+                      const moodMeta = workflow.mood ? TRACK_MOOD_META[workflow.mood] : null;
+                      const stMeta = TRACK_STATUS_META[workflow.status];
+                      return (
+                        <button
+                          key={trk.id}
+                          type="button"
+                          onClick={() => onOpenTrackDetails?.(trk.id)}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-slate-50 dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 px-2.5 py-1 text-[11px] text-slate-700 dark:text-zinc-200 hover:border-slate-400 transition cursor-pointer max-w-full"
+                        >
+                          <span className="font-medium truncate max-w-[140px]">
+                            {trk.manualGroupTitle || trk.title}
+                          </span>
+                          {moodMeta && <span className="text-[10px]">{moodMeta.emoji}</span>}
+                          <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${stMeta.badge}`}>
+                            {stMeta.shortLabel}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ALWAYS-AVAILABLE "+ PLANIFIER UN SPRINT" BUTTON (Plan multiple sprints ahead!) */}
+      {activeSprint && !creating && projectTracks.length > 0 && (
+        <button
+          type="button"
+          onClick={openComposer}
+          className="w-full rounded-2xl border border-dashed border-slate-200 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600 py-2.5 px-4 flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-zinc-300 transition cursor-pointer"
+        >
+          <Plus size={13} />
+          <span>Planifier un sprint suivant (max 3 titres)</span>
+        </button>
+      )}
+
+      {/* CREATE SPRINT COMPOSER (works for BOTH first sprint AND upcoming sprints!) */}
+      {creating && (
         <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/50 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-xs font-bold text-slate-900 dark:text-zinc-100">
-              Composer un Sprint ({selectedIds.length}/{MAX_SPRINT_TRACKS})
+              {activeSprint ? 'Planifier un prochain sprint' : 'Composer un sprint'} (
+              {selectedIds.length}/{MAX_SPRINT_TRACKS})
             </h3>
             <button
               type="button"
@@ -480,6 +616,7 @@ export function ProjectSprintView({
               const selected = selectedIds.includes(trk.id);
               const statusMeta = TRACK_STATUS_META[workflow.status];
               const moodMeta = workflow.mood ? TRACK_MOOD_META[workflow.mood] : null;
+              const existingSprintTitle = assignedSprintByTrackId.get(trk.id);
               return (
                 <button
                   key={trk.id}
@@ -488,6 +625,8 @@ export function ProjectSprintView({
                   className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition cursor-pointer ${
                     selected
                       ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      : existingSprintTitle
+                      ? 'bg-white/60 dark:bg-zinc-900/50 border border-slate-200/50 dark:border-zinc-800/60 text-slate-500 dark:text-zinc-400 hover:border-slate-400'
                       : 'bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 text-slate-800 dark:text-zinc-100 hover:border-slate-400'
                   }`}
                 >
@@ -511,6 +650,17 @@ export function ProjectSprintView({
                         {moodMeta.emoji} {moodMeta.short}
                       </span>
                     )}
+                    {existingSprintTitle && (
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[9px] font-mono ${
+                          selected
+                            ? 'bg-white/20 dark:bg-black/20'
+                            : 'bg-slate-100 dark:bg-zinc-800 text-slate-400'
+                        }`}
+                      >
+                        déjà dans {existingSprintTitle}
+                      </span>
+                    )}
                   </div>
                   {selected && <Check size={14} className="shrink-0" />}
                 </button>
@@ -524,7 +674,9 @@ export function ProjectSprintView({
             onClick={handleCreateSprint}
             className="w-full rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-2.5 text-xs font-semibold hover:opacity-90 disabled:opacity-35 transition cursor-pointer"
           >
-            Démarrer le sprint ({selectedIds.length} titre{selectedIds.length > 1 ? 's' : ''})
+            {activeSprint
+              ? `Planifier ce sprint (${selectedIds.length} titre${selectedIds.length > 1 ? 's' : ''})`
+              : `Démarrer le sprint (${selectedIds.length} titre${selectedIds.length > 1 ? 's' : ''})`}
           </button>
         </div>
       )}
