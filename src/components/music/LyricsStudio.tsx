@@ -37,6 +37,8 @@ import { groupMusicTracks } from '../../lib/musicVersioning';
 interface LyricsStudioProps {
   initialDocId?: string | null;
   openRequest?: { docId: string; nonce: number } | null;
+  onCloseDoc?: () => void;
+  backLabel?: string;
 }
 
 const STATUS_META: Record<1 | 2 | 3, { label: string; dot: string; badge: string }> = {
@@ -71,7 +73,12 @@ function fmtShortDate(iso?: string) {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export function LyricsStudio({ initialDocId, openRequest }: LyricsStudioProps) {
+export function LyricsStudio({
+  initialDocId,
+  openRequest,
+  onCloseDoc,
+  backLabel,
+}: LyricsStudioProps) {
   const {
     state,
     addLyricsFolder,
@@ -181,17 +188,23 @@ export function LyricsStudio({ initialDocId, openRequest }: LyricsStudioProps) {
     return registerFullscreenOverlay();
   }, [Boolean(activeDoc), registerFullscreenOverlay]);
 
+  const handleCloseEditor = () => {
+    setActiveDocId(null);
+    onCloseDoc?.();
+  };
+
   // Escape key closes full-screen editor cleanly
   useEffect(() => {
     if (!activeDoc) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !importModalOpen) {
+      if (e.key === 'Escape' && !importModalOpen && !trackPickerOpen) {
         setActiveDocId(null);
+        onCloseDoc?.();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeDoc, importModalOpen]);
+  }, [activeDoc, importModalOpen, trackPickerOpen, onCloseDoc]);
 
   const visibleDocs = useMemo(() => {
     return state.lyricsDocs
@@ -730,11 +743,11 @@ export function LyricsStudio({ initialDocId, openRequest }: LyricsStudioProps) {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setActiveDocId(null)}
+                  onClick={handleCloseEditor}
                   className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
                 >
                   <ArrowLeft size={15} />
-                  <span>Textes</span>
+                  <span>{backLabel || 'Textes'}</span>
                 </button>
 
                 {visibleDocs.length > 1 && (

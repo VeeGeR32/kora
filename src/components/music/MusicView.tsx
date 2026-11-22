@@ -75,6 +75,9 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const musicCloudSyncedRef = useRef(false);
 
   const setSubTab = (next: MusicSubTab) => {
+    if (next !== 'lyrics') {
+      setLyricsReturnContext(null);
+    }
     setSubTabState(next);
     updateLastSession({ musicSubTab: next });
   };
@@ -82,6 +85,11 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const [lyricsOpenRequest, setLyricsOpenRequest] = useState<{
     docId: string;
     nonce: number;
+  } | null>(null);
+  const [lyricsReturnContext, setLyricsReturnContext] = useState<{
+    prevSubTab: MusicSubTab;
+    detailTarget: { groupKey: string; trackId: string } | null;
+    openProjectId: string | null;
   } | null>(null);
   const [showAllFavoritesMobile, setShowAllFavoritesMobile] = useState(false);
 
@@ -354,7 +362,27 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
     }
   };
 
+  // Open Song Page automatically when user taps cover art inside the maximized audio player
+  useEffect(() => {
+    if (!player.pendingOpenTrackId) return;
+    const targetId = player.pendingOpenTrackId;
+    const grp = trackGroups.find((g) => g.allTrackIds.includes(targetId));
+    if (grp) {
+      setOpenProjectId(null);
+      setDetailTarget({ groupKey: grp.groupKey, trackId: targetId });
+      if (subTab === 'lyrics') setSubTab('dashboard');
+    }
+    player.clearPendingOpenTrackPage();
+  }, [player.pendingOpenTrackId, trackGroups]);
+
   const openLinkedLyrics = (track: MusicTrack) => {
+    // Remember exact place the user came from so "Retour" in Textes brings them right back!
+    setLyricsReturnContext({
+      prevSubTab: subTab,
+      detailTarget,
+      openProjectId,
+    });
+
     // Always close Song Page AND Project Page so the Text opens immediately on top!
     setDetailTarget(null);
     setOpenProjectId(null);
@@ -1186,7 +1214,23 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
 
       {/* ================= TAB 3: TEXTES STUDIO ÉCRITURE ================= */}
       {subTab === 'lyrics' && (
-        <LyricsStudio initialDocId={selectedLyricsId} openRequest={lyricsOpenRequest} />
+        <LyricsStudio
+          initialDocId={selectedLyricsId}
+          openRequest={lyricsOpenRequest}
+          backLabel={lyricsReturnContext ? 'Retour' : 'Textes'}
+          onCloseDoc={
+            lyricsReturnContext
+              ? () => {
+                  const ctx = lyricsReturnContext;
+                  setLyricsReturnContext(null);
+                  setSubTabState(ctx.prevSubTab);
+                  updateLastSession({ musicSubTab: ctx.prevSubTab });
+                  setOpenProjectId(ctx.openProjectId);
+                  setDetailTarget(ctx.detailTarget);
+                }
+              : undefined
+          }
+        />
       )}
 
       {/* ================= MODALS & RIGHT-CLICK CONTEXT MENU ================= */}

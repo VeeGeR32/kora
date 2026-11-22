@@ -181,6 +181,13 @@ function KoraApp() {
     state.preferences.notifications?.timers,
   ]);
 
+  // Jump straight to Music tab when user taps cover art inside the maximized audio player
+  useEffect(() => {
+    if (player.pendingOpenTrackId && activeTab !== 'music') {
+      setActiveTab('music');
+    }
+  }, [player.pendingOpenTrackId, activeTab, setActiveTab]);
+
   // Global keyboard shortcuts (Ctrl+K Quick-Add, Ctrl+J Kora AI, 1-5 tabs)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

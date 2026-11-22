@@ -51,6 +51,9 @@ interface AudioPlayerContextValue {
   syncTrackMetadata: (track: MusicTrack) => void;
   hasFullscreenOverlay: boolean;
   registerFullscreenOverlay: () => () => void;
+  pendingOpenTrackId: string | null;
+  requestOpenTrackPage: (trackId: string) => void;
+  clearPendingOpenTrackPage: () => void;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -68,6 +71,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [shuffle, setShuffle] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [overlayCount, setOverlayCount] = useState(0);
+  const [pendingOpenTrackId, setPendingOpenTrackId] = useState<string | null>(null);
   const [abLoop, setAbLoop] = useState<{ start: number | null; end: number | null }>({
     start: null,
     end: null,
@@ -80,6 +84,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     };
   }, []);
   const hasFullscreenOverlay = overlayCount > 0;
+  const requestOpenTrackPage = useCallback((trackId: string) => {
+    setPendingOpenTrackId(trackId);
+  }, []);
+  const clearPendingOpenTrackPage = useCallback(() => {
+    setPendingOpenTrackId(null);
+  }, []);
 
   const loop = repeatMode !== 'off';
   const setLoop = useCallback((v: boolean) => {
@@ -592,6 +602,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       syncTrackMetadata,
       hasFullscreenOverlay,
       registerFullscreenOverlay,
+      pendingOpenTrackId,
+      requestOpenTrackPage,
+      clearPendingOpenTrackPage,
     }),
     [
       currentTrack,
@@ -623,6 +636,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       syncTrackMetadata,
       hasFullscreenOverlay,
       registerFullscreenOverlay,
+      pendingOpenTrackId,
+      requestOpenTrackPage,
+      clearPendingOpenTrackPage,
     ]
   );
 
