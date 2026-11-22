@@ -285,7 +285,11 @@ export function MiniAudioPlayer() {
     return { target: grp.prodTrack, label: 'Prod', isCurrentlyProd: false };
   }, [currentTrack, parsedCurrent, state.musicTracks]);
   const displayTrackTitle =
-    currentTrack?.manualGroupTitle || parsedCurrent?.baseTitle || currentTrack?.title || '';
+    currentGroup?.baseTitle ||
+    currentTrack?.manualGroupTitle ||
+    parsedCurrent?.baseTitle ||
+    currentTrack?.title ||
+    '';
   const versionSuffix =
     parsedCurrent && parsedCurrent.versionLabel !== 'Original' ? parsedCurrent.versionLabel : '';
   const subtitle = [
@@ -361,7 +365,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-white" />
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-slate-900 dark:bg-white" />
         </div>
       )),
     [bars]
@@ -375,7 +379,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-white/25" />
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-slate-900/20 dark:bg-white/25" />
         </div>
       )),
     [bars]
@@ -389,7 +393,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${MINI_BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-white/95" />
+          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-slate-900 dark:bg-white/95" />
         </div>
       )),
     [miniBars]
@@ -403,7 +407,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${MINI_BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-white/25" />
+          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-slate-900/20 dark:bg-white/25" />
         </div>
       )),
     [miniBars]
@@ -562,10 +566,10 @@ export function MiniAudioPlayer() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             onWheel={handleMiniWheel}
-            className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-[#141418]/96 text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color] duration-200 ease-out overflow-hidden ${
+            className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-white/95 dark:bg-[#141418]/96 text-slate-900 dark:text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color,background-color] duration-200 ease-out overflow-hidden ${
               isRemotePlayback
-                ? 'border-emerald-400/45 shadow-[0_14px_38px_-8px_rgba(16,185,129,0.28)]'
-                : 'border-white/10 shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)]'
+                ? 'border-emerald-500/45 dark:border-emerald-400/45 shadow-[0_14px_34px_-10px_rgba(16,185,129,0.22)] dark:shadow-[0_14px_38px_-8px_rgba(16,185,129,0.28)]'
+                : 'border-slate-200/90 dark:border-white/10 shadow-[0_14px_34px_-10px_rgba(15,23,42,0.18)] dark:shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)]'
             }`}
           >
             <div className="flex items-center justify-between gap-2">
@@ -585,7 +589,7 @@ export function MiniAudioPlayer() {
                 >
                   <div
                     ref={miniDiscRef}
-                    className={`relative h-10 w-10 rounded-full overflow-hidden border border-white/15 shrink-0 will-change-transform ${
+                    className={`relative h-10 w-10 rounded-full overflow-hidden border border-slate-200/80 dark:border-white/15 shrink-0 will-change-transform ${
                       isLoadingTrack ? 'animate-pulse opacity-75' : ''
                     }`}
                   >
@@ -606,18 +610,18 @@ export function MiniAudioPlayer() {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-white truncate leading-tight">
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate leading-tight">
                       {displayTrackTitle}
                     </p>
                     {isLoadingTrack ? (
-                      <div className="mt-1.5 h-2 w-24 rounded-full bg-white/15 animate-pulse" />
+                      <div className="mt-1.5 h-2 w-24 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
                     ) : isRemotePlayback && remoteDevice ? (
-                      <p className="text-[10px] font-medium text-emerald-400 truncate mt-0.5 flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                      <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 truncate mt-0.5 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse shrink-0" />
                         <span className="truncate">Lecture sur {remoteDevice.name}</span>
                       </p>
                     ) : (
-                      <p className="text-[10px] text-zinc-400 truncate mt-0.5">{subtitle}</p>
+                      <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate mt-0.5">{subtitle}</p>
                     )}
                   </div>
                 </div>
@@ -648,7 +652,7 @@ export function MiniAudioPlayer() {
                     {miniUnplayedBarsEl}
                   </div>
                 </div>
-                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-300" />
+                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-500 dark:bg-amber-300" />
               </div>
 
               {/* Compact Transport Controls (Connect Transfer / Prev / Play-Pause / Next / Close) */}
@@ -659,7 +663,7 @@ export function MiniAudioPlayer() {
                     data-mini-ctrl="true"
                     onClick={() => void transferToThisDevice()}
                     title={`Transférer la lecture depuis ${remoteDevice.name} vers ${localDevice.name}`}
-                    className="h-7 px-2.5 mr-0.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/35 text-emerald-300 text-[10px] font-semibold transition cursor-pointer shrink-0"
+                    className="h-7 px-2.5 mr-0.5 rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 hover:bg-emerald-500/25 dark:hover:bg-emerald-500/30 border border-emerald-500/35 dark:border-emerald-400/35 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold transition cursor-pointer shrink-0"
                   >
                     Ici
                   </button>
@@ -670,7 +674,7 @@ export function MiniAudioPlayer() {
                   onClick={playPrev}
                   disabled={!hasPrev && currentTime <= 3}
                   aria-label="Précédent"
-                  className="h-8 w-8 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
+                  className="h-8 w-8 rounded-full flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
                 >
                   <SkipBack size={14} fill="currentColor" />
                 </button>
@@ -681,7 +685,7 @@ export function MiniAudioPlayer() {
                   onClick={togglePlay}
                   disabled={!canPlay || isLoadingTrack}
                   aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
-                  className="h-9 w-9 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-70 transition cursor-pointer"
+                  className="h-9 w-9 rounded-full bg-slate-950 dark:bg-white text-white dark:text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-70 transition cursor-pointer"
                 >
                   {isLoadingTrack ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -698,7 +702,7 @@ export function MiniAudioPlayer() {
                   onClick={playNext}
                   disabled={!hasNext}
                   aria-label="Suivant"
-                  className="h-8 w-8 rounded-full flex items-center justify-center text-zinc-300 hover:text-white hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
+                  className="h-8 w-8 rounded-full flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
                 >
                   <SkipForward size={14} fill="currentColor" />
                 </button>
@@ -708,7 +712,7 @@ export function MiniAudioPlayer() {
                   data-mini-ctrl="true"
                   onClick={closePlayer}
                   aria-label="Fermer le lecteur"
-                  className="h-7 w-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                  className="h-7 w-7 rounded-full flex items-center justify-center text-slate-400 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                 >
                   <X size={13} />
                 </button>
@@ -733,7 +737,7 @@ export function MiniAudioPlayer() {
             onPointerCancel={finishSheetDrag}
             onWheel={handleSheetWheel}
             style={{ touchAction: 'none' }}
-            className="fixed inset-0 z-[60] bg-[#0b0b0e] text-white flex flex-col overflow-hidden select-none will-change-transform"
+            className="fixed inset-0 z-[60] bg-[#f8f8fa] dark:bg-[#0b0b0e] text-slate-950 dark:text-white flex flex-col overflow-hidden select-none will-change-transform"
           >
             {/* Subtle Atmospheric Cover Backdrop */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -742,12 +746,12 @@ export function MiniAudioPlayer() {
                   src={coverUrl}
                   alt=""
                   aria-hidden="true"
-                  className="w-full h-full object-cover scale-125 blur-3xl opacity-22"
+                  className="w-full h-full object-cover scale-125 blur-3xl opacity-16 dark:opacity-22"
                 />
               ) : (
-                <div className={`w-full h-full bg-gradient-to-b ${gradCls} opacity-18`} />
+                <div className={`w-full h-full bg-gradient-to-b ${gradCls} opacity-14 dark:opacity-18`} />
               )}
-              <div className="absolute inset-0 bg-gradient-to-b from-[#0b0b0e]/55 via-[#0b0b0e]/85 to-[#0b0b0e]" />
+              <div className="absolute inset-0 bg-gradient-to-b from-[#f8f8fa]/70 via-[#f8f8fa]/88 to-[#f8f8fa] dark:from-[#0b0b0e]/55 dark:via-[#0b0b0e]/85 dark:to-[#0b0b0e]" />
             </div>
 
             {/* Full-Screen Responsive Wrapper: Centered Column on Mobile, Studio 2-Column Widescreen on Desktop */}
@@ -755,7 +759,7 @@ export function MiniAudioPlayer() {
               {/* Top Drag Handle (mobile) + Header Bar */}
               <div className="space-y-2 shrink-0">
                 <div className="flex justify-center pt-1 lg:hidden">
-                  <div className="h-1 w-10 rounded-full bg-white/20" />
+                  <div className="h-1 w-10 rounded-full bg-slate-900/15 dark:bg-white/20" />
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
@@ -763,13 +767,13 @@ export function MiniAudioPlayer() {
                     type="button"
                     onClick={() => setExpanded(false)}
                     aria-label="Réduire le lecteur"
-                    className="h-10 w-10 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                    className="h-10 w-10 rounded-full flex items-center justify-center text-slate-700 dark:text-white/80 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                   >
                     <ChevronDown size={22} />
                   </button>
 
                   <div className="min-w-0 flex-1 text-center">
-                    <p className="text-[10px] lg:text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                    <p className="text-[10px] lg:text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-zinc-400">
                       {linkedProject?.title || 'En lecture'}
                     </p>
                   </div>
@@ -795,8 +799,8 @@ export function MiniAudioPlayer() {
                       aria-label="Favori"
                       className={`h-10 w-10 rounded-full inline-flex items-center justify-center transition cursor-pointer ${
                         (currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite))
-                          ? 'text-amber-400'
-                          : 'text-white/75 hover:text-white hover:bg-white/10'
+                          ? 'text-amber-500 dark:text-amber-400'
+                          : 'text-slate-600 dark:text-white/75 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
                       }`}
                     >
                       <Star
@@ -833,7 +837,7 @@ export function MiniAudioPlayer() {
                       }}
                       title="Partager ce son (lien public sans compte)"
                       aria-label="Partager"
-                      className="h-10 w-10 rounded-full inline-flex items-center justify-center text-white/75 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                      className="h-10 w-10 rounded-full inline-flex items-center justify-center text-slate-600 dark:text-white/75 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                     >
                       <Share2 size={17} />
                     </button>
@@ -842,7 +846,7 @@ export function MiniAudioPlayer() {
                       onClick={closePlayer}
                       title="Arrêter et fermer"
                       aria-label="Arrêter"
-                      className="hidden lg:inline-flex h-10 w-10 rounded-full items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                      className="hidden lg:inline-flex h-10 w-10 rounded-full items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                     >
                       <X size={18} />
                     </button>
@@ -863,7 +867,7 @@ export function MiniAudioPlayer() {
                       className="group relative w-full max-w-[340px] sm:max-w-[360px] lg:max-w-[370px] xl:max-w-[400px] aspect-square rounded-2xl lg:rounded-3xl active:scale-[0.985] transition-transform cursor-pointer focus:outline-none"
                     >
                       <div
-                        className={`w-full h-full rounded-2xl lg:rounded-3xl overflow-hidden border border-white/10 shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
+                        className={`w-full h-full rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200/80 dark:border-white/10 shadow-[0_24px_60px_-16px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
                           coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
                         } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
                       >
@@ -893,10 +897,10 @@ export function MiniAudioPlayer() {
                     className="min-w-0 flex-1 text-left cursor-pointer group"
                     title="Ouvrir la page du morceau"
                   >
-                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white truncate group-hover:underline">
+                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white truncate group-hover:underline">
                       {displayTrackTitle}
                     </h2>
-                    <p className="text-xs sm:text-sm text-zinc-400 truncate mt-0.5">{subtitle}</p>
+                    <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 truncate mt-0.5">{subtitle}</p>
                   </button>
 
                   {alternateProdOrSong && (
@@ -908,8 +912,8 @@ export function MiniAudioPlayer() {
                       }}
                       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition cursor-pointer shrink-0 ${
                         alternateProdOrSong.isCurrentlyProd
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/30'
-                          : 'bg-white/10 text-zinc-200 border border-white/15 hover:bg-white/20'
+                          ? 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 dark:border-emerald-400/30 hover:bg-emerald-500/25 dark:hover:bg-emerald-500/30'
+                          : 'bg-slate-900/8 dark:bg-white/10 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-white/15 hover:bg-slate-900/14 dark:hover:bg-white/20'
                       }`}
                     >
                       <Music2 size={11} />
@@ -923,7 +927,7 @@ export function MiniAudioPlayer() {
                   <div className="h-5 flex items-center justify-center">
                     <span
                       ref={scrubPillTextRef}
-                      className={`rounded-full bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
+                      className={`rounded-full bg-amber-400 dark:bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
                         scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
                       }`}
                     />
@@ -940,8 +944,8 @@ export function MiniAudioPlayer() {
                     }`}
                     title="Glisser horizontalement pour naviguer dans le son"
                   >
-                    <div className="pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[#0b0b0e] to-transparent z-20" />
-                    <div className="pointer-events-none absolute inset-y-0 right-0 w-7 bg-gradient-to-l from-[#0b0b0e] to-transparent z-20" />
+                    <div className="pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[#f8f8fa] dark:from-[#0b0b0e] to-transparent z-20" />
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-7 bg-gradient-to-l from-[#f8f8fa] dark:from-[#0b0b0e] to-transparent z-20" />
 
                     <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
                       <div
@@ -963,17 +967,17 @@ export function MiniAudioPlayer() {
                       </div>
                     </div>
 
-                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-300 z-30" />
+                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-500 dark:bg-amber-300 z-30" />
                   </div>
 
                   {isLoadingTrack ? (
                     <div className="h-4 flex items-center justify-center">
-                      <span className="h-2.5 w-20 rounded-full bg-white/15 animate-pulse" />
+                      <span className="h-2.5 w-20 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
                     </div>
                   ) : (
                     <p
                       ref={timeTextRef}
-                      className="text-center font-mono text-xs text-zinc-400 tabular-nums min-h-[1rem]"
+                      className="text-center font-mono text-xs text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]"
                     />
                   )}
 
@@ -988,7 +992,7 @@ export function MiniAudioPlayer() {
                             applyVisualFrame(mk.timeSec, effectiveDuration);
                             triggerHapticTick(10);
                           }}
-                          className="rounded-full bg-white/10 hover:bg-white/20 px-2.5 py-0.5 font-mono text-[10px] text-zinc-200 transition cursor-pointer"
+                          className="rounded-full bg-slate-900/8 dark:bg-white/10 hover:bg-slate-900/14 dark:hover:bg-white/20 px-2.5 py-0.5 font-mono text-[10px] text-slate-700 dark:text-zinc-200 transition cursor-pointer"
                         >
                           {fmt(mk.timeSec)} · {mk.label}
                         </button>
@@ -1009,13 +1013,13 @@ export function MiniAudioPlayer() {
                     aria-label="Aléatoire"
                     className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
                       shuffle
-                        ? 'text-amber-300 bg-white/10'
-                        : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                        ? 'text-amber-600 dark:text-amber-300 bg-amber-500/12 dark:bg-white/10'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
                     }`}
                   >
                     <Shuffle size={18} />
                     {shuffle && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-300" />
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-500 dark:bg-amber-300" />
                     )}
                   </button>
 
@@ -1027,7 +1031,7 @@ export function MiniAudioPlayer() {
                     }}
                     disabled={!hasPrev && currentTime <= 3}
                     aria-label="Précédent"
-                    className="h-12 w-12 rounded-full flex items-center justify-center text-white hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
+                    className="h-12 w-12 rounded-full flex items-center justify-center text-slate-900 dark:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
                   >
                     <SkipBack size={24} fill="currentColor" />
                   </button>
@@ -1040,7 +1044,7 @@ export function MiniAudioPlayer() {
                     }}
                     disabled={!canPlay || isLoadingTrack}
                     aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
-                    className="h-16 w-16 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-75 transition shadow-lg cursor-pointer"
+                    className="h-16 w-16 rounded-full bg-slate-950 dark:bg-white text-white dark:text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-75 transition shadow-lg cursor-pointer"
                   >
                     {isLoadingTrack ? (
                       <Loader2 size={24} className="animate-spin" />
@@ -1059,7 +1063,7 @@ export function MiniAudioPlayer() {
                     }}
                     disabled={!hasNext}
                     aria-label="Suivant"
-                    className="h-12 w-12 rounded-full flex items-center justify-center text-white hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
+                    className="h-12 w-12 rounded-full flex items-center justify-center text-slate-900 dark:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
                   >
                     <SkipForward size={24} fill="currentColor" />
                   </button>
@@ -1080,13 +1084,13 @@ export function MiniAudioPlayer() {
                     aria-label="Mode boucle"
                     className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
                       repeatMode !== 'off'
-                        ? 'text-amber-300 bg-white/10'
-                        : 'text-zinc-400 hover:text-white hover:bg-white/10'
+                        ? 'text-amber-600 dark:text-amber-300 bg-amber-500/12 dark:bg-white/10'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
                     }`}
                   >
                     {repeatMode === 'one' ? <Repeat1 size={18} /> : <Repeat size={18} />}
                     {repeatMode !== 'off' && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-300" />
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-500 dark:bg-amber-300" />
                     )}
                   </button>
                 </div>
@@ -1095,35 +1099,35 @@ export function MiniAudioPlayer() {
                 <div
                   className={`rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-2.5 transition ${
                     isRemotePlayback && remoteDevice
-                      ? 'border-emerald-400/35 bg-emerald-500/12'
-                      : 'border-white/10 bg-white/[0.04]'
+                      ? 'border-emerald-500/35 dark:border-emerald-400/35 bg-emerald-500/10 dark:bg-emerald-500/12'
+                      : 'border-slate-200/80 dark:border-white/10 bg-white/75 dark:bg-white/[0.04]'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     {isRemotePlayback && remoteDevice ? (
                       <>
                         {remoteDevice.type === 'mobile' ? (
-                          <Smartphone size={14} className="text-emerald-400 shrink-0" />
+                          <Smartphone size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                         ) : remoteDevice.type === 'tablet' ? (
-                          <Tablet size={14} className="text-emerald-400 shrink-0" />
+                          <Tablet size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                         ) : (
-                          <Monitor size={14} className="text-emerald-400 shrink-0" />
+                          <Monitor size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                         )}
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                        <span className="text-xs font-semibold text-emerald-300 truncate">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse shrink-0" />
+                        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 truncate">
                           Lecture sur {remoteDevice.name}
                         </span>
                       </>
                     ) : (
                       <>
                         {localDevice.type === 'mobile' ? (
-                          <Smartphone size={13} className="text-zinc-400 shrink-0" />
+                          <Smartphone size={13} className="text-slate-500 dark:text-zinc-400 shrink-0" />
                         ) : localDevice.type === 'tablet' ? (
-                          <Tablet size={13} className="text-zinc-400 shrink-0" />
+                          <Tablet size={13} className="text-slate-500 dark:text-zinc-400 shrink-0" />
                         ) : (
-                          <Monitor size={13} className="text-zinc-400 shrink-0" />
+                          <Monitor size={13} className="text-slate-500 dark:text-zinc-400 shrink-0" />
                         )}
-                        <span className="text-[11px] font-medium text-zinc-400 truncate">
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400 truncate">
                           Cet appareil · {localDevice.name}
                         </span>
                       </>
@@ -1134,7 +1138,7 @@ export function MiniAudioPlayer() {
                     <button
                       type="button"
                       onClick={() => void transferToThisDevice()}
-                      className="rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-3 py-1 text-[11px] font-bold transition cursor-pointer shrink-0"
+                      className="rounded-full bg-emerald-600 dark:bg-emerald-500 hover:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 px-3 py-1 text-[11px] font-bold transition cursor-pointer shrink-0"
                     >
                       Jouer ici
                     </button>
@@ -1148,8 +1152,8 @@ export function MiniAudioPlayer() {
                     onClick={() => setShowQueue((v) => !v)}
                     className={`h-9 px-3.5 rounded-full inline-flex items-center gap-2 text-xs font-medium transition cursor-pointer ${
                       showQueue
-                        ? 'bg-white text-zinc-950'
-                        : 'bg-white/8 text-zinc-300 hover:text-white hover:bg-white/14'
+                        ? 'bg-slate-950 dark:bg-white text-white dark:text-zinc-950'
+                        : 'bg-slate-900/8 dark:bg-white/8 text-slate-700 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/14 dark:hover:bg-white/14'
                     }`}
                   >
                     <ListMusic size={15} />
@@ -1160,7 +1164,7 @@ export function MiniAudioPlayer() {
                     type="button"
                     onClick={closePlayer}
                     title="Arrêter et fermer"
-                    className="h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                    className="h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                   >
                     <X size={14} />
                     <span>Arrêter</span>
@@ -1172,16 +1176,16 @@ export function MiniAudioPlayer() {
                 {/* RIGHT COLUMN (DESKTOP ONLY): Persistent Glass Panel — File d'attente & Paroles */}
                 <div
                   data-queue-scroll="true"
-                  className="hidden lg:flex flex-col h-[min(620px,calc(100vh-140px))] rounded-3xl border border-white/10 bg-white/[0.045] backdrop-blur-xl overflow-hidden"
+                  className="hidden lg:flex flex-col h-[min(620px,calc(100vh-140px))] rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/75 dark:bg-white/[0.045] backdrop-blur-xl overflow-hidden shadow-xs dark:shadow-none"
                 >
-                  <div className="px-4 py-3 border-b border-white/10 flex items-center gap-1.5 shrink-0">
+                  <div className="px-4 py-3 border-b border-slate-200/80 dark:border-white/10 flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => setDesktopSideTab('queue')}
                       className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
                         desktopSideTab === 'queue'
-                          ? 'bg-white text-zinc-950'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/8'
+                          ? 'bg-slate-950 dark:bg-white text-white dark:text-zinc-950'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/8'
                       }`}
                     >
                       <ListMusic size={14} />
@@ -1192,8 +1196,8 @@ export function MiniAudioPlayer() {
                       onClick={() => setDesktopSideTab('lyrics')}
                       className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
                         desktopSideTab === 'lyrics'
-                          ? 'bg-white text-zinc-950'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/8'
+                          ? 'bg-slate-950 dark:bg-white text-white dark:text-zinc-950'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/8'
                       }`}
                     >
                       <FileText size={14} />
@@ -1207,7 +1211,7 @@ export function MiniAudioPlayer() {
                       className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 space-y-1"
                     >
                       {queue.length === 0 ? (
-                        <p className="py-12 text-center text-xs text-zinc-500">
+                        <p className="py-12 text-center text-xs text-slate-400 dark:text-zinc-500">
                           File d’attente vide.
                         </p>
                       ) : (
@@ -1223,8 +1227,8 @@ export function MiniAudioPlayer() {
                               }}
                               className={`w-full flex items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                                 active
-                                  ? 'bg-white/14 text-white'
-                                  : 'text-zinc-400 hover:bg-white/8 hover:text-zinc-100'
+                                  ? 'bg-slate-900/8 dark:bg-white/14 text-slate-950 dark:text-white'
+                                  : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8 hover:text-slate-900 dark:hover:text-zinc-100'
                               }`}
                             >
                               <span className="flex items-center gap-3 min-w-0">
@@ -1252,15 +1256,15 @@ export function MiniAudioPlayer() {
                     >
                       {linkedLyrics && linkedLyrics.content.trim() ? (
                         <div className="space-y-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">
                             {linkedLyrics.title}
                           </p>
-                          <p className="text-[15px] leading-[1.9] text-zinc-200 whitespace-pre-wrap font-normal">
+                          <p className="text-[15px] leading-[1.9] text-slate-800 dark:text-zinc-200 whitespace-pre-wrap font-normal">
                             {linkedLyrics.content}
                           </p>
                         </div>
                       ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-center gap-2 text-zinc-500">
+                        <div className="h-full flex flex-col items-center justify-center text-center gap-2 text-slate-400 dark:text-zinc-500">
                           <FileText size={24} className="opacity-40" />
                           <p className="text-xs">Aucun texte lié à ce morceau.</p>
                         </div>
@@ -1279,16 +1283,16 @@ export function MiniAudioPlayer() {
                   animate={{ y: 0 }}
                   exit={{ y: '100%' }}
                   transition={{ type: 'spring', stiffness: 400, damping: 38 }}
-                  className="absolute inset-x-0 bottom-0 top-24 z-20 rounded-t-3xl bg-[#111115]/98 backdrop-blur-xl border-t border-white/10 flex flex-col"
+                  className="absolute inset-x-0 bottom-0 top-24 z-20 rounded-t-3xl bg-white/98 dark:bg-[#111115]/98 backdrop-blur-xl border-t border-slate-200/80 dark:border-white/10 flex flex-col"
                 >
-                  <div className="px-5 py-3.5 border-b border-white/10 flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                  <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-white/10 flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
                       File d’attente ({queue.length})
                     </p>
                     <button
                       type="button"
                       onClick={() => setShowQueue(false)}
-                      className="h-8 w-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 cursor-pointer"
+                      className="h-8 w-8 rounded-full flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 cursor-pointer"
                     >
                       <X size={16} />
                     </button>
@@ -1310,8 +1314,8 @@ export function MiniAudioPlayer() {
                           }}
                           className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                             active
-                              ? 'bg-white/14 text-white'
-                              : 'text-zinc-400 hover:bg-white/8 hover:text-zinc-200'
+                              ? 'bg-slate-900/8 dark:bg-white/14 text-slate-950 dark:text-white'
+                              : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8 hover:text-slate-900 dark:hover:text-zinc-200'
                           }`}
                         >
                           <span className="flex items-center gap-3 min-w-0">
