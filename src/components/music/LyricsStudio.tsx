@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
+import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import { YoutubeBeatPlayer } from './YoutubeBeatPlayer';
 import { LexCoreInspirationWidget, MetronomeWidget } from './LexCoreTools';
 import { LexCoreImportModal } from './LexCoreImportModal';
@@ -114,6 +115,8 @@ export function LyricsStudio({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [trackPickerOpen, setTrackPickerOpen] = useState(false);
   const [trackPickerSearch, setTrackPickerSearch] = useState('');
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [confirmEmptyTrashOpen, setConfirmEmptyTrashOpen] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -537,7 +540,7 @@ export function LyricsStudio({
             {trashedDocs.length > 0 && (
               <button
                 type="button"
-                onClick={emptyLyricsTrash}
+                onClick={() => setConfirmEmptyTrashOpen(true)}
                 className="text-xs font-semibold text-rose-500 hover:underline cursor-pointer"
               >
                 Vider la corbeille
@@ -805,22 +808,19 @@ export function LyricsStudio({
                   {STATUS_META[activeDoc.status || 1].label}
                 </button>
 
-                {/* Folder Picker */}
+                {/* Apple-Style Folder Picker Button */}
                 {state.lyricsFolders.length > 0 && (
-                  <select
-                    value={activeDoc.folderId || ''}
-                    onChange={(e) =>
-                      updateLyricsDoc(activeDoc.id, { folderId: e.target.value || null })
-                    }
-                    className="hidden sm:block rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-transparent px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 outline-none cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => setFolderPickerOpen(true)}
+                    className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 transition cursor-pointer"
                   >
-                    <option value="">Sans dossier</option>
-                    {state.lyricsFolders.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
+                    <Folder size={11} className="text-slate-400" />
+                    <span className="truncate max-w-[110px]">
+                      {(activeDoc.folderId && folderMap.get(activeDoc.folderId)) || 'Dossier…'}
+                    </span>
+                    <ChevronDown size={11} className="opacity-60" />
+                  </button>
                 )}
 
                 {/* Undo / Redo */}
@@ -1278,8 +1278,86 @@ export function LyricsStudio({
               </div>
             </div>
           )}
+
+          {/* Apple-Style Folder Assignment Sheet */}
+          {folderPickerOpen && (
+            <div
+              onClick={() => setFolderPickerOpen(false)}
+              className="fixed inset-0 z-[60] bg-slate-950/50 dark:bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="w-full sm:max-w-xs rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#141418] border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[70dvh]"
+              >
+                <div className="px-4 py-3.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                    Classer dans un dossier
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setFolderPickerOpen(false)}
+                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+
+                <div className="p-2 overflow-y-auto space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateLyricsDoc(activeDoc.id, { folderId: null });
+                      setFolderPickerOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
+                      !activeDoc.folderId
+                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                        : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
+                    }`}
+                  >
+                    <span>Sans dossier</span>
+                    {!activeDoc.folderId && <Check size={14} />}
+                  </button>
+                  {state.lyricsFolders.map((f) => {
+                    const selected = activeDoc.folderId === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => {
+                          updateLyricsDoc(activeDoc.id, { folderId: f.id });
+                          setFolderPickerOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
+                          selected
+                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                            : 'text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 truncate">
+                          <Folder size={13} className={selected ? 'text-current' : 'text-slate-400'} />
+                          <span className="truncate">{f.name}</span>
+                        </span>
+                        {selected && <Check size={14} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      <AppleConfirmDialog
+        open={confirmEmptyTrashOpen}
+        title="Vider la corbeille ?"
+        description="Tous les textes placés dans la corbeille seront supprimés définitivement."
+        confirmLabel="Vider"
+        destructive
+        onConfirm={emptyLyricsTrash}
+        onCancel={() => setConfirmEmptyTrashOpen(false)}
+      />
 
       <LexCoreImportModal
         open={importModalOpen}

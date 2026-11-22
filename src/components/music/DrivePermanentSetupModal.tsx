@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import type { DriveSource } from '../../types';
+import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 
 interface DriveSourcesManagerProps {
   onConnected?: () => void;
@@ -45,6 +46,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
   const [editFolderInput, setEditFolderInput] = useState('');
   const [busyEditId, setBusyEditId] = useState<string | null>(null);
   const [busyRemoveId, setBusyRemoveId] = useState<string | null>(null);
+  const [confirmRemoveSource, setConfirmRemoveSource] = useState<DriveSource | null>(null);
 
   const handleCopyEmail = async () => {
     if (!serviceAccountEmail) return;
@@ -220,7 +222,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                       <button
                         type="button"
                         disabled={isBusyRemove || autoSyncingDrive}
-                        onClick={() => void handleRemove(src)}
+                        onClick={() => setConfirmRemoveSource(src)}
                         title="Déconnecter ce Drive"
                         className="h-7 w-7 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 disabled:opacity-40 transition cursor-pointer"
                       >
@@ -387,6 +389,18 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
           </div>
         </form>
       )}
+
+      <AppleConfirmDialog
+        open={Boolean(confirmRemoveSource)}
+        title={`Déconnecter « ${confirmRemoveSource?.name || 'ce Drive'} » ?`}
+        description="Les morceaux liés à ce dossier Google Drive seront retirés de Kora (tes fichiers sur Google Drive ne sont jamais modifiés)."
+        confirmLabel="Déconnecter"
+        destructive
+        onConfirm={() => {
+          if (confirmRemoveSource) void handleRemove(confirmRemoveSource);
+        }}
+        onCancel={() => setConfirmRemoveSource(null)}
+      />
     </div>
   );
 }

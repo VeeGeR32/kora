@@ -46,6 +46,7 @@ import {
   TRACK_PIPELINE_ORDER,
   TRACK_STATUS_META,
 } from '../../utils/theme';
+import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import { CheckCircle } from '../ui/CheckCircle';
 import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
 
@@ -114,6 +115,8 @@ export function TrackDetailModal({
   const [songTitleDraft, setSongTitleDraft] = useState('');
   const [lyricsPickerOpen, setLyricsPickerOpen] = useState(false);
   const [lyricsSearch, setLyricsSearch] = useState('');
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   useEffect(() => {
     setSongTitleDraft(group?.baseTitle || '');
@@ -371,10 +374,7 @@ export function TrackDetailModal({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  deleteMusicTrack(track.id);
-                  if (group.versions.length <= 1) onClose();
-                }}
+                onClick={() => setConfirmDeleteOpen(true)}
                 title={`Supprimer ${group.hasMultipleVersions ? activeEntry.versionLabel : 'ce son'}`}
                 className="h-9 w-9 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center transition cursor-pointer"
               >
@@ -1198,18 +1198,13 @@ export function TrackDetailModal({
                 <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
                   <FolderKanban size={10} /> Projet
                 </label>
-                <select
-                  value={linkedProject?.id || ''}
-                  onChange={(e) => handleAssignProject(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2.5 py-2 text-xs outline-none"
+                <button
+                  type="button"
+                  onClick={() => setProjectPickerOpen(true)}
+                  className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 px-2.5 py-2 text-xs text-left font-medium text-slate-800 dark:text-zinc-200 truncate transition cursor-pointer"
                 >
-                  <option value="">Aucun</option>
-                  {state.musicProjects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title}
-                    </option>
-                  ))}
-                </select>
+                  {linkedProject ? linkedProject.title : 'Aucun projet…'}
+                </button>
               </div>
             </section>
 
@@ -1438,6 +1433,95 @@ export function TrackDetailModal({
             </div>
           </div>
         )}
+
+        {/* Apple-Style Project Assignment Sheet */}
+        {projectPickerOpen && (
+          <div
+            onClick={() => setProjectPickerOpen(false)}
+            className="fixed inset-0 z-[60] bg-slate-950/50 dark:bg-black/70 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-white dark:bg-[#141418] border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[75dvh]"
+            >
+              <div className="px-4 py-3.5 border-b border-slate-100 dark:border-zinc-800 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                  Projet de « {group.baseTitle} »
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setProjectPickerOpen(false)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="p-2 overflow-y-auto space-y-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAssignProject('');
+                    setProjectPickerOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
+                    !linkedProject
+                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                      : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
+                  }`}
+                >
+                  <span>Aucun projet (son indépendant)</span>
+                  {!linkedProject && <Check size={14} />}
+                </button>
+
+                {state.musicProjects.map((proj) => {
+                  const selected = linkedProject?.id === proj.id;
+                  return (
+                    <button
+                      key={proj.id}
+                      type="button"
+                      onClick={() => {
+                        handleAssignProject(proj.id);
+                        setProjectPickerOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
+                        selected
+                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                          : 'text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1 flex items-center gap-2">
+                        <FolderKanban size={13} className={selected ? 'text-current' : 'text-slate-400'} />
+                        <span className="truncate">{proj.title}</span>
+                        <span className="text-[10px] uppercase opacity-55 shrink-0">
+                          {proj.kind}
+                        </span>
+                      </div>
+                      {selected && <Check size={14} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <AppleConfirmDialog
+          open={confirmDeleteOpen}
+          title={
+            group.hasMultipleVersions
+              ? `Supprimer la version ${activeEntry.versionLabel} ?`
+              : `Supprimer « ${group.baseTitle} » ?`
+          }
+          description="Ce morceau sera retiré de ta bibliothèque Kora."
+          confirmLabel="Supprimer"
+          destructive
+          onConfirm={() => {
+            deleteMusicTrack(track.id);
+            if (group.versions.length <= 1) onClose();
+          }}
+          onCancel={() => setConfirmDeleteOpen(false)}
+        />
       </motion.div>
     </AnimatePresence>
   );

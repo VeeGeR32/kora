@@ -33,6 +33,7 @@ import {
 import type { MusicProject, ProjectKind } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
+import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import { CheckCircle } from '../ui/CheckCircle';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
@@ -147,6 +148,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const [addTrackSort, setAddTrackSort] = useState<'recent' | 'potential' | 'gap'>('potential');
   const [showBench, setShowBench] = useState(false);
   const [showEditMeta, setShowEditMeta] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [openTrackMenuId, setOpenTrackMenuId] = useState<string | null>(null);
   const [versionPickerTrackId, setVersionPickerTrackId] = useState<string | null>(null);
   const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
@@ -810,55 +812,88 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <select
-                      value={project.kind}
-                      onChange={(e) =>
-                        updateMusicProject(project.id, { kind: e.target.value as ProjectKind })
-                      }
-                      className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2.5 py-2 text-xs font-medium"
-                    >
-                      <option value="single">Single</option>
-                      <option value="ep">EP</option>
-                      <option value="album">Album</option>
-                      <option value="mixtape">Mixtape</option>
-                    </select>
-                    <select
-                      value={project.status}
-                      onChange={(e) =>
-                        updateMusicProject(project.id, {
-                          status: e.target.value as MusicProject['status'],
-                        })
-                      }
-                      className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2.5 py-2 text-xs font-medium"
-                    >
-                      <option value="en-cours">En cours</option>
-                      <option value="mix">Mix / Master</option>
-                      <option value="pret">Prêt</option>
-                      <option value="sorti">Sorti</option>
-                    </select>
-                    <input
-                      type="date"
-                      value={project.targetReleaseDate || ''}
-                      onChange={(e) =>
-                        updateMusicProject(project.id, {
-                          targetReleaseDate: e.target.value || undefined,
-                        })
-                      }
-                      className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-2 font-mono text-[11px]"
-                    />
+                  {/* Apple Segmented Control: Format */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">
+                      Format du projet
+                    </span>
+                    <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 dark:bg-zinc-950 p-1">
+                      {(
+                        [
+                          ['single', 'Single'],
+                          ['ep', 'EP'],
+                          ['album', 'Album'],
+                          ['mixtape', 'Mixtape'],
+                        ] as const
+                      ).map(([id, lbl]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => updateMusicProject(project.id, { kind: id })}
+                          className={`rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
+                            project.kind === id
+                              ? 'bg-white dark:bg-zinc-800 text-slate-950 dark:text-white shadow-2xs'
+                              : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="flex justify-end pt-1">
+                  {/* Apple Segmented Control: Statut */}
+                  <div className="space-y-1.5">
+                    <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">
+                      Phase actuelle
+                    </span>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-xl bg-slate-100 dark:bg-zinc-950 p-1">
+                      {(
+                        [
+                          ['en-cours', 'En cours'],
+                          ['mix', 'Mix / Master'],
+                          ['pret', 'Prêt'],
+                          ['sorti', 'Sorti'],
+                        ] as const
+                      ).map(([id, lbl]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => updateMusicProject(project.id, { status: id })}
+                          className={`rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
+                            project.status === id
+                              ? 'bg-white dark:bg-zinc-800 text-slate-950 dark:text-white shadow-2xs'
+                              : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200'
+                          }`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">
+                        Date de sortie :
+                      </span>
+                      <input
+                        type="date"
+                        value={project.targetReleaseDate || ''}
+                        onChange={(e) =>
+                          updateMusicProject(project.id, {
+                            targetReleaseDate: e.target.value || undefined,
+                          })
+                        }
+                        className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2.5 py-1.5 font-mono text-[11px]"
+                      />
+                    </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        deleteMusicProject(project.id);
-                        onClose();
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:underline cursor-pointer"
+                      onClick={() => setConfirmDeleteOpen(true)}
+                      className="inline-flex items-center gap-1 rounded-xl bg-rose-500/10 hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 px-3 py-1.5 text-xs font-semibold transition cursor-pointer"
                     >
-                      <Trash2 size={12} /> Supprimer ce projet
+                      <Trash2 size={12} /> Supprimer…
                     </button>
                   </div>
                 </motion.div>
@@ -1917,6 +1952,19 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
             )}
           </div>
         </div>
+
+        <AppleConfirmDialog
+          open={confirmDeleteOpen}
+          title={`Supprimer « ${project.title} » ?`}
+          description="Le projet et sa TODO seront supprimés. Tes fichiers MP3 et tes sons resteront intacts dans ta bibliothèque."
+          confirmLabel="Supprimer"
+          destructive
+          onConfirm={() => {
+            deleteMusicProject(project.id);
+            onClose();
+          }}
+          onCancel={() => setConfirmDeleteOpen(false)}
+        />
       </motion.div>
     </AnimatePresence>
   );

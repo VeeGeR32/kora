@@ -12,10 +12,12 @@ import {
   Play,
   Plus,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { MusicProject, MusicProjectSprint, MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
+import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import {
   countLyricsFixTags,
@@ -72,6 +74,7 @@ export function ProjectSprintView({
   const [targetDate, setTargetDate] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [confirmDeleteSprintId, setConfirmDeleteSprintId] = useState<string | null>(null);
 
   const byId = useMemo(
     () => new Map(projectTracks.map((t) => [t.id, t])),
@@ -289,7 +292,7 @@ export function ProjectSprintView({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDeleteSprint(activeSprint.id)}
+                  onClick={() => setConfirmDeleteSprintId(activeSprint.id)}
                   title="Supprimer ce sprint"
                   className="p-1.5 rounded-full text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition cursor-pointer"
                 >
@@ -604,6 +607,41 @@ export function ProjectSprintView({
             </div>
           </div>
 
+          {/* Visual 3-Slot Apple Batch Strip */}
+          <div className="grid grid-cols-3 gap-2">
+            {[0, 1, 2].map((slotIdx) => {
+              const tid = selectedIds[slotIdx];
+              const trk = tid ? byId.get(tid) : undefined;
+              return (
+                <div
+                  key={slotIdx}
+                  onClick={() => tid && toggleSelectForSprint(tid)}
+                  className={`rounded-xl border px-2.5 py-2 flex items-center justify-between gap-1.5 transition ${
+                    trk
+                      ? 'bg-white dark:bg-zinc-950 border-slate-300 dark:border-zinc-700 cursor-pointer hover:border-rose-400'
+                      : 'border-dashed border-slate-200 dark:border-zinc-800 bg-transparent text-slate-400 dark:text-zinc-600'
+                  }`}
+                >
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <span
+                      className={`h-4 w-4 rounded-full font-mono text-[10px] font-bold flex items-center justify-center shrink-0 ${
+                        trk
+                          ? 'bg-[#FF5500] text-white'
+                          : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-400'
+                      }`}
+                    >
+                      {slotIdx + 1}
+                    </span>
+                    <span className="text-[11px] font-medium truncate">
+                      {trk ? trk.manualGroupTitle || trk.title : 'Slot libre'}
+                    </span>
+                  </div>
+                  {trk && <X size={11} className="text-slate-400 shrink-0" />}
+                </div>
+              );
+            })}
+          </div>
+
           {sameMoodWarning && (
             <p className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-xl px-3 py-1.5">
               Tes 3 titres ont la même ambiance — pense à varier (Énergique / Chill / Expé) pour éviter la lassitude auditive.
@@ -724,6 +762,18 @@ export function ProjectSprintView({
           )}
         </div>
       )}
+
+      <AppleConfirmDialog
+        open={Boolean(confirmDeleteSprintId)}
+        title="Supprimer ce sprint ?"
+        description="Le sprint sera retiré de la planification (tes titres et leur avancement restent intacts)."
+        confirmLabel="Supprimer"
+        destructive
+        onConfirm={() => {
+          if (confirmDeleteSprintId) handleDeleteSprint(confirmDeleteSprintId);
+        }}
+        onCancel={() => setConfirmDeleteSprintId(null)}
+      />
     </div>
   );
 }

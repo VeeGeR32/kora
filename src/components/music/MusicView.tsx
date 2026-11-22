@@ -14,7 +14,7 @@ import {
   Shuffle,
   Star,
 } from 'lucide-react';
-import type { MusicTrack, ProjectKind } from '../../types';
+import type { MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { DrivePermanentSetupModal, DriveSourcesManager } from './DrivePermanentSetupModal';
@@ -23,9 +23,9 @@ import {
   parseTrackVersion,
   type TrackGroup,
 } from '../../lib/musicVersioning';
-import { uid } from '../../utils/dates';
 import { LyricsStudio } from './LyricsStudio';
 import { ProjectAlbumModal } from './ProjectAlbumModal';
+import { ProjectCreationModal } from './ProjectCreationModal';
 import { TrackCard } from './TrackCard';
 import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu';
 import { TrackDetailModal } from './TrackDetailModal';
@@ -36,7 +36,6 @@ import {
   getProjectTrackIndividualCovers,
   resolveTrackRatings,
 } from '../../lib/trackCover';
-import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 
 export type MusicSubTab = 'dashboard' | 'library' | 'projects' | 'lyrics';
 
@@ -57,7 +56,6 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     syncAllConnectedDrives,
     updateMusicTrack,
     setTrackGroupFavorite,
-    addMusicProject,
     setProjectTrackVersion,
     addLyricsDoc,
     updateLastSession,
@@ -125,11 +123,8 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
   const [groupVersions, setGroupVersions] = useState(true);
   const [yearFilter, setYearFilter] = useState<string>('all');
 
-  // New project quick modal inline
+  // Full-page Apple Studio project creation modal
   const [showNewProj, setShowNewProj] = useState(false);
-  const [newProjTitle, setNewProjTitle] = useState('');
-  const [newProjKind, setNewProjKind] = useState<ProjectKind>('ep');
-  const [newProjDate, setNewProjDate] = useState('');
   const [openProjectId, setOpenProjectIdState] = useState<string | null>(
     () => state.preferences.lastSession?.openMusicProjectId || null
   );
@@ -456,30 +451,6 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
     notify(`« ${target.title} » détaché en son indépendant ✓`);
   };
 
-  const handleCreateProject = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProjTitle.trim()) return;
-    const grad = PROJECT_GRADIENTS[state.musicProjects.length % PROJECT_GRADIENTS.length].id;
-    const newId = addMusicProject({
-      title: newProjTitle.trim(),
-      kind: newProjKind,
-      coverGradient: grad,
-      targetReleaseDate: newProjDate || undefined,
-      status: 'en-cours',
-      trackIds: [],
-      steps: [
-        { id: uid('ps'), label: 'Sélection des prods / MP3', done: false },
-        { id: uid('ps'), label: 'Écriture des textes', done: false },
-        { id: uid('ps'), label: 'Enregistrement voix', done: false },
-        { id: uid('ps'), label: 'Mix / Master & Pochette', done: false },
-      ],
-    });
-    setNewProjTitle('');
-    setNewProjDate('');
-    setShowNewProj(false);
-    setOpenProjectId(newId);
-  };
-
   const activeQueueTracks = useMemo(
     () => (subTab === 'library' ? filteredLibraryGroups : trackGroups).map(getActiveTrackForGroup),
     [subTab, filteredLibraryGroups, trackGroups, selectedVersionByGroup]
@@ -494,78 +465,43 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
                 {compact ? 'Projets' : 'Albums, EP, Singles & Mixtapes'}
               </h2>
               {compact ? (
-                state.musicProjects.length > 0 && (
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setSubTab('projects')}
-                    className="text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:underline cursor-pointer"
+                    onClick={() => setShowNewProj(true)}
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer"
                   >
-                    Tout voir ({state.musicProjects.length}) →
+                    <Plus size={12} /> Nouveau
                   </button>
-                )
+                  {state.musicProjects.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSubTab('projects')}
+                      className="text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:underline cursor-pointer"
+                    >
+                      Tout voir ({state.musicProjects.length}) →
+                    </button>
+                  )}
+                </div>
               ) : (
                 <button
                   type="button"
-                  onClick={() => setShowNewProj((v) => !v)}
-                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-xs font-semibold cursor-pointer"
+                  onClick={() => setShowNewProj(true)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
                 >
                   <Plus size={13} /> Nouveau projet
                 </button>
               )}
             </div>
 
-            {!compact && showNewProj && (
-              <form
-                onSubmit={handleCreateProject}
-                className="tempo-card rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-2.5"
-              >
-                <input
-                  autoFocus
-                  type="text"
-                  required
-                  value={newProjTitle}
-                  onChange={(e) => setNewProjTitle(e.target.value)}
-                  placeholder="Nom du projet (ex. EP Minuit)"
-                  className="sm:col-span-2 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 text-xs"
-                />
-                <select
-                  value={newProjKind}
-                  onChange={(e) => setNewProjKind(e.target.value as ProjectKind)}
-                  className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-2 text-xs"
-                >
-                  <option value="single">Single</option>
-                  <option value="ep">EP</option>
-                  <option value="album">Album</option>
-                  <option value="mixtape">Mixtape</option>
-                </select>
-                <div className="flex gap-1.5">
-                  <input
-                    type="date"
-                    value={newProjDate}
-                    onChange={(e) => setNewProjDate(e.target.value)}
-                    className="flex-1 rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-2 py-2 font-mono text-xs"
-                  />
-                  <button
-                    type="submit"
-                    className="rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-2 text-xs font-semibold cursor-pointer"
-                  >
-                    Créer
-                  </button>
-                </div>
-              </form>
-            )}
-
             {state.musicProjects.length === 0 ? (
-              <div className="tempo-card rounded-3xl p-7 text-center space-y-2">
+              <div className="tempo-card rounded-3xl p-7 text-center space-y-2.5">
                 <p className="text-xs text-slate-400">
-                  Crée un projet (Single, EP, Album) pour regrouper plusieurs sons, sa pochette et sa TODO globale.
+                  Crée un projet (Single, EP, Album, Mixtape) avec sa pochette, sa tracklist et ses jalons de production.
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSubTab('projects');
-                    setShowNewProj(true);
-                  }}
+                  onClick={() => setShowNewProj(true)}
                   className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold cursor-pointer"
                 >
                   <Plus size={13} /> Créer un projet
@@ -1219,6 +1155,15 @@ export function MusicView({ subTab, onSubTabChange, navResetNonce = 0 }: MusicVi
       )}
 
       {/* ================= MODALS & RIGHT-CLICK CONTEXT MENU ================= */}
+      <ProjectCreationModal
+        open={showNewProj}
+        onClose={() => setShowNewProj(false)}
+        onCreated={(newProjectId) => {
+          setShowNewProj(false);
+          setOpenProjectId(newProjectId);
+        }}
+      />
+
       <ProjectAlbumModal
         projectId={openProjectId}
         onClose={() => setOpenProjectId(null)}
