@@ -429,6 +429,33 @@ export interface ActiveFocusSession {
   linkedTrackId?: string;
 }
 
+export interface LivePlaybackCommand {
+  id: string;
+  fromDeviceId: string;
+  targetDeviceId: string;
+  type: 'play' | 'pause' | 'toggle' | 'seek' | 'next' | 'prev' | 'playTrack' | 'stop';
+  timeSec?: number;
+  trackId?: string;
+  queueIds?: string[];
+  issuedAt: number;
+}
+
+export interface LivePlaybackState {
+  activeDeviceId: string;
+  activeDeviceName: string;
+  activeDeviceType: 'mobile' | 'tablet' | 'desktop';
+  trackId: string;
+  queueIds: string[];
+  isPlaying: boolean;
+  positionSec: number;
+  durationSec: number;
+  positionUpdatedAt: number;
+  repeatMode?: 'off' | 'all' | 'one';
+  shuffle?: boolean;
+  command?: LivePlaybackCommand;
+  updatedAt: number;
+}
+
 export interface LastSessionState {
   activeTab: ActiveTab;
   musicSubTab?: 'dashboard' | 'library' | 'projects' | 'lyrics';
@@ -440,6 +467,7 @@ export interface LastSessionState {
   audioTimeSec?: number;
   audioExpanded?: boolean;
   scrollY?: number;
+  livePlayback?: LivePlaybackState | null;
   savedAt: number; // epoch ms
 }
 

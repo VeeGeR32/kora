@@ -25,6 +25,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
   setDoc,
+  updateDoc,
   type Firestore,
   type Unsubscribe,
 } from 'firebase/firestore';
@@ -381,7 +382,7 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
   }
   if (p.lastSession && typeof p.lastSession === 'object' && p.lastSession.activeTab) {
     const validTabs = ['today', 'planning', 'studies', 'sport', 'music'] as const;
-    const validMusicSub = ['dashboard', 'library', 'lyrics'] as const;
+    const validMusicSub = ['dashboard', 'library', 'projects', 'lyrics'] as const;
     const validSportSub = ['gym', 'nutrition', 'poids'] as const;
     const validStudiesSub = ['exams', 'cursus', 'docs', 'pronote'] as const;
     const ls = p.lastSession;
@@ -412,6 +413,9 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     }
     if (typeof ls.scrollY === 'number' && Number.isFinite(ls.scrollY) && ls.scrollY >= 0) {
       cleanSession.scrollY = Math.round(Math.min(100000, ls.scrollY));
+    }
+    if (ls.livePlayback && typeof ls.livePlayback === 'object' && ls.livePlayback.activeDeviceId) {
+      cleanSession.livePlayback = ls.livePlayback;
     }
     cleanPreferences.lastSession = cleanSession;
   }
@@ -607,6 +611,24 @@ export async function pushStateToCloud(
 
   await setDoc(refDoc, cleanPayload);
   return cleanPayload.updatedAt as number;
+}
+
+/** Ultra-lightweight Firestore delta write (~350 bytes) for real-time Spotify Connect playback sync */
+export async function pushLivePlaybackDelta(
+  config: FirebaseUserConfig | null | undefined,
+  uid: string,
+  livePlayback: AppState['preferences']['lastSession'] extends { livePlayback?: infer T } ? T : unknown
+): Promise<number> {
+  const bundle = initFirebaseClient(config);
+  const ts = Date.now();
+  if (!bundle) return ts;
+  const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
+  const sanitized = livePlayback ? JSON.parse(JSON.stringify(livePlayback)) : null;
+  await updateDoc(refDoc, {
+    'preferences.lastSession.livePlayback': sanitized,
+    updatedAt: ts,
+  });
+  return ts;
 }
 
 export function subscribeCloudState(

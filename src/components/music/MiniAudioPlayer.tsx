@@ -6,6 +6,7 @@ import {
   FileText,
   ListMusic,
   Loader2,
+  Monitor,
   Music2,
   Pause,
   Play,
@@ -15,7 +16,9 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Smartphone,
   Star,
+  Tablet,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -83,6 +86,10 @@ export function MiniAudioPlayer() {
     setExpanded,
     closePlayer,
     requestOpenTrackPage,
+    localDevice,
+    remoteDevice,
+    isRemotePlayback,
+    transferToThisDevice,
   } = useAudioPlayer();
 
   const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
@@ -289,7 +296,10 @@ export function MiniAudioPlayer() {
     .filter(Boolean)
     .join(' · ');
   const canPlay = Boolean(
-    currentTrack?.mediaId || currentTrack?.cloudAudioUrl || currentTrack?.googleDriveFileId
+    isRemotePlayback ||
+      currentTrack?.mediaId ||
+      currentTrack?.cloudAudioUrl ||
+      currentTrack?.googleDriveFileId
   );
 
   // Zero-lag GPU drag scrubbing with haptic ticks!
@@ -552,7 +562,11 @@ export function MiniAudioPlayer() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
             onWheel={handleMiniWheel}
-            className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-[#141418]/96 text-white border border-white/10 shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl px-2 py-1.5 transition-[bottom,left] duration-200 ease-out overflow-hidden"
+            className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-[#141418]/96 text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color] duration-200 ease-out overflow-hidden ${
+              isRemotePlayback
+                ? 'border-emerald-400/45 shadow-[0_14px_38px_-8px_rgba(16,185,129,0.28)]'
+                : 'border-white/10 shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)]'
+            }`}
           >
             <div className="flex items-center justify-between gap-2">
               {/* Swipeable Cover Art + Title (Swipe Left = Next · Swipe Right = Prev · Tap = Fullscreen) */}
@@ -597,6 +611,11 @@ export function MiniAudioPlayer() {
                     </p>
                     {isLoadingTrack ? (
                       <div className="mt-1.5 h-2 w-24 rounded-full bg-white/15 animate-pulse" />
+                    ) : isRemotePlayback && remoteDevice ? (
+                      <p className="text-[10px] font-medium text-emerald-400 truncate mt-0.5 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                        <span className="truncate">Lecture sur {remoteDevice.name}</span>
+                      </p>
                     ) : (
                       <p className="text-[10px] text-zinc-400 truncate mt-0.5">{subtitle}</p>
                     )}
@@ -632,8 +651,19 @@ export function MiniAudioPlayer() {
                 <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-amber-300" />
               </div>
 
-              {/* Compact Transport Controls (Prev / Play-Pause / Next / Close) */}
+              {/* Compact Transport Controls (Connect Transfer / Prev / Play-Pause / Next / Close) */}
               <div className="flex items-center gap-0.5 shrink-0 pr-0.5">
+                {isRemotePlayback && remoteDevice && (
+                  <button
+                    type="button"
+                    data-mini-ctrl="true"
+                    onClick={() => void transferToThisDevice()}
+                    title={`Transférer la lecture depuis ${remoteDevice.name} vers ${localDevice.name}`}
+                    className="h-7 px-2.5 mr-0.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/35 text-emerald-300 text-[10px] font-semibold transition cursor-pointer shrink-0"
+                  >
+                    Ici
+                  </button>
+                )}
                 <button
                   type="button"
                   data-mini-ctrl="true"
@@ -1059,6 +1089,56 @@ export function MiniAudioPlayer() {
                       <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-amber-300" />
                     )}
                   </button>
+                </div>
+
+                {/* Kora Connect Device Bar (Spotify Connect style: Live device status + 1-tap transfer!) */}
+                <div
+                  className={`rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-2.5 transition ${
+                    isRemotePlayback && remoteDevice
+                      ? 'border-emerald-400/35 bg-emerald-500/12'
+                      : 'border-white/10 bg-white/[0.04]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {isRemotePlayback && remoteDevice ? (
+                      <>
+                        {remoteDevice.type === 'mobile' ? (
+                          <Smartphone size={14} className="text-emerald-400 shrink-0" />
+                        ) : remoteDevice.type === 'tablet' ? (
+                          <Tablet size={14} className="text-emerald-400 shrink-0" />
+                        ) : (
+                          <Monitor size={14} className="text-emerald-400 shrink-0" />
+                        )}
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                        <span className="text-xs font-semibold text-emerald-300 truncate">
+                          Lecture sur {remoteDevice.name}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        {localDevice.type === 'mobile' ? (
+                          <Smartphone size={13} className="text-zinc-400 shrink-0" />
+                        ) : localDevice.type === 'tablet' ? (
+                          <Tablet size={13} className="text-zinc-400 shrink-0" />
+                        ) : (
+                          <Monitor size={13} className="text-zinc-400 shrink-0" />
+                        )}
+                        <span className="text-[11px] font-medium text-zinc-400 truncate">
+                          Cet appareil · {localDevice.name}
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  {isRemotePlayback && remoteDevice && (
+                    <button
+                      type="button"
+                      onClick={() => void transferToThisDevice()}
+                      className="rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-3 py-1 text-[11px] font-bold transition cursor-pointer shrink-0"
+                    >
+                      Jouer ici
+                    </button>
+                  )}
                 </div>
 
                 {/* Bottom Utility Row (Mobile only — Desktop has persistent Queue & Lyrics right panel!) */}

@@ -15,6 +15,7 @@ import type {
   GradeEntry,
   HomeworkItem,
   LastSessionState,
+  LivePlaybackState,
   LyricsDoc,
   LyricsFolder,
   MealEntry,
@@ -43,6 +44,7 @@ import {
   formatFirebaseSyncError,
   getEnvFirebaseConfig,
   listenAuthState,
+  pushLivePlaybackDelta,
   pushStateToCloud,
   signInWithEmail,
   signInWithGoogle,
@@ -224,6 +226,7 @@ interface AppContextValue {
   // Preferences & Data
   updatePreferences: (patch: Partial<UserPreferences>) => void;
   updateLastSession: (patch: Partial<Omit<LastSessionState, 'savedAt'>>) => void;
+  publishLivePlayback: (live: LivePlaybackState | null) => Promise<void>;
   toggleTheme: () => void;
   resetToDemo: () => void;
   clearAllData: () => void;
@@ -2029,6 +2032,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const publishLivePlayback = useCallback(
+    async (live: LivePlaybackState | null) => {
+      if (!cloudUser) return;
+      const cur = latestStateRef.current;
+      const prevSession: LastSessionState = cur.preferences.lastSession || {
+        activeTab: 'music',
+        savedAt: Date.now(),
+      };
+      latestStateRef.current = {
+        ...cur,
+        preferences: {
+          ...cur.preferences,
+          lastSession: {
+            ...prevSession,
+            livePlayback: live,
+          },
+        },
+      };
+      try {
+        const ts = await pushLivePlaybackDelta(resolvedFbConfig, cloudUser.uid, live);
+        lastPushedUpdatedAtRef.current = ts;
+      } catch {
+        // Fallback silently if document isn't initialized yet
+      }
+    },
+    [cloudUser, resolvedFbConfig]
+  );
+
   const toggleTheme = useCallback(() => {
     touch((prev) => ({
       ...prev,
@@ -2191,6 +2222,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         completeActiveFocus,
         updatePreferences,
         updateLastSession,
+        publishLivePlayback,
         toggleTheme,
         resetToDemo,
         clearAllData,
