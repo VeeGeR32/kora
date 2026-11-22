@@ -20,6 +20,7 @@ import {
   Star,
   Tag,
   Trash2,
+  TrendingUp,
   Unlink,
   X,
 } from 'lucide-react';
@@ -33,6 +34,7 @@ import {
   LYRICS_STATUS_META,
   prepareAndUploadHdCover,
   resolveEffectiveTrackCover,
+  resolveTrackRatings,
 } from '../../lib/trackCover';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { getDeterministicGradientId } from '../../lib/musicVersioning';
@@ -81,6 +83,7 @@ export function TrackDetailModal({
     renameTrackGroup,
     setTrackGroupCover,
     setTrackGroupFavorite,
+    setTrackGroupRatings,
     addMusicTrackTodo,
     toggleMusicTrackTodo,
     deleteMusicTrackTodo,
@@ -175,6 +178,16 @@ export function TrackDetailModal({
     [track, group, state.lyricsDocs]
   );
   const linkedLyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+  const ratings = useMemo(
+    () =>
+      track && group
+        ? resolveTrackRatings(
+            track,
+            group.versions.map((v) => v.track)
+          )
+        : { current: null, potential: null },
+    [track, group]
+  );
 
   if (!group || !activeEntry || !track) return null;
 
@@ -579,6 +592,86 @@ export function TrackDetailModal({
               <div className="flex items-center justify-between font-mono text-[10px] text-slate-400">
                 <span>{isCurrent ? fmt(player.currentTime) : '0:00'}</span>
                 <span>{effectiveDuration > 0 ? fmt(effectiveDuration) : 'Clique pour écouter'}</span>
+              </div>
+            </section>
+
+            {/* Minimalist Dual Ratings (Note actuelle + Potentiel /10) */}
+            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/60 dark:bg-zinc-900/40 px-4 py-3.5 space-y-3">
+              {/* Row 1: Note actuelle */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
+                    Note actuelle
+                  </span>
+                  <span className="font-mono text-xs font-semibold tabular-nums text-slate-900 dark:text-zinc-100">
+                    {ratings.current !== null ? `${ratings.current}/10` : '—'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-10 gap-1">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => {
+                    const active = ratings.current === val;
+                    const filled = ratings.current !== null && val <= ratings.current;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setTrackGroupRatings(allGroupTrackIds, {
+                            ratingCurrent: active ? null : val,
+                          })
+                        }
+                        className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
+                          active
+                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            : filled
+                            ? 'bg-slate-200/90 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200'
+                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Row 2: Potentiel */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-200/60 dark:border-zinc-800/70">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
+                    <TrendingUp size={12} className="text-violet-500" />
+                    Potentiel
+                  </span>
+                  <span className="font-mono text-xs font-semibold tabular-nums text-violet-600 dark:text-violet-400">
+                    {ratings.potential !== null ? `${ratings.potential}/10` : '—'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-10 gap-1">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => {
+                    const active = ratings.potential === val;
+                    const filled = ratings.potential !== null && val <= ratings.potential;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          setTrackGroupRatings(allGroupTrackIds, {
+                            ratingPotential: active ? null : val,
+                          })
+                        }
+                        className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
+                          active
+                            ? 'bg-violet-600 text-white'
+                            : filled
+                            ? 'bg-violet-500/15 text-violet-700 dark:text-violet-300'
+                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-violet-600 dark:hover:text-violet-300'
+                        }`}
+                      >
+                        {val}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </section>
 

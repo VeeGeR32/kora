@@ -19,6 +19,7 @@ import {
   findLinkedLyricsForTrack,
   LYRICS_STATUS_META,
   resolveEffectiveTrackCover,
+  resolveTrackRatings,
 } from '../../lib/trackCover';
 import { TRACK_STATUS_META } from '../../utils/theme';
 import { getGradientClass } from './MiniAudioPlayer';
@@ -113,6 +114,14 @@ export function TrackCard({
     [track, state.lyricsDocs, group.allTrackIds, group.versions]
   );
   const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+  const ratings = useMemo(
+    () =>
+      resolveTrackRatings(
+        track,
+        group.versions.map((v) => v.track)
+      ),
+    [track, group.versions]
+  );
 
   const gradCls = getGradientClass(effectiveCover.gradientId);
   const todos = track.todos || [];
@@ -267,6 +276,21 @@ export function TrackCard({
               >
                 <FileText size={9} className="shrink-0 opacity-80" />
                 <span>{lyricsMeta.label}</span>
+              </span>
+            )}
+
+            {(ratings.current !== null || ratings.potential !== null) && (
+              <span
+                title={`Note actuelle : ${ratings.current ?? '—'}/10 · Potentiel : ${ratings.potential ?? '—'}/10`}
+                className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
+              >
+                {ratings.current !== null && <span>{ratings.current}</span>}
+                {ratings.current !== null && ratings.potential !== null && (
+                  <span className="opacity-35">·</span>
+                )}
+                {ratings.potential !== null && (
+                  <span className="text-violet-600 dark:text-violet-400">↗{ratings.potential}</span>
+                )}
               </span>
             )}
 

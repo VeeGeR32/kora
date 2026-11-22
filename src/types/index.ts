@@ -289,6 +289,8 @@ export interface MusicTrack {
   tags: string[];
   markers: AudioMarker[];
   isFavorite?: boolean;
+  ratingCurrent?: number; // 1..10 note actuelle du morceau
+  ratingPotential?: number; // 1..10 note potentiel du morceau
   description?: string;
   todos?: MusicTrackTodo[];
   linkedLyricsId?: string;

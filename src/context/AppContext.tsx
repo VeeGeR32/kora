@@ -170,6 +170,10 @@ interface AppContextValue {
     cover: { coverDataUrl?: string | null; coverGradient?: string }
   ) => void;
   setTrackGroupFavorite: (trackIds: string[], isFavorite: boolean) => void;
+  setTrackGroupRatings: (
+    trackIds: string[],
+    ratings: { ratingCurrent?: number | null; ratingPotential?: number | null }
+  ) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
   deleteMusicTrackTodo: (trackId: string, todoId: string) => void;
@@ -1476,6 +1480,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const setTrackGroupRatings = useCallback(
+    (
+      trackIds: string[],
+      ratings: { ratingCurrent?: number | null; ratingPotential?: number | null }
+    ) => {
+      const idSet = new Set(trackIds);
+      touch((prev) => ({
+        ...prev,
+        musicTracks: prev.musicTracks.map((t) => {
+          if (!idSet.has(t.id)) return t;
+          const next = { ...t };
+          if ('ratingCurrent' in ratings) {
+            next.ratingCurrent =
+              typeof ratings.ratingCurrent === 'number'
+                ? Math.max(1, Math.min(10, Math.round(ratings.ratingCurrent)))
+                : undefined;
+          }
+          if ('ratingPotential' in ratings) {
+            next.ratingPotential =
+              typeof ratings.ratingPotential === 'number'
+                ? Math.max(1, Math.min(10, Math.round(ratings.ratingPotential)))
+                : undefined;
+          }
+          return next;
+        }),
+      }));
+    },
+    []
+  );
+
   const addMusicTrackTodo = useCallback((trackId: string, label: string) => {
     const clean = label.trim();
     if (!clean) return;
@@ -2091,6 +2125,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         renameTrackGroup,
         setTrackGroupCover,
         setTrackGroupFavorite,
+        setTrackGroupRatings,
         addMusicTrackTodo,
         toggleMusicTrackTodo,
         deleteMusicTrackTodo,

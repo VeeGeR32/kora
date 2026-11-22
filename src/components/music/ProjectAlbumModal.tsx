@@ -31,6 +31,7 @@ import {
   getProjectTrackIndividualCovers,
   LYRICS_STATUS_META,
   prepareAndUploadHdCover,
+  resolveTrackRatings,
 } from '../../lib/trackCover';
 import { groupMusicTracks } from '../../lib/musicVersioning';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
@@ -516,6 +517,10 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                     trkGroup?.versions.map((v) => v.track)
                   );
                   const lyricsMeta = linkedLyrics ? LYRICS_STATUS_META[linkedLyrics.status || 1] : null;
+                  const trkRatings = resolveTrackRatings(
+                    trk,
+                    trkGroup?.versions.map((v) => v.track)
+                  );
                   const trkOwnCover =
                     trk.coverDataUrl ||
                     trk.cloudCoverUrl ||
@@ -585,6 +590,22 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                                 >
                                   <FileText size={9} className="shrink-0 opacity-80" />
                                   <span>{lyricsMeta.label}</span>
+                                </span>
+                              )}
+                              {(trkRatings.current !== null || trkRatings.potential !== null) && (
+                                <span
+                                  title={`Note actuelle : ${trkRatings.current ?? '—'}/10 · Potentiel : ${trkRatings.potential ?? '—'}/10`}
+                                  className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
+                                >
+                                  {trkRatings.current !== null && <span>{trkRatings.current}</span>}
+                                  {trkRatings.current !== null && trkRatings.potential !== null && (
+                                    <span className="opacity-35">·</span>
+                                  )}
+                                  {trkRatings.potential !== null && (
+                                    <span className="text-violet-600 dark:text-violet-400">
+                                      ↗{trkRatings.potential}
+                                    </span>
+                                  )}
                                 </span>
                               )}
                             </div>

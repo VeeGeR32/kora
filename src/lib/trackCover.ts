@@ -44,6 +44,22 @@ export function findLinkedLyricsForTrack(
   return activeDocs.find((d) => d.linkedTrackId && idSet.has(d.linkedTrackId)) || null;
 }
 
+/** Resolves the song's dual ratings (current + potential, 1..10) across active track & sibling versions */
+export function resolveTrackRatings(
+  track: MusicTrack,
+  siblingTracks?: MusicTrack[]
+): { current: number | null; potential: number | null } {
+  const valid = (n?: number) =>
+    typeof n === 'number' && Number.isFinite(n) && n >= 1 && n <= 10 ? Math.round(n) : null;
+  const current =
+    valid(track.ratingCurrent) ??
+    valid(siblingTracks?.find((s) => valid(s.ratingCurrent) !== null)?.ratingCurrent);
+  const potential =
+    valid(track.ratingPotential) ??
+    valid(siblingTracks?.find((s) => valid(s.ratingPotential) !== null)?.ratingPotential);
+  return { current, potential };
+}
+
 /** Compresses any uploaded cover image cleanly (supports WebP & high-quality resampling) */
 export async function compressCoverImage(
   file: File,

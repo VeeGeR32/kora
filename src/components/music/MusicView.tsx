@@ -39,7 +39,11 @@ import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu
 import { TrackDetailModal } from './TrackDetailModal';
 import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
-import { findLinkedLyricsForTrack, getProjectTrackIndividualCovers } from '../../lib/trackCover';
+import {
+  findLinkedLyricsForTrack,
+  getProjectTrackIndividualCovers,
+  resolveTrackRatings,
+} from '../../lib/trackCover';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import type { QuickAddContext } from '../QuickAddModal';
 
@@ -49,7 +53,7 @@ interface MusicViewProps {
 
 type MusicSubTab = 'dashboard' | 'library' | 'lyrics';
 type LibraryFilter = 'all' | 'favorites' | 'todo';
-type LibrarySort = 'recent' | 'name' | 'versions';
+type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential';
 
 export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
   const {
@@ -259,6 +263,18 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
       }
       if (libSort === 'versions') {
         if (b.versions.length !== a.versions.length) return b.versions.length - a.versions.length;
+        return b.latestTimestampMs - a.latestTimestampMs;
+      }
+      if (libSort === 'rating') {
+        const ra = resolveTrackRatings(a.latestTrack, a.versions.map((v) => v.track)).current ?? -1;
+        const rb = resolveTrackRatings(b.latestTrack, b.versions.map((v) => v.track)).current ?? -1;
+        if (rb !== ra) return rb - ra;
+        return b.latestTimestampMs - a.latestTimestampMs;
+      }
+      if (libSort === 'potential') {
+        const pa = resolveTrackRatings(a.latestTrack, a.versions.map((v) => v.track)).potential ?? -1;
+        const pb = resolveTrackRatings(b.latestTrack, b.versions.map((v) => v.track)).potential ?? -1;
+        if (pb !== pa) return pb - pa;
         return b.latestTimestampMs - a.latestTimestampMs;
       }
       return b.latestTimestampMs - a.latestTimestampMs;
@@ -1129,6 +1145,28 @@ export function MusicView({ onOpenQuickAdd }: MusicViewProps) {
                     <GitBranch size={11} /> Versions
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setLibSort('rating')}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    libSort === 'rating'
+                      ? 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400'
+                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  Note
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLibSort('potential')}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    libSort === 'potential'
+                      ? 'bg-violet-500/15 text-violet-600 dark:text-violet-400'
+                      : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  ↗ Potentiel
+                </button>
               </div>
             </div>
             {/* Year / Saison Filter Strip inside Library */}
