@@ -24,6 +24,7 @@ import {
   Play,
   Plus,
   Search,
+  Shuffle,
   SlidersHorizontal,
   Trash2,
   Unlock,
@@ -82,9 +83,30 @@ function fmtAddedDate(iso?: string): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function fmtProjectKindLabel(kind: ProjectKind): string {
+  switch (kind) {
+    case 'single':
+      return 'Single';
+    case 'ep':
+      return 'EP';
+    case 'mixtape':
+      return 'Mixtape';
+    default:
+      return 'Album';
+  }
+}
+
+function fmtReleaseShort(iso?: string): string {
+  if (!iso) return String(new Date().getFullYear());
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: ProjectAlbumModalProps) {
   const {
     state,
+    cloudUser,
     updateMusicProject,
     setProjectTrackVersion,
     toggleMusicProjectStep,
@@ -103,8 +125,8 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
   const [todoInput, setTodoInput] = useState('');
   const [projectTab, setProjectTab] = useState<'tracklist' | 'sprint' | 'harmonization'>('tracklist');
   const [showTracklistDetails, setShowTracklistDetails] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem('kora_project_tracklist_details') !== '0';
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('kora_project_tracklist_details') === '1';
   });
   const toggleTracklistDetails = () => {
     setShowTracklistDetails((prev) => {
@@ -588,11 +610,17 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
     setTodoInput('');
   };
 
-  const artistName = (state.preferences.name || 'MOI').toUpperCase();
+  const artistName = state.preferences.name || 'Moi';
+  const artistAvatarUrl = state.preferences.avatarUrl || cloudUser?.photoURL || '';
+  const heroCoverUrl =
+    project.coverDataUrl || getProjectTrackIndividualCovers(projectTracks)[0] || null;
+  const heroGradientCls =
+    PROJECT_GRADIENTS.find((g) => g.id === (project.coverGradient || 'pink'))?.css ||
+    PROJECT_GRADIENTS[0].css;
 
   return (
     <AnimatePresence>
-      {/* Full-Screen Editorial [untitled] Project Page (sits cleanly below MiniAudioPlayer z-50!) */}
+      {/* Full-Screen Spotify-Style Project Page */}
       <motion.div
         initial={{ opacity: 0, y: 18 }}
         animate={{ opacity: 1, y: 0 }}
@@ -600,136 +628,114 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
         transition={{ duration: 0.18, ease: 'easeOut' }}
         className="fixed inset-0 z-30 bg-white dark:bg-[#0c0c0f] text-slate-900 dark:text-zinc-100 flex flex-col overflow-hidden"
       >
-        {/* Top Minimalist Circular-Pill Header Bar (exact [untitled] reference!) */}
-        <header className="shrink-0 pt-[calc(env(safe-area-inset-top)+10px)] pb-2.5 px-4 sm:px-6 bg-white dark:bg-[#0c0c0f]">
-          <div className="max-w-lg mx-auto flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Retour"
-              className="h-10 w-10 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 flex items-center justify-center hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer"
-            >
-              <ChevronLeft size={19} />
-            </button>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={sharing}
-                onClick={async () => {
-                  setSharing(true);
-                  try {
-                    const res = await shareOrCopyPublicLink({
-                      kind: 'project',
-                      id: project.id,
-                      title: project.title,
-                      firebaseConfig: state.preferences.firebaseConfig,
-                    });
-                    notify(
-                      res.method === 'native'
-                        ? `Projet « ${project.title} » partagé ✓`
-                        : `Lien public du projet copié ✓ (écoute sans compte)`
-                    );
-                  } catch (err) {
-                    notify(`Partage : ${(err as Error).message}`);
-                  } finally {
-                    setSharing(false);
-                  }
-                }}
-                title="Partager ce projet (lien d’écoute publique sans compte)"
-                className="h-10 w-10 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 flex items-center justify-center hover:bg-slate-200/80 dark:hover:bg-zinc-800 disabled:opacity-50 transition cursor-pointer"
-              >
-                {sharing ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={16} />}
-              </button>
-              <button
-                type="button"
-                onClick={toggleTracklistDetails}
-                title={
-                  showTracklistDetails
-                    ? 'Masquer les détails (vue plateforme / Spotify)'
-                    : 'Afficher les détails studio'
-                }
-                aria-label={
-                  showTracklistDetails ? 'Passer en vue épurée Spotify' : 'Afficher les détails studio'
-                }
-                className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
-                  !showTracklistDetails
-                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                    : 'bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
-                }`}
-              >
-                {showTracklistDetails ? <Eye size={16} /> : <EyeOff size={16} />}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextLocked = !isLocked;
-                  updateMusicProject(project.id, { isTracklistLocked: nextLocked });
-                  notify(
-                    nextLocked
-                      ? 'Tracklist verrouillée — les nouveaux sons iront dans le Backlog 🔒'
-                      : 'Tracklist déverrouillée 🔓'
-                  );
-                }}
-                title={
-                  isLocked
-                    ? 'Tracklist figée (cliquer pour déverrouiller)'
-                    : 'Verrouiller / figer la tracklist définitive'
-                }
-                className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
-                  isLocked
-                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                    : 'bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
-                }`}
-              >
-                {isLocked ? <Lock size={15} /> : <Unlock size={15} />}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setProjectTab('tracklist');
-                  setShowTracklistDetails(true);
-                  window.setTimeout(
-                    () => todoSectionRef.current?.scrollIntoView({ behavior: 'smooth' }),
-                    60
-                  );
-                }}
-                title="Voir la TODO"
-                className="h-10 px-3.5 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 inline-flex items-center gap-1.5 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer"
-              >
-                <ListChecks size={15} />
-                <span className="font-mono text-[11px]">
-                  {doneSteps}/{totalSteps}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowEditMeta((v) => !v)}
-                title="Modifier pochette & détails"
-                className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
-                  showEditMeta
-                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                    : 'bg-slate-100 dark:bg-zinc-900 text-slate-700 dark:text-zinc-200 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
-                }`}
-              >
-                <SlidersHorizontal size={15} />
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Scrollable Editorial Album Content */}
+        {/* Scrollable Spotify-Style Editorial Album Content */}
         <div
-          className={`flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-6 ${
+          className={`relative flex-1 min-h-0 overflow-y-auto overscroll-contain ${
             player.currentTrack ? 'pb-48 md:pb-28' : 'pb-28 md:pb-16'
           }`}
         >
-          <div className="max-w-lg mx-auto space-y-5 pt-2">
-            {/* Centered Large Square Album Cover (exact [untitled] reference!) */}
+          {/* Atmospheric Blurred Cover Gradient Wash (Spotify Album Hero Backdrop) */}
+          <div className="pointer-events-none absolute top-0 inset-x-0 h-[390px] sm:h-[430px] overflow-hidden">
+            {heroCoverUrl ? (
+              <img
+                src={heroCoverUrl}
+                alt=""
+                aria-hidden="true"
+                className="w-full h-full object-cover scale-125 blur-3xl opacity-45 dark:opacity-55"
+              />
+            ) : (
+              <div className={`w-full h-full bg-gradient-to-b ${heroGradientCls} opacity-35 dark:opacity-45`} />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-b from-white/35 via-white/75 to-white dark:from-[#0c0c0f]/35 dark:via-[#0c0c0f]/75 dark:to-[#0c0c0f]" />
+          </div>
+
+          {/* Floating Safe-Area Top Bar (Spotify circular back button + Studio toggle) */}
+          <div className="sticky top-0 z-20 pt-[calc(env(safe-area-inset-top)+10px)] pb-2 px-4 sm:px-6">
+            <div className="max-w-lg mx-auto flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Retour"
+                className="h-9 w-9 rounded-full bg-white/75 dark:bg-black/45 backdrop-blur-md text-slate-900 dark:text-white border border-black/5 dark:border-white/10 flex items-center justify-center hover:bg-white dark:hover:bg-black/65 transition cursor-pointer shadow-xs"
+              >
+                <ChevronLeft size={19} />
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                {showTracklistDetails && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextLocked = !isLocked;
+                        updateMusicProject(project.id, { isTracklistLocked: nextLocked });
+                        notify(
+                          nextLocked
+                            ? 'Tracklist verrouillée — les nouveaux sons iront dans le Backlog 🔒'
+                            : 'Tracklist déverrouillée 🔓'
+                        );
+                      }}
+                      title={
+                        isLocked
+                          ? 'Tracklist figée (cliquer pour déverrouiller)'
+                          : 'Verrouiller / figer la tracklist définitive'
+                      }
+                      className={`h-9 w-9 rounded-full backdrop-blur-md border flex items-center justify-center transition cursor-pointer ${
+                        isLocked
+                          ? 'bg-amber-500/20 border-amber-500/30 text-amber-700 dark:text-amber-300'
+                          : 'bg-white/75 dark:bg-black/45 border-black/5 dark:border-white/10 text-slate-800 dark:text-zinc-200 hover:bg-white dark:hover:bg-black/65'
+                      }`}
+                    >
+                      {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProjectTab('tracklist');
+                        setShowTracklistDetails(true);
+                        window.setTimeout(
+                          () => todoSectionRef.current?.scrollIntoView({ behavior: 'smooth' }),
+                          60
+                        );
+                      }}
+                      title="Voir la TODO"
+                      className="h-9 px-3 rounded-full bg-white/75 dark:bg-black/45 backdrop-blur-md border border-black/5 dark:border-white/10 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1.5 text-xs font-semibold hover:bg-white dark:hover:bg-black/65 transition cursor-pointer"
+                    >
+                      <ListChecks size={14} />
+                      <span className="font-mono text-[11px]">
+                        {doneSteps}/{totalSteps}
+                      </span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={toggleTracklistDetails}
+                  title={
+                    showTracklistDetails
+                      ? 'Passer en vue Spotify épurée'
+                      : 'Afficher les détails & outils studio'
+                  }
+                  className={`h-9 px-3 rounded-full backdrop-blur-md border inline-flex items-center gap-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                    showTracklistDetails
+                      ? 'bg-slate-900 dark:bg-white text-white dark:text-zinc-950 border-transparent'
+                      : 'bg-white/75 dark:bg-black/45 border-black/5 dark:border-white/10 text-slate-800 dark:text-zinc-100 hover:bg-white dark:hover:bg-black/65'
+                  }`}
+                >
+                  {showTracklistDetails ? <Eye size={13} /> : <EyeOff size={13} />}
+                  <span>{showTracklistDetails ? 'Studio' : 'Détails'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative z-10 max-w-lg mx-auto px-5 sm:px-6 space-y-4 pt-1">
+            {/* Centered Large Square Spotify Album Cover */}
             <div className="flex justify-center">
               <div
                 onClick={() => coverInputRef.current?.click()}
-                className="relative group w-full max-w-[300px] aspect-square rounded-[22px] overflow-hidden shadow-[0_18px_50px_-14px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_60px_-14px_rgba(0,0,0,0.85)] border border-slate-200/60 dark:border-zinc-800 cursor-pointer"
+                className="relative group w-[224px] sm:w-[252px] aspect-square rounded-lg sm:rounded-xl overflow-hidden shadow-[0_24px_60px_-10px_rgba(0,0,0,0.55)] dark:shadow-[0_28px_70px_-10px_rgba(0,0,0,0.85)] cursor-pointer"
               >
                 <ProjectCoverArtwork
                   title={project.title}
@@ -737,7 +743,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   trackCoverUrls={getProjectTrackIndividualCovers(projectTracks)}
                   gradientId={project.coverGradient}
                 />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 text-white flex flex-col items-center justify-center gap-1.5 text-xs font-medium transition">
+                <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 text-white flex flex-col items-center justify-center gap-1.5 text-xs font-medium transition">
                   <Camera size={20} />
                   Changer la pochette
                 </div>
@@ -758,7 +764,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/60 p-4 space-y-3 overflow-hidden"
+                  className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/85 backdrop-blur-md p-4 space-y-3 overflow-hidden"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -859,45 +865,141 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               )}
             </AnimatePresence>
 
-            {/* Editorial Title + Dark Rounded-Square Play Button Row (exact [untitled] reference!) */}
-            <div className="flex items-start justify-between gap-4 pt-1">
-              <div className="min-w-0 flex-1 space-y-1">
-                <input
-                  type="text"
-                  value={project.title}
-                  onChange={(e) => updateMusicProject(project.id, { title: e.target.value })}
-                  placeholder="NOM DU PROJET"
-                  className="w-full text-2xl sm:text-[26px] font-bold tracking-tight leading-tight uppercase bg-transparent text-slate-950 dark:text-zinc-50 outline-none"
-                />
-                <p className="text-xs font-medium tracking-wide text-slate-400 dark:text-zinc-500 flex items-center gap-1.5 flex-wrap">
-                  <span>
-                    {artistName} · {projectTracks.length}{' '}
-                    {projectTracks.length > 1 ? 'titres' : 'titre'}
-                    {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
+            {/* Spotify Editorial Title + Artist Avatar + Release Meta */}
+            <div className="space-y-2 pt-2">
+              <input
+                type="text"
+                value={project.title}
+                onChange={(e) => updateMusicProject(project.id, { title: e.target.value })}
+                placeholder="NOM DU PROJET"
+                className="w-full text-2xl sm:text-[28px] font-bold tracking-tight leading-tight uppercase bg-transparent text-slate-950 dark:text-white outline-none"
+              />
+
+              {/* Circular Artist Avatar + Bold Artist Name */}
+              <div className="flex items-center gap-2">
+                {artistAvatarUrl ? (
+                  <img
+                    src={artistAvatarUrl}
+                    alt={artistName}
+                    className="h-6 w-6 rounded-full object-cover border border-black/10 dark:border-white/15 shrink-0"
+                  />
+                ) : (
+                  <span className="h-6 w-6 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 text-[10px] font-bold flex items-center justify-center shrink-0">
+                    {artistName.slice(0, 2).toUpperCase()}
                   </span>
-                  {isLocked && showTracklistDetails && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/12 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-semibold">
-                      <Lock size={9} /> Figée
-                    </span>
-                  )}
-                </p>
+                )}
+                <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                  {artistName}
+                </span>
               </div>
 
-              <button
-                type="button"
-                onClick={handlePlayAlbum}
-                aria-label="Lire le projet"
-                className="h-12 w-12 rounded-2xl bg-slate-950 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-md shrink-0 cursor-pointer mt-0.5"
-              >
-                {isPlayingThisProject ? (
-                  <Pause size={18} fill="currentColor" />
-                ) : (
-                  <Play size={18} fill="currentColor" className="ml-0.5" />
+              {/* Release Kind · Date · Tracks · Duration */}
+              <p className="text-xs font-medium text-slate-500 dark:text-zinc-400 flex items-center gap-1.5 flex-wrap">
+                <span>
+                  {fmtProjectKindLabel(project.kind)} · {fmtReleaseShort(project.targetReleaseDate)} ·{' '}
+                  {projectTracks.length} {projectTracks.length > 1 ? 'titres' : 'titre'}
+                  {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
+                </span>
+                {isLocked && showTracklistDetails && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/12 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-semibold">
+                    <Lock size={9} /> Figée
+                  </span>
                 )}
-              </button>
+              </p>
             </div>
 
-            {/* Minimalist Project Sub-Tabs: Tracklist (default) | Sprint actif | Harmonisation */}
+            {/* Spotify Action Bar: Left Utility Icons · Right Shuffle + Big Green Round Play Button */}
+            <div className="flex items-center justify-between gap-3 pt-0.5 pb-1">
+              <div className="flex items-center gap-1.5">
+                {heroCoverUrl && (
+                  <button
+                    type="button"
+                    onClick={() => coverInputRef.current?.click()}
+                    title="Changer la pochette"
+                    className="h-9 w-7 rounded-md overflow-hidden border border-slate-300/80 dark:border-white/25 shrink-0 mr-1 cursor-pointer hover:opacity-90 transition"
+                  >
+                    <img src={heroCoverUrl} alt="" className="h-full w-full object-cover" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={sharing}
+                  onClick={async () => {
+                    setSharing(true);
+                    try {
+                      const res = await shareOrCopyPublicLink({
+                        kind: 'project',
+                        id: project.id,
+                        title: project.title,
+                        firebaseConfig: state.preferences.firebaseConfig,
+                      });
+                      notify(
+                        res.method === 'native'
+                          ? `Projet « ${project.title} » partagé ✓`
+                          : `Lien public du projet copié ✓ (écoute sans compte)`
+                      );
+                    } catch (err) {
+                      notify(`Partage : ${(err as Error).message}`);
+                    } finally {
+                      setSharing(false);
+                    }
+                  }}
+                  title="Partager ce projet (lien d’écoute publique sans compte)"
+                  aria-label="Partager ce projet"
+                  className="h-9 w-9 rounded-full text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10 flex items-center justify-center disabled:opacity-50 transition cursor-pointer"
+                >
+                  {sharing ? <Loader2 size={17} className="animate-spin" /> : <Link2 size={18} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEditMeta((v) => !v)}
+                  title="Modifier pochette & infos du projet"
+                  aria-label="Options du projet"
+                  className={`h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer ${
+                    showEditMeta
+                      ? 'bg-slate-900/10 dark:bg-white/15 text-slate-950 dark:text-white'
+                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10'
+                  }`}
+                >
+                  <SlidersHorizontal size={17} />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={projectTracks.length === 0}
+                  onClick={() => {
+                    if (projectTracks.length > 0) void player.playShuffled(projectTracks);
+                  }}
+                  title="Lecture aléatoire du projet"
+                  aria-label="Lecture aléatoire"
+                  className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer disabled:opacity-35 ${
+                    player.shuffle && isPlayingThisProject
+                      ? 'text-[#1DB954]'
+                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10'
+                  }`}
+                >
+                  <Shuffle size={20} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePlayAlbum}
+                  aria-label="Lire le projet"
+                  className="h-13 w-13 rounded-full bg-[#1DB954] hover:bg-[#1ed760] text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-[0_12px_28px_-6px_rgba(29,185,84,0.55)] shrink-0 cursor-pointer"
+                >
+                  {isPlayingThisProject ? (
+                    <Pause size={22} fill="currentColor" />
+                  ) : (
+                    <Play size={22} fill="currentColor" className="ml-0.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Studio Sub-Tabs (visible in Studio/Details mode, hidden in pure Spotify listening mode!) */}
+            {showTracklistDetails && (
             <nav
               aria-label="Vues du projet"
               className="flex items-center gap-5 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -952,9 +1054,10 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                 );
               })}
             </nav>
+            )}
 
-            {/* ================= SUB-TAB 1: SPRINT ACTIF (MICRO-BATCH MAX 3) ================= */}
-            {projectTab === 'sprint' && (
+            {/* ================= SUB-TAB 2: SPRINT ACTIF (MICRO-BATCH MAX 3) ================= */}
+            {showTracklistDetails && projectTab === 'sprint' && (
               <ProjectSprintView
                 project={project}
                 projectTracks={projectTracks}
@@ -964,7 +1067,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
             )}
 
             {/* ================= SUB-TAB 3: HARMONISATION & MIX GLOBAL ================= */}
-            {projectTab === 'harmonization' && (
+            {showTracklistDetails && projectTab === 'harmonization' && (
               <ProjectHarmonizationView
                 project={project}
                 projectTracks={projectTracks}
@@ -974,7 +1077,7 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
             )}
 
             {/* ================= SUB-TAB 1: TRACKLIST + BACKLOG + ROLL-UP TODO ================= */}
-            {projectTab === 'tracklist' && (
+            {(!showTracklistDetails || projectTab === 'tracklist') && (
               <>
             {/* Full-Width Soft Action Pill (hidden in clean Spotify streaming view!) */}
             {showTracklistDetails && (
@@ -1118,8 +1221,12 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
               )}
             </AnimatePresence>
 
-            {/* Airy Minimalist Numbered Tracklist (Press & Hold to Drag-Reorder!) */}
-            <div className="divide-y divide-slate-100 dark:divide-zinc-900 relative">
+            {/* Tracklist: Pure Divider-less Spotify Album Style in Clean View · Numbered Studio List in Details View */}
+            <div
+              className={`relative ${
+                showTracklistDetails ? 'divide-y divide-slate-100 dark:divide-zinc-900' : 'space-y-0.5'
+              }`}
+            >
               {displayedProjectTracks.length === 0 ? (
                 <p className="py-6 text-center text-xs text-slate-400">
                   Aucun titre dans ce projet — clique sur « Ajouter un son » ci-dessus.
@@ -1218,19 +1325,21 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                           }}
                           className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
                         >
-                          <span className="w-5 text-center font-mono text-xs text-slate-400 dark:text-zinc-500 shrink-0">
-                            {playing ? (
-                              <Pause
-                                size={13}
-                                className="mx-auto text-slate-950 dark:text-white"
-                                fill="currentColor"
-                              />
-                            ) : (
-                              idx + 1
-                            )}
-                          </span>
-                          {/* Track Cover Thumbnail: project cover if set, otherwise each track's individual cover */}
-                          {rowThumb && (
+                          {showTracklistDetails && (
+                            <span className="w-5 text-center font-mono text-xs text-slate-400 dark:text-zinc-500 shrink-0">
+                              {playing ? (
+                                <Pause
+                                  size={13}
+                                  className="mx-auto text-slate-950 dark:text-white"
+                                  fill="currentColor"
+                                />
+                              ) : (
+                                idx + 1
+                              )}
+                            </span>
+                          )}
+                          {/* Track Cover Thumbnail (shown in Studio Details mode; hidden in Spotify album view!) */}
+                          {showTracklistDetails && rowThumb && (
                             <img
                               src={rowThumb}
                               alt={displayTitle}
@@ -1240,9 +1349,13 @@ export function ProjectAlbumModal({ projectId, onClose, onOpenTrackDetails }: Pr
                           )}
                           <div className="min-w-0 flex-1">
                             <p
-                              className={`text-sm font-semibold truncate ${
+                              className={`${
+                                showTracklistDetails ? 'text-sm' : 'text-[15px]'
+                              } font-semibold truncate ${
                                 isCur
-                                  ? 'text-fuchsia-600 dark:text-fuchsia-400'
+                                  ? showTracklistDetails
+                                    ? 'text-fuchsia-600 dark:text-fuchsia-400'
+                                    : 'text-[#1DB954]'
                                   : 'text-slate-900 dark:text-zinc-100'
                               }`}
                             >
