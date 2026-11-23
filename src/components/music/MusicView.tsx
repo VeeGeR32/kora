@@ -8,7 +8,6 @@ import {
   Heart,
   Layers,
   ListChecks,
-  ListMusic,
   Pause,
   Play,
   Plus,
@@ -30,7 +29,7 @@ import {
 } from '../../lib/musicVersioning';
 import { socialTrackToMusicTrack } from '../../lib/socialApi';
 import { LyricsStudio } from './LyricsStudio';
-import { CreatePlaylistModal, PlaylistPage } from './PlaylistModal';
+import { PlaylistPage } from './PlaylistModal';
 import { ProjectAlbumModal } from './ProjectAlbumModal';
 import { ProjectCreationModal } from './ProjectCreationModal';
 import { SocialHubView } from './SocialHubView';
@@ -177,11 +176,12 @@ export function MusicView({
   const [libSort, setLibSort] = useState<LibrarySort>('recent');
   const [groupVersions, setGroupVersions] = useState(true);
   const [yearFilter, setYearFilter] = useState<string>('all');
-  const [projectStatusFilter, setProjectStatusFilter] = useState<'all' | 'active' | 'archived'>('all');
+  const [projectStatusFilter, setProjectStatusFilter] = useState<
+    'all' | 'active' | 'playlists' | 'archived'
+  >('all');
 
-  // Full-page Apple Studio project creation modal & Playlist modal
+  // Full-page Apple Studio project/playlist creation & open states
   const [showNewProj, setShowNewProj] = useState(false);
-  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
   const [socialTargetArtistUid, setSocialTargetArtistUid] = useState<string | null>(null);
   const [socialTargetTrack, setSocialTargetTrack] = useState<SocialTrackItem | null>(null);
@@ -529,28 +529,43 @@ export function MusicView({
   );
 
   const renderProjectsSection = (compact: boolean) => {
-    const filteredProjects = compact
-      ? state.musicProjects
-      : state.musicProjects.filter((p) => {
-          if (projectStatusFilter === 'active') return p.status !== 'sorti';
-          if (projectStatusFilter === 'archived') return p.status === 'sorti';
-          return true;
-        });
-    const list = compact ? filteredProjects.slice(0, 4) : filteredProjects;
+    const showProjects = compact || projectStatusFilter !== 'playlists';
+    const showPlaylists = compact || projectStatusFilter === 'all' || projectStatusFilter === 'playlists';
+
+    const filteredProjects = showProjects
+      ? compact
+        ? state.musicProjects
+        : state.musicProjects.filter((p) => {
+            if (projectStatusFilter === 'active') return p.status !== 'sorti';
+            if (projectStatusFilter === 'archived') return p.status === 'sorti';
+            return true;
+          })
+      : [];
+
+    const filteredPlaylists = showPlaylists ? playlists : [];
+    const totalAllCount = state.musicProjects.length + playlists.length;
     const archivedProjCount = state.musicProjects.filter((p) => p.status === 'sorti').length;
+    const activeProjCount = state.musicProjects.length - archivedProjCount;
+
+    const projectList = compact ? filteredProjects.slice(0, 4) : filteredProjects;
+    const playlistList = compact
+      ? filteredPlaylists.slice(0, Math.max(0, 4 - projectList.length))
+      : filteredPlaylists;
+
     return (
           <section className="space-y-3.5 pt-1">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                  {compact ? 'Projets' : 'Albums, EP, Singles & Archives'}
+                  {compact ? 'Projets & Playlists' : 'Albums, EP, Mixtapes & Playlists'}
                 </h2>
-                {!compact && state.musicProjects.length > 0 && (
-                  <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-zinc-900 p-0.5">
+                {!compact && totalAllCount > 0 && (
+                  <div className="inline-flex items-center flex-wrap rounded-xl bg-slate-100 dark:bg-zinc-900 p-0.5">
                     {(
                       [
-                        ['all', `Tous (${state.musicProjects.length})`],
-                        ['active', `En cours (${state.musicProjects.length - archivedProjCount})`],
+                        ['all', `Tous (${totalAllCount})`],
+                        ['active', `En cours (${activeProjCount})`],
+                        ['playlists', `Playlists (${playlists.length})`],
                         ['archived', `Archives / Sortis (${archivedProjCount})`],
                       ] as const
                     ).map(([id, lbl]) => (
@@ -579,13 +594,13 @@ export function MusicView({
                   >
                     <Plus size={12} /> Nouveau
                   </button>
-                  {state.musicProjects.length > 0 && (
+                  {totalAllCount > 0 && (
                     <button
                       type="button"
                       onClick={() => setSubTab('projects')}
                       className="text-xs font-medium text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
                     >
-                      Tout voir ({state.musicProjects.length}) →
+                      Tout voir ({totalAllCount}) →
                     </button>
                   )}
                 </div>
@@ -595,27 +610,29 @@ export function MusicView({
                   onClick={() => setShowNewProj(true)}
                   className="inline-flex items-center gap-1 rounded-xl bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
                 >
-                  <Plus size={13} /> Nouveau projet
+                  <Plus size={13} /> Nouveau projet / playlist
                 </button>
               )}
             </div>
 
-            {state.musicProjects.length === 0 ? (
+            {projectList.length === 0 && playlistList.length === 0 ? (
               <div className="tempo-card rounded-3xl p-7 text-center space-y-2.5">
                 <p className="text-xs text-slate-400">
-                  Crée un projet (Single, EP, Album, Mixtape) avec sa pochette, sa tracklist et ses jalons de production.
+                  {totalAllCount === 0
+                    ? 'Crée un projet (Single, EP, Album, Mixtape) ou une Playlist (tes sons + sons likés) avec sa pochette et sa tracklist.'
+                    : 'Aucun élément dans ce filtre.'}
                 </p>
                 <button
                   type="button"
                   onClick={() => setShowNewProj(true)}
                   className="inline-flex items-center gap-1 rounded-xl bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 cursor-pointer"
                 >
-                  <Plus size={13} /> Créer un projet
+                  <Plus size={13} /> Créer un projet ou une playlist
                 </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
-                {list.map((proj) => {
+                {projectList.map((proj) => {
                   const done = proj.steps.filter((s) => s.done).length;
                   const total = proj.steps.length;
                   const linkedTracks = state.musicTracks.filter(
@@ -650,7 +667,7 @@ export function MusicView({
                           gradientId={proj.coverGradient}
                         />
 
-                        <span className="absolute top-2.5 left-2.5 rounded-full bg-black/35 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
+                        <span className="absolute top-2.5 left-2.5 rounded-full bg-black/40 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
                           {proj.kind}
                         </span>
 
@@ -669,7 +686,7 @@ export function MusicView({
                             }
                           }}
                           aria-label={`Lire ${proj.title}`}
-                          className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-slate-950/80 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg backdrop-blur-xs cursor-pointer"
+                          className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-[#8C271E]/90 hover:bg-[#8C271E] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg backdrop-blur-xs cursor-pointer"
                         >
                           {isPlayingProj ? (
                             <Pause size={16} fill="currentColor" />
@@ -693,6 +710,75 @@ export function MusicView({
                         <p className="text-xs text-slate-400 dark:text-zinc-500 truncate">
                           {state.preferences.name || 'Moi'} · {linkedTracks.length} son
                           {linkedTracks.length > 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {playlistList.map((pl) => {
+                  const ownQueue = pl.ownTrackIds
+                    .map((id) => state.musicTracks.find((t) => t.id === id))
+                    .filter((t): t is MusicTrack => Boolean(t));
+                  const socialQueue = pl.socialTrackIds
+                    .map((id) => likedSocialTracks.find((s) => s.id === id))
+                    .filter((s): s is SocialTrackItem => Boolean(s))
+                    .map(socialTrackToMusicTrack);
+                  const fullQueue = [...ownQueue, ...socialQueue];
+                  const totalTracks = pl.ownTrackIds.length + pl.socialTrackIds.length;
+                  const isPlayingPl =
+                    player.isPlaying &&
+                    fullQueue.some((t) => t.id === player.currentTrack?.id);
+
+                  return (
+                    <div
+                      key={pl.id}
+                      onClick={() => setOpenPlaylistId(pl.id)}
+                      className="group cursor-pointer space-y-2.5"
+                    >
+                      <div className="relative aspect-square w-full rounded-[26px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015] group-active:scale-[0.985]">
+                        <ProjectCoverArtwork
+                          title={pl.title}
+                          projectCoverUrl={pl.coverDataUrl}
+                          trackCoverUrls={getProjectTrackIndividualCovers(ownQueue)}
+                          gradientId={pl.coverGradient}
+                        />
+
+                        <span className="absolute top-2.5 left-2.5 rounded-full bg-[#8C271E]/85 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
+                          Playlist
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (fullQueue.length === 0) {
+                              setOpenPlaylistId(pl.id);
+                              return;
+                            }
+                            if (isPlayingPl) {
+                              player.togglePlay();
+                            } else {
+                              void player.playTrack(fullQueue[0], 0, fullQueue);
+                            }
+                          }}
+                          aria-label={`Lire ${pl.title}`}
+                          className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-[#8C271E]/90 hover:bg-[#8C271E] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg backdrop-blur-xs cursor-pointer"
+                        >
+                          {isPlayingPl ? (
+                            <Pause size={16} fill="currentColor" />
+                          ) : (
+                            <Play size={16} fill="currentColor" className="ml-0.5" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="px-0.5 space-y-0.5">
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                          {pl.title}
+                        </h3>
+                        <p className="text-xs text-slate-400 dark:text-zinc-500 truncate">
+                          Playlist · {totalTracks} son{totalTracks > 1 ? 's' : ''}
                         </p>
                       </div>
                     </div>
@@ -819,6 +905,10 @@ export function MusicView({
           onCreated={(newProjectId) => {
             setShowNewProj(false);
             setOpenProjectId(newProjectId);
+          }}
+          onCreatedPlaylist={(newPlaylistId) => {
+            setShowNewProj(false);
+            setOpenPlaylistId(newPlaylistId);
           }}
         />
       ) : detailGroup ? (
@@ -1301,81 +1391,10 @@ export function MusicView({
               </div>
             )}
           </section>
-
-          {/* ===== FEATURED SECTION 5: MES PLAYLISTS (MES SONS + SONS LIKÉS) ===== */}
-          <section className="space-y-3.5 pt-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ListMusic size={15} className="text-[#8C271E] dark:text-[#E56B5F]" />
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                  Mes Playlists
-                </h2>
-                {playlists.length > 0 && (
-                  <span className="font-mono text-[11px] text-slate-400">
-                    ({playlists.length})
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCreatePlaylist(true)}
-                className="inline-flex items-center gap-1 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-3 py-1 text-[11px] font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
-              >
-                <Plus size={12} /> Nouvelle playlist
-              </button>
-            </div>
-
-            {playlists.length === 0 ? (
-              <div className="tempo-card rounded-2xl px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <p className="text-xs text-slate-400">
-                  Crée des playlists hybrides en mélangeant <strong>tes propres sons</strong> et <strong>les sons que tu as likés</strong> dans la communauté.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowCreatePlaylist(true)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 shrink-0 cursor-pointer"
-                >
-                  <Plus size={12} /> Créer une playlist
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
-                {playlists.map((pl) => {
-                  const totalTracks = pl.ownTrackIds.length + pl.socialTrackIds.length;
-                  return (
-                    <div
-                      key={pl.id}
-                      onClick={() => setOpenPlaylistId(pl.id)}
-                      className="group cursor-pointer space-y-2"
-                    >
-                      <div className="relative aspect-square w-full rounded-[24px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015]">
-                        <ProjectCoverArtwork
-                          title={pl.title}
-                          projectCoverUrl={pl.coverDataUrl}
-                          gradientId={pl.coverGradient}
-                        />
-                        <span className="absolute top-2.5 left-2.5 rounded-full bg-black/40 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
-                          Playlist
-                        </span>
-                      </div>
-                      <div className="px-0.5">
-                        <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                          {pl.title}
-                        </h3>
-                        <p className="text-xs text-slate-400 dark:text-zinc-500 truncate font-mono">
-                          {totalTracks} son{totalTracks > 1 ? 's' : ''} ({pl.ownTrackIds.length} perso · {pl.socialTrackIds.length} likés)
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
         </div>
       )}
 
-      {/* ================= TAB: PROJETS (ALBUMS, EP, SINGLES, MIXTAPES) ================= */}
+      {/* ================= TAB: PROJETS (ALBUMS, EP, SINGLES, MIXTAPES, PLAYLISTS) ================= */}
       {subTab === 'projects' && <div className="space-y-6">{renderProjectsSection(false)}</div>}
 
       {/* ================= TAB 2: BIBLIOTHÈQUE COMPLÈTE (CARTES CLIQUABLES + VERSIONS) ================= */}
@@ -1666,15 +1685,6 @@ export function MusicView({
       )}
         </>
       )}
-
-      <CreatePlaylistModal
-        open={showCreatePlaylist}
-        onClose={() => setShowCreatePlaylist(false)}
-        onCreated={(newPlaylistId) => {
-          setShowCreatePlaylist(false);
-          setOpenPlaylistId(newPlaylistId);
-        }}
-      />
 
       {/* ================= CONTEXT MENU & UTILITY MODALS ================= */}
       <TrackContextMenu

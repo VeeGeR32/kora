@@ -46,7 +46,7 @@ const NAV_ITEMS: {
 ];
 
 export function Layout({ activePage, onPageChange, children }: LayoutProps) {
-  const { state, toggleTheme, toast, dismissToast, cloudUser, cloudSyncing } = useApp();
+  const { state, playlists, toggleTheme, toast, dismissToast, cloudUser, cloudSyncing } = useApp();
   const { currentTrack } = useAudioPlayer();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -87,7 +87,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
     () => groupMusicTracks(state.musicTracks).length,
     [state.musicTracks]
   );
-  const projectsCount = state.musicProjects.length;
+  const projectsCount = state.musicProjects.length + playlists.length;
   const lyricsCount = useMemo(
     () => state.lyricsDocs.filter((d) => !d.deletedAt).length,
     [state.lyricsDocs]
