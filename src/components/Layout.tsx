@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   CloudOff,
   Disc3,
@@ -9,8 +11,6 @@ import {
   Home,
   ListMusic,
   Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings,
   Sun,
   Undo2,
@@ -102,47 +102,61 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
 
   return (
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-[var(--bg)] text-[var(--text)] transition-colors duration-200">
-      {/* Desktop Floating Open-Sidebar Button (only visible when sidebar is collapsed) */}
-      {sidebarCollapsed && (
+      {/* Desktop Fluid Collapsible Side Rail (smooth spring width 240px <-> 72px with side-edge handle) */}
+      <motion.aside
+        initial={false}
+        animate={{ width: sidebarCollapsed ? 72 : 240 }}
+        transition={{ type: 'spring', stiffness: 340, damping: 34, mass: 0.85 }}
+        className="hidden md:flex md:flex-col shrink-0 relative bg-white/85 dark:bg-[#110d0d]/94 backdrop-blur-xl sticky top-0 h-screen justify-between border-r border-slate-200/70 dark:border-zinc-800/80 z-30 py-5"
+      >
+        {/* Tactile Side-Edge Collapse/Expand Handle (always anchored cleanly on the right edge) */}
         <button
           type="button"
-          onClick={() => setSidebarCollapsed(false)}
-          title="Ouvrir la barre latérale (Ctrl+B)"
-          aria-label="Ouvrir la barre latérale"
-          className="hidden md:flex fixed top-4 left-4 z-30 h-9 w-9 items-center justify-center rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-white/90 dark:bg-[#121216]/90 backdrop-blur-md text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:border-slate-300 dark:hover:border-zinc-700 shadow-xs transition cursor-pointer"
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          title={sidebarCollapsed ? 'Agrandir la barre latérale (Ctrl+B)' : 'Réduire la barre latérale (Ctrl+B)'}
+          aria-label={sidebarCollapsed ? 'Agrandir la barre latérale' : 'Réduire la barre latérale'}
+          className="absolute -right-3.5 top-7 z-40 h-7 w-7 rounded-full border border-slate-200/90 dark:border-zinc-700/90 bg-white dark:bg-[#1b1414] text-slate-500 dark:text-zinc-300 hover:text-[#8C271E] dark:hover:text-white hover:border-[#8C271E]/50 shadow-sm flex items-center justify-center transition-all hover:scale-105 active:scale-95 cursor-pointer"
         >
-          <PanelLeftOpen size={16} />
+          {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
-      )}
 
-      {/* Desktop Collapsible Music Sidebar */}
-      <aside
-        className={`hidden md:flex md:flex-col shrink-0 bg-white/80 dark:bg-[#0e0e11]/92 backdrop-blur-md sticky top-0 h-screen justify-between transition-[width,padding,border-color,opacity] duration-200 ease-out overflow-hidden ${
-          sidebarCollapsed
-            ? 'w-0 px-0 py-0 border-r-0 opacity-0 pointer-events-none'
-            : 'w-60 px-4 py-5 border-r border-slate-200/70 dark:border-zinc-800/80 opacity-100'
-        }`}
-      >
-        <div className="space-y-6 min-w-[208px]">
-          {/* Brand Header + Collapse Sidebar Toggle */}
-          <div className="flex items-center justify-between px-1.5">
-            <div className="flex items-center gap-2.5">
+        <div className={`space-y-6 overflow-hidden ${sidebarCollapsed ? 'px-2.5' : 'px-4'}`}>
+          {/* Brand Header */}
+          <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'justify-between px-1.5'}`}>
+            <button
+              type="button"
+              onClick={() => onPageChange('dashboard')}
+              className="flex items-center gap-2.5 cursor-pointer min-w-0"
+              title="Rowav Music Studio"
+            >
               <KoraLogo size={32} />
-              <div className="leading-tight">
-                <p className="text-sm font-bold tracking-tight text-slate-900 dark:text-zinc-50">
-                  Rowav
-                </p>
-                <p className="text-[10px] font-medium text-[#8C271E] dark:text-[#E56B5F]">
-                  Music Studio
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-0.5">
+              <AnimatePresence initial={false}>
+                {!sidebarCollapsed && (
+                  <motion.div
+                    key="brand-text"
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.16 }}
+                    className="leading-tight text-left truncate"
+                  >
+                    <p className="text-sm font-bold tracking-tight text-slate-900 dark:text-zinc-50">
+                      Rowav
+                    </p>
+                    <p className="text-[10px] font-medium text-[#8C271E] dark:text-[#E56B5F]">
+                      Music Studio
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </button>
+
+            {!sidebarCollapsed && (
               <button
                 type="button"
                 onClick={() => onPageChange('settings')}
                 title={cloudUser ? `Synchronisé (${cloudUser.email})` : 'Compte & Profil'}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 cursor-pointer shrink-0"
               >
                 {cloudUser ? (
                   <Cloud
@@ -153,19 +167,10 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   <CloudOff size={14} />
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed(true)}
-                title="Fermer la barre latérale (Ctrl+B)"
-                aria-label="Fermer la barre latérale"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800/70 transition cursor-pointer"
-              >
-                <PanelLeftClose size={15} />
-              </button>
-            </div>
+            )}
           </div>
 
-          {/* 4-Section Music Navigation */}
+          {/* 5-Section Music Navigation */}
           <nav className="space-y-1">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
@@ -176,7 +181,10 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   key={item.id}
                   type="button"
                   onClick={() => onPageChange(item.id)}
-                  className={`relative w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition cursor-pointer ${
+                  title={sidebarCollapsed ? item.label : undefined}
+                  className={`relative w-full flex items-center ${
+                    sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+                  } rounded-xl py-2.5 text-sm font-medium transition cursor-pointer ${
                     active
                       ? 'text-white'
                       : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200 hover:bg-[#8C271E]/6 dark:hover:bg-[#8C271E]/12'
@@ -189,29 +197,39 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                       className="absolute inset-0 rounded-xl bg-[#8C271E] shadow-sm shadow-[#8C271E]/30"
                     />
                   )}
-                  <span className="relative z-10 flex items-center gap-3">
+                  <span className="relative z-10 flex items-center gap-3 min-w-0">
                     <Icon size={17} strokeWidth={active ? 2.2 : 1.8} />
-                    {item.label}
+                    {!sidebarCollapsed && (
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.14 }}
+                        className="truncate"
+                      >
+                        {item.label}
+                      </motion.span>
+                    )}
                   </span>
-                  {badge !== null ? (
-                    <span
-                      className={`relative z-10 font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 tabular-nums ${
-                        active
-                          ? 'bg-white/20 text-white'
-                          : 'bg-[#8C271E]/10 dark:bg-[#8C271E]/20 text-[#8C271E] dark:text-[#E56B5F]'
-                      }`}
-                    >
-                      {badge}
-                    </span>
-                  ) : (
-                    <span
-                      className={`relative z-10 font-mono text-[10px] ${
-                        active ? 'text-white/70' : 'text-slate-300 dark:text-zinc-600'
-                      }`}
-                    >
-                      {item.shortcut}
-                    </span>
-                  )}
+                  {!sidebarCollapsed &&
+                    (badge !== null ? (
+                      <span
+                        className={`relative z-10 font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 tabular-nums ${
+                          active
+                            ? 'bg-white/20 text-white'
+                            : 'bg-[#8C271E]/10 dark:bg-[#8C271E]/20 text-[#8C271E] dark:text-[#E56B5F]'
+                        }`}
+                      >
+                        {badge}
+                      </span>
+                    ) : (
+                      <span
+                        className={`relative z-10 font-mono text-[10px] ${
+                          active ? 'text-white/70' : 'text-slate-300 dark:text-zinc-600'
+                        }`}
+                      >
+                        {item.shortcut}
+                      </span>
+                    ))}
                 </button>
               );
             })}
@@ -219,14 +237,20 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
         </div>
 
         {/* Bottom Profile & Settings Controls */}
-        <div className="space-y-2.5 pt-4 border-t border-slate-100 dark:border-zinc-800/80 min-w-[208px]">
+        <div
+          className={`space-y-2.5 pt-4 border-t border-slate-100 dark:border-zinc-800/80 overflow-hidden ${
+            sidebarCollapsed ? 'px-2.5' : 'px-4'
+          }`}
+        >
           <button
             type="button"
             onClick={() => onPageChange('profile')}
             title="Mon Profil Artiste, Stats & Portfolio"
-            className={`w-full flex items-center gap-2.5 rounded-xl p-1.5 transition cursor-pointer text-left ${
+            className={`w-full flex items-center ${
+              sidebarCollapsed ? 'justify-center' : 'gap-2.5'
+            } rounded-xl p-1.5 transition cursor-pointer text-left ${
               activePage === 'profile'
-                ? 'bg-slate-100 dark:bg-zinc-800/85'
+                ? 'bg-[#8C271E]/12 dark:bg-[#8C271E]/22'
                 : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800/60'
             }`}
           >
@@ -241,12 +265,8 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                 className={`h-8 w-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 ${
                   state.preferences.avatarColor === 'indigo'
                     ? 'bg-zinc-700 text-white'
-                    : state.preferences.avatarColor === 'violet'
-                    ? 'bg-[#8C271E] text-white'
                     : state.preferences.avatarColor === 'emerald'
                     ? 'bg-emerald-600 text-white'
-                    : state.preferences.avatarColor === 'fuchsia'
-                    ? 'bg-[#8C271E] text-white'
                     : state.preferences.avatarColor === 'amber'
                     ? 'bg-amber-500 text-white'
                     : 'bg-[#8C271E] text-white'
@@ -257,46 +277,60 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   .toUpperCase()}
               </div>
             )}
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold truncate text-slate-900 dark:text-zinc-100">
-                {state.preferences.name || cloudUser?.displayName || 'Mon Profil'}
-              </p>
-              <p className="text-[10px] text-slate-400 truncate">
-                Portfolio & Stats · Spotify
-              </p>
-            </div>
+            {!sidebarCollapsed && (
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold truncate text-slate-900 dark:text-zinc-100">
+                  {state.preferences.name || cloudUser?.displayName || 'Mon Profil'}
+                </p>
+                <p className="text-[10px] text-slate-400 truncate">
+                  Portfolio & Carrière
+                </p>
+              </div>
+            )}
           </button>
 
-          <div className="flex items-center justify-between gap-1">
+          <div
+            className={`flex ${
+              sidebarCollapsed ? 'flex-col items-center gap-1' : 'items-center justify-between gap-1'
+            }`}
+          >
             <button
               type="button"
               onClick={toggleTheme}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70 transition cursor-pointer"
+              title={state.preferences.theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+              className={`${
+                sidebarCollapsed ? 'h-9 w-9' : 'flex-1 py-2'
+              } flex items-center justify-center gap-1.5 rounded-xl text-xs font-medium text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70 transition cursor-pointer`}
             >
               {state.preferences.theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
-              {state.preferences.theme === 'dark' ? 'Clair' : 'Sombre'}
+              {!sidebarCollapsed && (state.preferences.theme === 'dark' ? 'Clair' : 'Sombre')}
             </button>
             <button
               type="button"
               onClick={() => onPageChange(activePage === 'docs' ? 'dashboard' : 'docs')}
               title="Guide & Documentation"
               aria-label="Guide & Documentation"
-              className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-2 text-xs font-medium transition cursor-pointer ${
+              className={`inline-flex items-center justify-center gap-1 rounded-xl ${
+                sidebarCollapsed ? 'h-9 w-9' : 'px-2.5 py-2'
+              } text-xs font-medium transition cursor-pointer ${
                 activePage === 'docs'
-                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                  ? 'bg-[#8C271E] text-white'
                   : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
               }`}
             >
               <BookOpen size={14} />
-              <span>Guide</span>
+              {!sidebarCollapsed && <span>Guide</span>}
             </button>
             <button
               type="button"
               onClick={() => onPageChange('settings')}
+              title="Paramètres"
               aria-label="Paramètres"
-              className={`rounded-xl p-2 transition cursor-pointer ${
+              className={`rounded-xl ${
+                sidebarCollapsed ? 'h-9 w-9 flex items-center justify-center' : 'p-2'
+              } transition cursor-pointer ${
                 activePage === 'settings'
-                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                  ? 'bg-[#8C271E] text-white'
                   : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
               }`}
             >
@@ -304,7 +338,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
             </button>
           </div>
         </div>
-      </aside>
+      </motion.aside>
 
       {/* Mobile Fixed Safe-Area Top Bar (z-20 so Project/Track/Text full-screen pages cover it cleanly) */}
       <header className="md:hidden fixed top-0 inset-x-0 z-20 pt-[calc(env(safe-area-inset-top)+10px)] bg-white dark:bg-[#0e0e11] border-b border-slate-200/80 dark:border-zinc-800/90">
@@ -368,9 +402,9 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
 
       {/* Full-Width Standalone Music Main Workspace */}
       <main
-        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.75rem+env(safe-area-inset-top))] md:pt-6 max-w-7xl w-full mx-auto transition-[padding] duration-200 ${
-          sidebarCollapsed ? 'md:pl-16' : ''
-        } ${currentTrack ? 'pb-44 md:pb-28' : 'pb-24 md:pb-10'}`}
+        className={`flex-1 min-w-0 px-3.5 sm:px-7 lg:px-10 pt-[calc(4.75rem+env(safe-area-inset-top))] md:pt-6 max-w-7xl w-full mx-auto ${
+          currentTrack ? 'pb-44 md:pb-28' : 'pb-24 md:pb-10'
+        }`}
       >
         {children}
       </main>

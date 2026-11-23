@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Archive,
   ArrowDownAZ,
   Calendar,
   GitBranch,
@@ -44,6 +45,7 @@ import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 import { SettingsPage } from '../SettingsModal';
 import { DocumentationPage } from '../DocumentationPage';
+import { TrackCardSkeletonGrid } from '../ui/Skeleton';
 import {
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
@@ -61,7 +63,7 @@ interface MusicViewProps {
   isDocsOpen?: boolean;
   onOpenDocs?: () => void;
 }
-type LibraryFilter = 'all' | 'favorites' | 'todo';
+type LibraryFilter = 'all' | 'favorites' | 'todo' | 'archived';
 type LibrarySort = 'recent' | 'name' | 'versions' | 'rating' | 'potential' | 'gap';
 
 export function MusicView({
@@ -169,12 +171,13 @@ export function MusicView({
   const [syncingDrive, setSyncingDrive] = useState(false);
   const [permanentSetupOpen, setPermanentSetupOpen] = useState(false);
 
-  // Library search / filter / sort / grouping / year filter
+  // Library search / filter / sort / grouping / year filter / project filter
   const [libSearch, setLibSearch] = useState('');
   const [libFilter, setLibFilter] = useState<LibraryFilter>('all');
   const [libSort, setLibSort] = useState<LibrarySort>('recent');
   const [groupVersions, setGroupVersions] = useState(true);
   const [yearFilter, setYearFilter] = useState<string>('all');
+  const [projectStatusFilter, setProjectStatusFilter] = useState<'all' | 'active' | 'archived'>('all');
 
   // Full-page Apple Studio project creation modal & Playlist modal
   const [showNewProj, setShowNewProj] = useState(false);
@@ -280,6 +283,17 @@ export function MusicView({
       if (yearFilter !== 'all' && g.yearFolder !== yearFilter) return false;
       if (libFilter === 'favorites' && !g.isFavorite) return false;
       if (libFilter === 'todo' && g.todoTotal === 0) return false;
+      if (libFilter === 'archived') {
+        const isArchivedTrack =
+          g.latestTrack.status === 'masterise' ||
+          Boolean(
+            g.latestTrack.linkedProjectId &&
+              state.musicProjects.some(
+                (p) => p.id === g.latestTrack.linkedProjectId && p.status === 'sorti'
+              )
+          );
+        if (!isArchivedTrack) return false;
+      }
       if (!q) return true;
       return (
         g.baseTitle.toLowerCase().includes(q) ||
@@ -515,13 +529,47 @@ export function MusicView({
   );
 
   const renderProjectsSection = (compact: boolean) => {
-    const list = compact ? state.musicProjects.slice(0, 4) : state.musicProjects;
+    const filteredProjects = compact
+      ? state.musicProjects
+      : state.musicProjects.filter((p) => {
+          if (projectStatusFilter === 'active') return p.status !== 'sorti';
+          if (projectStatusFilter === 'archived') return p.status === 'sorti';
+          return true;
+        });
+    const list = compact ? filteredProjects.slice(0, 4) : filteredProjects;
+    const archivedProjCount = state.musicProjects.filter((p) => p.status === 'sorti').length;
     return (
           <section className="space-y-3.5 pt-1">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                {compact ? 'Projets' : 'Albums, EP, Singles & Mixtapes'}
-              </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                  {compact ? 'Projets' : 'Albums, EP, Singles & Archives'}
+                </h2>
+                {!compact && state.musicProjects.length > 0 && (
+                  <div className="inline-flex items-center rounded-xl bg-slate-100 dark:bg-zinc-900 p-0.5">
+                    {(
+                      [
+                        ['all', `Tous (${state.musicProjects.length})`],
+                        ['active', `En cours (${state.musicProjects.length - archivedProjCount})`],
+                        ['archived', `Archives / Sortis (${archivedProjCount})`],
+                      ] as const
+                    ).map(([id, lbl]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setProjectStatusFilter(id)}
+                        className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                          projectStatusFilter === id
+                            ? 'bg-[#8C271E] text-white shadow-2xs'
+                            : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                        }`}
+                      >
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {compact ? (
                 <div className="flex items-center gap-3">
                   <button
@@ -660,9 +708,74 @@ export function MusicView({
     isSettingsOpen || isDocsOpen || showNewProj || detailGroup || openProjectId || openPlaylistId
   );
 
+  const headerTitle = isSettingsOpen
+    ? 'Paramètres'
+    : isDocsOpen
+      ? 'Guide & Documentation'
+      : showNewProj
+        ? 'Nouveau projet'
+        : openPlaylistId
+          ? 'Playlist'
+          : openProjectId
+            ? 'Projets'
+            : detailGroup
+              ? 'Sons'
+              : (
+                  {
+                    dashboard: 'Accueil',
+                    library: 'Sons',
+                    projects: 'Projets',
+                    lyrics: 'Textes',
+                    social: 'Communauté & Social',
+                    profile: 'Mon Profil & Portfolio',
+                  } as Record<MusicSubTab, string>
+                )[subTab];
+
   return (
     <div className="space-y-5 pb-14">
-      {/* ================= IN-APP SUB-PAGES (rendered inside <main> alongside sidebar & navbars!) ================= */}
+      {/* Persistent Top Section Header + Compact Drive Sync (ALWAYS visible across every page & sub-page!) */}
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
+          {headerTitle}
+        </h1>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPermanentSetupOpen(true)}
+            title="Gérer les dossiers Google Drive connectés"
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition cursor-pointer ${
+              driveSources.length === 0
+                ? 'bg-[#8C271E] text-white font-semibold hover:bg-[#A32E24] shadow-xs shadow-[#8C271E]/25'
+                : 'border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50 hover:text-slate-900 dark:hover:text-zinc-100'
+            }`}
+          >
+            <HardDrive size={11} />
+            <span>
+              {driveSources.length === 0
+                ? 'Connecter un Drive'
+                : `Drives (${driveSources.length})`}
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={syncingDrive || autoSyncingDrive}
+            onClick={() => void handleSyncAllDrive(true)}
+            title="Synchroniser tous les Google Drives connectés"
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-[#8C271E]/50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-50 transition cursor-pointer"
+          >
+            <RefreshCw
+              size={11}
+              className={syncingDrive || autoSyncingDrive ? 'animate-spin text-[#8C271E]' : ''}
+            />
+            <span>{syncingDrive || autoSyncingDrive ? 'Sync…' : 'Sync'}</span>
+            {driveSources.length > 0 && !syncingDrive && !autoSyncingDrive && (
+              <span className="h-1.5 w-1.5 rounded-full bg-[#8C271E]" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ================= IN-APP SUB-PAGES (full-width directly under top header!) ================= */}
       {isSettingsOpen ? (
         <SettingsPage />
       ) : isDocsOpen ? (
@@ -762,62 +875,6 @@ export function MusicView({
 
       {!hasActiveSubPage && (
         <>
-      {/* Section Header + Compact Drive Sync */}
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
-          {
-            (
-              {
-                dashboard: 'Accueil',
-                library: 'Sons',
-                projects: 'Projets',
-                lyrics: 'Textes',
-                social: 'Communauté & Social',
-                profile: 'Mon Profil & Portfolio',
-              } as Record<MusicSubTab, string>
-            )[subTab]
-          }
-        </h1>
-          {/* Ultra-compact Sync & Multi-Drive Controls */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setPermanentSetupOpen(true)}
-              title="Gérer les dossiers Google Drive connectés"
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition cursor-pointer ${
-                driveSources.length === 0
-                  ? 'bg-[#8C271E] text-white font-semibold hover:bg-[#A32E24] shadow-xs shadow-[#8C271E]/25'
-                  : 'border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50 hover:text-slate-900 dark:hover:text-zinc-100'
-              }`}
-            >
-              <HardDrive size={11} />
-              <span>
-                {driveSources.length === 0
-                  ? 'Connecter un Drive'
-                  : `Drives (${driveSources.length})`}
-              </span>
-            </button>
-            <button
-              type="button"
-              disabled={syncingDrive || autoSyncingDrive}
-              onClick={() => void handleSyncAllDrive(true)}
-              title="Synchroniser tous les Google Drives connectés"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-[#8C271E]/50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-50 transition cursor-pointer"
-            >
-              <RefreshCw
-                size={11}
-                className={syncingDrive || autoSyncingDrive ? 'animate-spin text-[#8C271E]' : ''}
-              />
-              <span>
-                {syncingDrive || autoSyncingDrive ? 'Sync…' : 'Sync'}
-              </span>
-              {driveSources.length > 0 && !syncingDrive && !autoSyncingDrive && (
-                <span className="h-1.5 w-1.5 rounded-full bg-[#8C271E]" />
-              )}
-            </button>
-          </div>
-      </div>
-
       {/* Zero-Drive / Empty Account Instant Onboarding Card */}
       {driveSources.length === 0 && state.musicTracks.length === 0 && (subTab === 'dashboard' || subTab === 'library') && (
         <section className="tempo-card rounded-2xl p-5 space-y-3">
@@ -1014,26 +1071,30 @@ export function MusicView({
             </div>
 
             {recentGroups.length === 0 ? (
-              <div className="tempo-card rounded-2xl p-7 text-center space-y-3">
-                <p className="text-xs text-slate-400">
-                  {driveSources.length === 0
-                    ? 'Connecte ton premier dossier Google Drive ci-dessus pour charger tes MP3.'
-                    : 'Aucun MP3 trouvé dans tes dossiers connectés.'}
-                </p>
-                <button
-                  type="button"
-                  disabled={syncingDrive || autoSyncingDrive}
-                  onClick={() =>
-                    driveSources.length === 0
-                      ? setPermanentSetupOpen(true)
-                      : void handleSyncAllDrive(true)
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
-                >
-                  <RefreshCw size={13} className={syncingDrive || autoSyncingDrive ? 'animate-spin' : ''} />
-                  {driveSources.length === 0 ? 'Connecter un Google Drive' : 'Synchroniser Google Drive'}
-                </button>
-              </div>
+              syncingDrive || autoSyncingDrive ? (
+                <TrackCardSkeletonGrid count={6} />
+              ) : (
+                <div className="tempo-card rounded-2xl p-7 text-center space-y-3">
+                  <p className="text-xs text-slate-400">
+                    {driveSources.length === 0
+                      ? 'Connecte ton premier dossier Google Drive ci-dessus pour charger tes MP3.'
+                      : 'Aucun MP3 trouvé dans tes dossiers connectés.'}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={syncingDrive || autoSyncingDrive}
+                    onClick={() =>
+                      driveSources.length === 0
+                        ? setPermanentSetupOpen(true)
+                        : void handleSyncAllDrive(true)
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
+                  >
+                    <RefreshCw size={13} className={syncingDrive || autoSyncingDrive ? 'animate-spin' : ''} />
+                    {driveSources.length === 0 ? 'Connecter un Google Drive' : 'Synchroniser Google Drive'}
+                  </button>
+                </div>
+              )
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {recentGroups.map((group, idx) => {
@@ -1366,6 +1427,7 @@ export function MusicView({
                     ['all', `Tous (${groupVersions ? trackGroups.length : state.musicTracks.length})`, null],
                     ['favorites', `Favoris (${favoriteGroups.length})`, Star],
                     ['todo', 'Avec TODO', ListChecks],
+                    ['archived', 'Archives & Masters', Archive],
                   ] as const
                 ).map(([id, label, Icon]) => (
                   <button
@@ -1499,15 +1561,19 @@ export function MusicView({
             )}
           </div>
 
-          {/* Clickable Cards Grid */}
+          {/* Clickable Cards Grid (with shimmer skeleton while syncing Drive!) */}
           {filteredLibraryGroups.length === 0 ? (
-            <div className="tempo-card rounded-3xl p-10 text-center space-y-2">
-              <p className="text-xs text-slate-400">
-                {state.musicTracks.length === 0
-                  ? 'Aucun MP3 dans ta bibliothèque. Clique sur « Sync tous mes MP3 Drive » ci-dessus.'
-                  : 'Aucun morceau ne correspond à ce filtre.'}
-              </p>
-            </div>
+            syncingDrive || autoSyncingDrive ? (
+              <TrackCardSkeletonGrid count={6} />
+            ) : (
+              <div className="tempo-card rounded-3xl p-10 text-center space-y-2">
+                <p className="text-xs text-slate-400">
+                  {state.musicTracks.length === 0
+                    ? 'Aucun MP3 dans ta bibliothèque. Clique sur « Sync » ci-dessus.'
+                    : 'Aucun morceau ne correspond à ce filtre.'}
+                </p>
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredLibraryGroups.map((group) => {

@@ -167,7 +167,7 @@ export function PlaylistPage({
 
   if (!playlist) {
     return (
-      <div className="max-w-3xl mx-auto tempo-card rounded-3xl p-8 text-center space-y-3">
+      <div className="w-full tempo-card rounded-3xl p-8 text-center space-y-3">
         <p className="text-xs text-slate-400">Playlist introuvable.</p>
         <button
           type="button"
@@ -220,7 +220,7 @@ export function PlaylistPage({
   });
 
   return (
-    <div className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
+    <div className="w-full tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
       {/* Minimalist In-App Studio Top Bar (identical to TrackDetailModal / Song Page) */}
       <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
         <div className="flex items-center justify-between gap-2">

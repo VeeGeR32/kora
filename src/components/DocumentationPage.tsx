@@ -65,7 +65,7 @@ export function DocumentationPage({
   const show = (id: DocSectionId) => activeSection === 'all' || activeSection === id;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-14">
+    <div className="w-full space-y-6 pb-14">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>

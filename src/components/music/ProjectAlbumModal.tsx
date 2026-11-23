@@ -632,15 +632,10 @@ export function ProjectAlbumModal({
 
   const artistName = state.preferences.name || 'Moi';
   const artistAvatarUrl = state.preferences.avatarUrl || cloudUser?.photoURL || '';
-  const heroCoverUrl =
-    project.coverDataUrl || getProjectTrackIndividualCovers(projectTracks)[0] || null;
-  const heroGradientCls =
-    PROJECT_GRADIENTS.find((g) => g.id === (project.coverGradient || 'pink'))?.css ||
-    PROJECT_GRADIENTS[0].css;
 
   return (
     <AnimatePresence>
-      {/* In-App Spotify-Style Project Page (rendered inside <main> alongside sidebar & navbars!) */}
+      {/* In-App Full-Width Rowav Studio Project Page (coherent with Song, Playlist & Textes pages!) */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -654,37 +649,34 @@ export function ProjectAlbumModal({
           e.stopPropagation();
           onOpenProjectContextMenu(e, project);
         }}
-        className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
+        className="w-full tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
       >
-        <div className="relative pb-8">
-          {/* Atmospheric Blurred Cover Gradient Wash (Spotify Album Hero Backdrop) */}
-          <div className="pointer-events-none absolute top-0 inset-x-0 h-[370px] sm:h-[410px] overflow-hidden">
-            {heroCoverUrl ? (
-              <img
-                src={heroCoverUrl}
-                alt=""
-                aria-hidden="true"
-                className="w-full h-full object-cover scale-125 blur-3xl opacity-45 dark:opacity-55"
-              />
-            ) : (
-              <div className={`w-full h-full bg-gradient-to-b ${heroGradientCls} opacity-35 dark:opacity-45`} />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-b from-[var(--surface)]/30 via-[var(--surface)]/75 to-[var(--surface)]" />
-          </div>
+        <div className="pb-8">
+          {/* Minimalist In-App Studio Top Bar (identical to TrackDetailModal & PlaylistPage!) */}
+          <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Retour"
+                  className="h-9 px-3 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+                >
+                  <ChevronLeft size={16} /> Retour
+                </button>
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
+                  {fmtProjectKindLabel(project.kind)} · {projectTracks.length}{' '}
+                  {projectTracks.length > 1 ? 'titres' : 'titre'}
+                  {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
+                </span>
+                {isLocked && showTracklistDetails && (
+                  <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-amber-500/12 text-amber-600 dark:text-amber-400 px-2.5 py-1 text-[10px] font-semibold shrink-0">
+                    <Lock size={10} /> Figée
+                  </span>
+                )}
+              </div>
 
-          {/* Top Bar (Spotify circular back button + Studio toggle) */}
-          <div className="relative z-20 pt-4 pb-2 px-4 sm:px-6">
-            <div className="max-w-xl mx-auto flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Retour"
-                className="h-9 w-9 rounded-full bg-white/75 dark:bg-black/45 backdrop-blur-md text-slate-900 dark:text-white border border-black/5 dark:border-white/10 flex items-center justify-center hover:bg-white dark:hover:bg-black/65 transition cursor-pointer shadow-xs"
-              >
-                <ChevronLeft size={19} />
-              </button>
-
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {showTracklistDetails && (
                   <>
                     <button
@@ -703,10 +695,10 @@ export function ProjectAlbumModal({
                           ? 'Tracklist figée (cliquer pour déverrouiller)'
                           : 'Verrouiller / figer la tracklist définitive'
                       }
-                      className={`h-9 w-9 rounded-full backdrop-blur-md border flex items-center justify-center transition cursor-pointer ${
+                      className={`h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer ${
                         isLocked
-                          ? 'bg-amber-500/20 border-amber-500/30 text-amber-700 dark:text-amber-300'
-                          : 'bg-white/75 dark:bg-black/45 border-black/5 dark:border-white/10 text-slate-800 dark:text-zinc-200 hover:bg-white dark:hover:bg-black/65'
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                          : 'bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
                       }`}
                     >
                       {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
@@ -722,7 +714,7 @@ export function ProjectAlbumModal({
                         );
                       }}
                       title="Voir la TODO"
-                      className="h-9 px-3 rounded-full bg-white/75 dark:bg-black/45 backdrop-blur-md border border-black/5 dark:border-white/10 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1.5 text-xs font-semibold hover:bg-white dark:hover:bg-black/65 transition cursor-pointer"
+                      className="h-9 px-3 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1.5 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer"
                     >
                       <ListChecks size={14} />
                       <span className="font-mono text-[11px]">
@@ -737,13 +729,13 @@ export function ProjectAlbumModal({
                   onClick={toggleTracklistDetails}
                   title={
                     showTracklistDetails
-                      ? 'Passer en vue Spotify épurée'
-                      : 'Afficher les détails & outils studio'
+                      ? 'Masquer les détails (vue Tracklist épurée)'
+                      : 'Afficher le mode Studio (Sprint & outils)'
                   }
-                  className={`h-9 px-3 rounded-full backdrop-blur-md border inline-flex items-center gap-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                  className={`h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-[11px] font-semibold transition cursor-pointer ${
                     showTracklistDetails
-                      ? 'bg-slate-900 dark:bg-white text-white dark:text-zinc-950 border-transparent'
-                      : 'bg-white/75 dark:bg-black/45 border-black/5 dark:border-white/10 text-slate-800 dark:text-zinc-100 hover:bg-white dark:hover:bg-black/65'
+                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                      : 'bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
                   }`}
                 >
                   {showTracklistDetails ? <Eye size={13} /> : <EyeOff size={13} />}
@@ -751,25 +743,41 @@ export function ProjectAlbumModal({
                 </button>
               </div>
             </div>
-          </div>
+          </header>
 
-          <div className="relative z-10 max-w-xl mx-auto px-5 sm:px-6 space-y-4 pt-1">
-            {/* Centered Large Square Spotify Album Cover */}
-            <div className="flex justify-center">
-              <div
-                onClick={() => coverInputRef.current?.click()}
-                className="relative group w-[224px] sm:w-[252px] aspect-square rounded-lg sm:rounded-xl overflow-hidden shadow-[0_24px_60px_-10px_rgba(0,0,0,0.55)] dark:shadow-[0_28px_70px_-10px_rgba(0,0,0,0.85)] cursor-pointer"
-              >
-                <ProjectCoverArtwork
-                  title={project.title}
-                  projectCoverUrl={project.coverDataUrl}
-                  trackCoverUrls={getProjectTrackIndividualCovers(projectTracks)}
-                  gradientId={project.coverGradient}
-                />
-                <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 text-white flex flex-col items-center justify-center gap-1.5 text-xs font-medium transition">
-                  <Camera size={20} />
-                  Changer la pochette
+          {/* Full-Width Studio Body (identical layout & padding to TrackDetailModal & PlaylistPage!) */}
+          <div className="px-4 sm:px-7 pt-6 space-y-6">
+            {/* Horizontal Studio Hero: Square Cover + Title/Meta + Action Pills */}
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+              <div className="relative group shrink-0">
+                <div
+                  onClick={() => coverInputRef.current?.click()}
+                  className="h-40 w-40 sm:h-36 sm:w-36 rounded-[24px] overflow-hidden shadow-xl border border-slate-200/70 dark:border-zinc-800 cursor-pointer"
+                >
+                  <ProjectCoverArtwork
+                    title={project.title}
+                    projectCoverUrl={project.coverDataUrl}
+                    trackCoverUrls={getProjectTrackIndividualCovers(projectTracks)}
+                    gradientId={project.coverGradient}
+                  />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  title="Changer la pochette du projet"
+                  className="absolute inset-0 rounded-[22px] bg-black/45 opacity-0 group-hover:opacity-100 text-white flex flex-col items-center justify-center gap-1 text-[10px] font-semibold transition cursor-pointer"
+                >
+                  <Camera size={16} />
+                  Pochette
+                </button>
+                <button
+                  type="button"
+                  onClick={() => coverInputRef.current?.click()}
+                  aria-label="Changer la pochette"
+                  className="absolute bottom-1.5 right-1.5 h-7 w-7 rounded-full bg-black/65 text-white flex items-center justify-center shadow-md backdrop-blur-xs cursor-pointer sm:opacity-85 hover:scale-105 transition"
+                >
+                  <Camera size={13} />
+                </button>
                 <input
                   ref={coverInputRef}
                   type="file"
@@ -777,6 +785,174 @@ export function ProjectAlbumModal({
                   onChange={(e) => void handleCoverUpload(e.target.files?.[0])}
                   className="hidden"
                 />
+              </div>
+
+              <div className="flex-1 min-w-0 w-full space-y-2.5 text-center sm:text-left">
+                <div>
+                  <input
+                    type="text"
+                    value={project.title}
+                    onChange={(e) => updateMusicProject(project.id, { title: e.target.value })}
+                    placeholder="Nom du projet…"
+                    className="w-full bg-transparent text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-50 outline-none border-b border-transparent focus:border-slate-300 dark:focus:border-zinc-700 pb-0.5 text-center sm:text-left"
+                  />
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-1 text-xs text-slate-500 dark:text-zinc-400">
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800 dark:text-zinc-200">
+                      {artistAvatarUrl ? (
+                        <img
+                          src={artistAvatarUrl}
+                          alt={artistName}
+                          className="h-5 w-5 rounded-full object-cover border border-black/10 dark:border-white/15 shrink-0"
+                        />
+                      ) : (
+                        <span className="h-5 w-5 rounded-full bg-[#8C271E] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                          {artistName.slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                      {artistName}
+                    </span>
+                    <span>·</span>
+                    <span>
+                      {fmtProjectKindLabel(project.kind)} · {fmtReleaseShort(project.targetReleaseDate)} ·{' '}
+                      {projectTracks.length} {projectTracks.length > 1 ? 'titres' : 'titre'}
+                      {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Horizontal Action Pills (100% consistent with Song Page & Playlist Page!) */}
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handlePlayAlbum}
+                    aria-label="Lire le projet"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-4 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 active:scale-95 transition cursor-pointer"
+                  >
+                    {isPlayingThisProject ? (
+                      <>
+                        <Pause size={13} fill="currentColor" /> Pause
+                      </>
+                    ) : (
+                      <>
+                        <Play size={13} fill="currentColor" className="ml-0.5" /> Écouter
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={projectTracks.length === 0}
+                    onClick={() => {
+                      if (projectTracks.length > 0) void player.playShuffled(projectTracks);
+                    }}
+                    title="Lecture aléatoire du projet"
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer disabled:opacity-40 ${
+                      player.shuffle && isPlayingThisProject
+                        ? 'bg-[#8C271E]/15 text-[#8C271E] dark:text-[#E56B5F]'
+                        : 'bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100'
+                    }`}
+                  >
+                    <Shuffle size={13} /> Aléatoire
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={sharing}
+                    onClick={async () => {
+                      setSharing(true);
+                      try {
+                        const tracksPayload = projectTracks.map((trk) => {
+                          const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+                          return {
+                            id: trk.id,
+                            title: grp?.baseTitle || trk.manualGroupTitle || trk.title,
+                            artist: trk.artist || artistName,
+                            versionLabel: grp?.latestVersionLabel,
+                            coverGradient: trk.coverGradient || project.coverGradient || 'sunset',
+                            durationSec: trk.durationSec || 155,
+                            bpm: trk.bpm,
+                            mood: trk.mood,
+                          };
+                        });
+                        const res = await postSocialAction(
+                          {
+                            action: 'publish_project',
+                            userName: artistName,
+                            userBio: state.preferences.bio,
+                            project: {
+                              id: project.id,
+                              title: project.title,
+                              kind: project.kind,
+                              description: project.notes || '',
+                              coverUrl: project.coverDataUrl,
+                              coverGradient: project.coverGradient || 'sunset',
+                              releaseDate:
+                                project.targetReleaseDate || new Date().toISOString().slice(0, 10),
+                              tracks: tracksPayload,
+                            },
+                          },
+                          state.preferences.firebaseConfig
+                        );
+                        if (res.ok) {
+                          notify(`Projet « ${project.title} » publié sur Rowav Social & ton Portfolio ✓`);
+                        } else {
+                          notify(res.error || 'Impossible de publier sur Rowav Social');
+                        }
+                      } finally {
+                        setSharing(false);
+                      }
+                    }}
+                    title="Publier ce projet sur la communauté Rowav Social et ton Portfolio Artiste"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 hover:bg-[#8C271E]/20 text-[#8C271E] dark:text-[#E56B5F] px-3.5 py-2 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                  >
+                    <Globe size={13} />
+                    <span>Publier sur Social</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={sharing}
+                    onClick={async () => {
+                      setSharing(true);
+                      try {
+                        const res = await shareOrCopyPublicLink({
+                          kind: 'project',
+                          id: project.id,
+                          title: project.title,
+                          firebaseConfig: state.preferences.firebaseConfig,
+                        });
+                        notify(
+                          res.method === 'native'
+                            ? `Projet « ${project.title} » partagé ✓`
+                            : `Lien public du projet copié ✓ (écoute sans compte)`
+                        );
+                      } catch (err) {
+                        notify(`Partage : ${(err as Error).message}`);
+                      } finally {
+                        setSharing(false);
+                      }
+                    }}
+                    title="Partager ce projet (lien d’écoute publique sans compte)"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                  >
+                    {sharing ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+                    <span>Lien public</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowEditMeta((v) => !v)}
+                    title="Modifier pochette, format & statut du projet"
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer ${
+                      showEditMeta
+                        ? 'bg-[#8C271E] text-white'
+                        : 'bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100'
+                    }`}
+                  >
+                    <SlidersHorizontal size={13} />
+                    <span>Options</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -787,7 +963,7 @@ export function ProjectAlbumModal({
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/85 backdrop-blur-md p-4 space-y-3 overflow-hidden"
+                  className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/60 p-4 space-y-3 overflow-hidden"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -804,7 +980,7 @@ export function ProjectAlbumModal({
                           }
                           className={`h-5 w-5 rounded-full bg-gradient-to-br ${g.css} cursor-pointer transition ${
                             !project.coverDataUrl && (project.coverGradient || 'pink') === g.id
-                              ? 'ring-2 ring-offset-2 ring-slate-900 dark:ring-zinc-100 dark:ring-offset-zinc-900'
+                              ? 'ring-2 ring-offset-2 ring-[#8C271E] dark:ring-offset-zinc-900'
                               : 'opacity-75 hover:opacity-100'
                           }`}
                         />
@@ -853,7 +1029,7 @@ export function ProjectAlbumModal({
                           onClick={() => updateMusicProject(project.id, { kind: id })}
                           className={`rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
                             project.kind === id
-                              ? 'bg-white dark:bg-zinc-800 text-slate-950 dark:text-white shadow-2xs'
+                              ? 'bg-[#8C271E] text-white shadow-2xs'
                               : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200'
                           }`}
                         >
@@ -874,7 +1050,7 @@ export function ProjectAlbumModal({
                           ['en-cours', 'En cours'],
                           ['mix', 'Mix / Master'],
                           ['pret', 'Prêt'],
-                          ['sorti', 'Sorti'],
+                          ['sorti', 'Sorti / Archivé'],
                         ] as const
                       ).map(([id, lbl]) => (
                         <button
@@ -883,7 +1059,7 @@ export function ProjectAlbumModal({
                           onClick={() => updateMusicProject(project.id, { status: id })}
                           className={`rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
                             project.status === id
-                              ? 'bg-white dark:bg-zinc-800 text-slate-950 dark:text-white shadow-2xs'
+                              ? 'bg-[#8C271E] text-white shadow-2xs'
                               : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200'
                           }`}
                         >
@@ -920,192 +1096,6 @@ export function ProjectAlbumModal({
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {/* Spotify Editorial Title + Artist Avatar + Release Meta */}
-            <div className="space-y-2 pt-2">
-              <input
-                type="text"
-                value={project.title}
-                onChange={(e) => updateMusicProject(project.id, { title: e.target.value })}
-                placeholder="NOM DU PROJET"
-                className="w-full text-2xl sm:text-[28px] font-bold tracking-tight leading-tight uppercase bg-transparent text-slate-950 dark:text-white outline-none"
-              />
-
-              {/* Circular Artist Avatar + Bold Artist Name */}
-              <div className="flex items-center gap-2">
-                {artistAvatarUrl ? (
-                  <img
-                    src={artistAvatarUrl}
-                    alt={artistName}
-                    className="h-6 w-6 rounded-full object-cover border border-black/10 dark:border-white/15 shrink-0"
-                  />
-                ) : (
-                  <span className="h-6 w-6 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 text-[10px] font-bold flex items-center justify-center shrink-0">
-                    {artistName.slice(0, 2).toUpperCase()}
-                  </span>
-                )}
-                <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                  {artistName}
-                </span>
-              </div>
-
-              {/* Release Kind · Date · Tracks · Duration */}
-              <p className="text-xs font-medium text-slate-500 dark:text-zinc-400 flex items-center gap-1.5 flex-wrap">
-                <span>
-                  {fmtProjectKindLabel(project.kind)} · {fmtReleaseShort(project.targetReleaseDate)} ·{' '}
-                  {projectTracks.length} {projectTracks.length > 1 ? 'titres' : 'titre'}
-                  {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
-                </span>
-                {isLocked && showTracklistDetails && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/12 text-amber-600 dark:text-amber-400 px-2 py-0.5 text-[10px] font-semibold">
-                    <Lock size={9} /> Figée
-                  </span>
-                )}
-              </p>
-            </div>
-
-            {/* Spotify Action Bar: Left Utility Icons · Right Shuffle + Big Green Round Play Button */}
-            <div className="flex items-center justify-between gap-3 pt-0.5 pb-1">
-              <div className="flex items-center gap-1.5">
-                {heroCoverUrl && (
-                  <button
-                    type="button"
-                    onClick={() => coverInputRef.current?.click()}
-                    title="Changer la pochette"
-                    className="h-9 w-7 rounded-md overflow-hidden border border-slate-300/80 dark:border-white/25 shrink-0 mr-1 cursor-pointer hover:opacity-90 transition"
-                  >
-                    <img src={heroCoverUrl} alt="" className="h-full w-full object-cover" />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={sharing}
-                  onClick={async () => {
-                    setSharing(true);
-                    try {
-                      const tracksPayload = projectTracks.map((trk) => {
-                        const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
-                        return {
-                          id: trk.id,
-                          title: grp?.baseTitle || trk.manualGroupTitle || trk.title,
-                          artist: trk.artist || artistName,
-                          versionLabel: grp?.latestVersionLabel,
-                          coverGradient: trk.coverGradient || project.coverGradient || 'sunset',
-                          durationSec: trk.durationSec || 155,
-                          bpm: trk.bpm,
-                          mood: trk.mood,
-                        };
-                      });
-                      const res = await postSocialAction(
-                        {
-                          action: 'publish_project',
-                          userName: artistName,
-                          userBio: state.preferences.bio,
-                          project: {
-                            id: project.id,
-                            title: project.title,
-                            kind: project.kind,
-                            description: project.notes || '',
-                            coverUrl: project.coverDataUrl,
-                            coverGradient: project.coverGradient || 'sunset',
-                            releaseDate:
-                              project.targetReleaseDate || new Date().toISOString().slice(0, 10),
-                            tracks: tracksPayload,
-                          },
-                        },
-                        state.preferences.firebaseConfig
-                      );
-                      if (res.ok) {
-                        notify(`Projet « ${project.title} » publié sur Rowav Social & ton Portfolio ✓`);
-                      } else {
-                        notify(res.error || 'Impossible de publier sur Rowav Social');
-                      }
-                    } finally {
-                      setSharing(false);
-                    }
-                  }}
-                  title="Publier ce projet sur la communauté Rowav Social et ton Portfolio Artiste"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 hover:bg-[#8C271E]/20 text-[#8C271E] px-3 py-1.5 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
-                >
-                  <Globe size={13} />
-                  <span>Publier sur Social</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={sharing}
-                  onClick={async () => {
-                    setSharing(true);
-                    try {
-                      const res = await shareOrCopyPublicLink({
-                        kind: 'project',
-                        id: project.id,
-                        title: project.title,
-                        firebaseConfig: state.preferences.firebaseConfig,
-                      });
-                      notify(
-                        res.method === 'native'
-                          ? `Projet « ${project.title} » partagé ✓`
-                          : `Lien public du projet copié ✓ (écoute sans compte)`
-                      );
-                    } catch (err) {
-                      notify(`Partage : ${(err as Error).message}`);
-                    } finally {
-                      setSharing(false);
-                    }
-                  }}
-                  title="Partager ce projet (lien d’écoute publique sans compte)"
-                  aria-label="Partager ce projet"
-                  className="h-9 w-9 rounded-full text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10 flex items-center justify-center disabled:opacity-50 transition cursor-pointer"
-                >
-                  {sharing ? <Loader2 size={17} className="animate-spin" /> : <Link2 size={18} />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEditMeta((v) => !v)}
-                  title="Modifier pochette & infos du projet"
-                  aria-label="Options du projet"
-                  className={`h-9 w-9 rounded-full flex items-center justify-center transition cursor-pointer ${
-                    showEditMeta
-                      ? 'bg-slate-900/10 dark:bg-white/15 text-slate-950 dark:text-white'
-                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10'
-                  }`}
-                >
-                  <SlidersHorizontal size={17} />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  disabled={projectTracks.length === 0}
-                  onClick={() => {
-                    if (projectTracks.length > 0) void player.playShuffled(projectTracks);
-                  }}
-                  title="Lecture aléatoire du projet"
-                  aria-label="Lecture aléatoire"
-                  className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer disabled:opacity-35 ${
-                    player.shuffle && isPlayingThisProject
-                      ? 'text-[#8C271E]'
-                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10'
-                  }`}
-                >
-                  <Shuffle size={20} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handlePlayAlbum}
-                  aria-label="Lire le projet"
-                  className="h-13 w-13 rounded-full bg-[#8C271E] hover:bg-[#ff661a] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-[0_12px_28px_-6px_rgba(255,85,0,0.55)] shrink-0 cursor-pointer"
-                >
-                  {isPlayingThisProject ? (
-                    <Pause size={22} fill="currentColor" />
-                  ) : (
-                    <Play size={22} fill="currentColor" className="ml-0.5" />
-                  )}
-                </button>
-              </div>
-            </div>
 
             {/* Studio Sub-Tabs (visible in Studio/Details mode, hidden in pure listening mode!) */}
             {showTracklistDetails && (

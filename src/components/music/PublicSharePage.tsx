@@ -19,6 +19,7 @@ import {
 } from '../../lib/publicShare';
 import { triggerHapticTick } from '../../lib/haptics';
 import { getGradientClass } from './MiniAudioPlayer';
+import { PublicShareSkeleton } from '../ui/Skeleton';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 import { KoraLogo } from '../ui/KoraLogo';
 
@@ -356,12 +357,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-[100dvh] bg-[#0b0b0d] text-white flex flex-col items-center justify-center gap-3">
-        <Loader2 size={24} className="animate-spin text-zinc-400" />
-        <p className="text-xs text-zinc-400">Chargement de l’écoute…</p>
-      </div>
-    );
+    return <PublicShareSkeleton />;
   }
 
   if (error || !data || tracks.length === 0) {

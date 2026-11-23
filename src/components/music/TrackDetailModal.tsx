@@ -429,7 +429,7 @@ export function TrackDetailModal({
           e.stopPropagation();
           onOpenContextMenu(e, group, track.id, null);
         }}
-        className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
+        className="w-full tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden"
       >
         {/* Minimalist In-App Top Bar */}
         <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
@@ -615,7 +615,7 @@ export function TrackDetailModal({
                             group.versions.map((v) => v.track)
                           )
                     }
-                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold hover:opacity-92 active:scale-95 transition cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-4 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 active:scale-95 transition cursor-pointer"
                   >
                     {isPlaying ? (
                       <>

@@ -47,6 +47,7 @@ import type {
   SocialTrackItem,
 } from '../../types';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
+import { SocialFeedSkeleton } from '../ui/Skeleton';
 
 function formatDuration(sec?: number): string {
   if (!sec || !Number.isFinite(sec) || sec <= 0) return '2:35';
@@ -878,7 +879,7 @@ export function SocialHubView({
           const parentProject = socialProjects.find((p) => p.id === activeSocialTrack.projectId);
 
           return (
-            <div className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
+            <div className="w-full tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
               {/* Minimalist In-App Top Bar (identical to TrackDetailModal) */}
               <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
                 <div className="flex items-center justify-between gap-2">
@@ -1145,7 +1146,7 @@ export function SocialHubView({
         })()
       ) : activeSocialProject ? (
         /* ================= SUB-VIEW B: UNIFIED COMMUNITY PROJECT PAGE (coherent with TrackDetailModal & ProjectAlbumModal) ================= */
-        <div className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
+        <div className="w-full tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
           <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -1409,10 +1410,7 @@ export function SocialHubView({
 
           {/* Projects Feed */}
           {loading ? (
-            <div className="tempo-card rounded-3xl p-12 flex items-center justify-center gap-2 text-xs text-slate-400">
-              <Loader2 size={16} className="animate-spin text-[#8C271E]" />
-              <span>Chargement des projets de la communauté…</span>
-            </div>
+            <SocialFeedSkeleton />
           ) : (
             <div className="space-y-4">
               {filteredProjects.map((proj) => {

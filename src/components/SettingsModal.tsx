@@ -127,7 +127,7 @@ export function SettingsPage() {
     'w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/70 px-3.5 py-2.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-600 transition';
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-14">
+    <div className="w-full space-y-6 pb-14">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">

@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import {
   ChevronDown,
   Disc3,
@@ -557,16 +557,19 @@ export function MiniAudioPlayer() {
   };
 
   return (
-    <>
+    <LayoutGroup id="rowav-audio-player">
       {/* ================= FLOATING MINI PLAYER (SWIPE LEFT/RIGHT FOR NEXT/PREV!) ================= */}
-      <AnimatePresence>
+      <AnimatePresence mode="popLayout">
         {currentTrack && !expanded && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
+            key="rowav-mini-player"
+            layoutId="rowavPlayerSurface"
+            initial={{ opacity: 0, y: 24, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 360, damping: 34, mass: 0.85 }}
             onWheel={handleMiniWheel}
-            className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-6 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-white/95 dark:bg-[#141418]/96 text-slate-900 dark:text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color,background-color] duration-200 ease-out overflow-hidden ${
+            className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-24 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-white/95 dark:bg-[#141010]/96 text-slate-900 dark:text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color,background-color] duration-300 ease-out overflow-hidden ${
               isRemotePlayback
                 ? 'border-emerald-500/45 dark:border-emerald-400/45 shadow-[0_14px_34px_-10px_rgba(16,185,129,0.22)] dark:shadow-[0_14px_38px_-8px_rgba(16,185,129,0.28)]'
                 : 'border-slate-200/90 dark:border-white/10 shadow-[0_14px_34px_-10px_rgba(15,23,42,0.18)] dark:shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)]'
@@ -587,7 +590,9 @@ export function MiniAudioPlayer() {
                   ref={miniSwipeContentRef}
                   className="flex items-center gap-2.5 min-w-0 flex-1 will-change-transform"
                 >
-                  <div
+                  <motion.div
+                    layoutId="rowavPlayerCover"
+                    transition={{ type: 'spring', stiffness: 360, damping: 34 }}
                     ref={miniDiscRef}
                     className={`relative h-10 w-10 rounded-full overflow-hidden border border-slate-200/80 dark:border-white/15 shrink-0 will-change-transform ${
                       isLoadingTrack ? 'animate-pulse opacity-75' : ''
@@ -607,7 +612,7 @@ export function MiniAudioPlayer() {
                         <Disc3 size={15} className="text-white/90" />
                       </div>
                     )}
-                  </div>
+                  </motion.div>
 
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-slate-900 dark:text-white truncate leading-tight">
@@ -679,13 +684,15 @@ export function MiniAudioPlayer() {
                   <SkipBack size={14} fill="currentColor" />
                 </button>
 
-                <button
+                <motion.button
+                  layoutId="rowavPlayerPlayBtn"
+                  transition={{ type: 'spring', stiffness: 360, damping: 34 }}
                   type="button"
                   data-mini-ctrl="true"
                   onClick={togglePlay}
                   disabled={!canPlay || isLoadingTrack}
                   aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
-                  className="h-9 w-9 rounded-full bg-slate-950 dark:bg-white text-white dark:text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-70 transition cursor-pointer"
+                  className="h-9 w-9 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-70 transition cursor-pointer shadow-xs shadow-[#8C271E]/25"
                 >
                   {isLoadingTrack ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -694,7 +701,7 @@ export function MiniAudioPlayer() {
                   ) : (
                     <Play size={15} fill="currentColor" className="ml-0.5" />
                   )}
-                </button>
+                </motion.button>
 
                 <button
                   type="button"
@@ -722,22 +729,24 @@ export function MiniAudioPlayer() {
         )}
       </AnimatePresence>
 
-      {/* ================= FULL-SCREEN SPOTIFY-STYLE PLAYER (SWIPE DOWN TO MINIMIZE) ================= */}
-      <AnimatePresence>
+      {/* ================= FULL-SCREEN FLUID EXPANDING PLAYER (SWIPE DOWN TO MINIMIZE) ================= */}
+      <AnimatePresence mode="popLayout">
         {currentTrack && expanded && (
           <motion.div
+            key="rowav-expanded-player"
+            layoutId="rowavPlayerSurface"
             ref={sheetRef}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 360, damping: 38, mass: 0.9 }}
+            initial={{ opacity: 0.65, scale: 0.96, borderRadius: 32 }}
+            animate={{ opacity: 1, scale: 1, borderRadius: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 28, borderRadius: 32 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 34, mass: 0.85 }}
             onPointerDown={handleSheetPointerDown}
             onPointerMove={handleSheetPointerMove}
             onPointerUp={finishSheetDrag}
             onPointerCancel={finishSheetDrag}
             onWheel={handleSheetWheel}
             style={{ touchAction: 'none' }}
-            className="fixed inset-0 z-[60] bg-[#f8f8fa] dark:bg-[#0b0b0e] text-slate-950 dark:text-white flex flex-col overflow-hidden select-none will-change-transform"
+            className="fixed inset-0 z-[60] bg-[#f8f5f4] dark:bg-[#0b0909] text-slate-950 dark:text-white flex flex-col overflow-hidden select-none will-change-transform"
           >
             {/* Subtle Atmospheric Cover Backdrop */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -866,7 +875,9 @@ export function MiniAudioPlayer() {
                       title="Cliquer pour ouvrir la page du morceau"
                       className="group relative w-full max-w-[340px] sm:max-w-[360px] lg:max-w-[370px] xl:max-w-[400px] aspect-square rounded-2xl lg:rounded-3xl active:scale-[0.985] transition-transform cursor-pointer focus:outline-none"
                     >
-                      <div
+                      <motion.div
+                        layoutId="rowavPlayerCover"
+                        transition={{ type: 'spring', stiffness: 340, damping: 34 }}
                         className={`w-full h-full rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200/80 dark:border-white/10 shadow-[0_24px_60px_-16px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
                           coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
                         } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
@@ -883,7 +894,7 @@ export function MiniAudioPlayer() {
                             <Disc3 size={64} className="text-white/40" strokeWidth={1.3} />
                           </div>
                         )}
-                      </div>
+                      </motion.div>
                     </button>
                   </div>
 
@@ -1036,7 +1047,9 @@ export function MiniAudioPlayer() {
                     <SkipBack size={24} fill="currentColor" />
                   </button>
 
-                  <button
+                  <motion.button
+                    layoutId="rowavPlayerPlayBtn"
+                    transition={{ type: 'spring', stiffness: 340, damping: 34 }}
                     type="button"
                     onClick={() => {
                       togglePlay();
@@ -1044,7 +1057,7 @@ export function MiniAudioPlayer() {
                     }}
                     disabled={!canPlay || isLoadingTrack}
                     aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
-                    className="h-16 w-16 rounded-full bg-slate-950 dark:bg-white text-white dark:text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-75 transition shadow-lg cursor-pointer"
+                    className="h-16 w-16 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-75 transition shadow-lg shadow-[#8C271E]/30 cursor-pointer"
                   >
                     {isLoadingTrack ? (
                       <Loader2 size={24} className="animate-spin" />
@@ -1053,7 +1066,7 @@ export function MiniAudioPlayer() {
                     ) : (
                       <Play size={26} fill="currentColor" className="ml-1" />
                     )}
-                  </button>
+                  </motion.button>
 
                   <button
                     type="button"
@@ -1341,6 +1354,6 @@ export function MiniAudioPlayer() {
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </LayoutGroup>
   );
 }

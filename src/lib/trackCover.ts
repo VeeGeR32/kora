@@ -7,6 +7,7 @@ import type {
   TrackStatus,
 } from '../types';
 import { getCurrentFirebaseIdToken } from './firebase';
+import { getCachedPrimaryDriveFolderId, uploadCoverToUserDrive } from './driveStorage';
 import { getDeterministicGradientId } from './musicVersioning';
 import { normalizeTrackStatus } from '../utils/theme';
 
@@ -147,6 +148,25 @@ export async function prepareAndUploadHdCover(
     hdDataUrl = await compressCoverImage(file, 760, 0.78, true);
   }
 
+  // 1. Google Drive-first storage (_Rowav_Data/covers/) so HD covers use 0 bytes in DB!
+  try {
+    const primaryFolderId = getCachedPrimaryDriveFolderId();
+    if (primaryFolderId) {
+      const driveRes = await uploadCoverToUserDrive(
+        primaryFolderId,
+        hdDataUrl,
+        `cover_${Date.now()}`,
+        firebaseConfig
+      );
+      if (driveRes.ok && driveRes.url) {
+        return driveRes.url;
+      }
+    }
+  } catch {
+    // Drive folder may be read-only or offline — fall back cleanly below
+  }
+
+  // 2. Fallback to dedicated cloud cover endpoint (/api/cover)
   try {
     const idToken = await getCurrentFirebaseIdToken(firebaseConfig);
     if (idToken) {

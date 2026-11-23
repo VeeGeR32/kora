@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AudioPlayerProvider, useAudioPlayer } from './context/AudioPlayerContext';
 import { AuthGate } from './components/AuthGate';
-import { KoraLogo } from './components/ui/KoraLogo';
+import { AppBootSkeleton } from './components/ui/Skeleton';
 import { Layout, type AppPage } from './components/Layout';
 import { MusicView, type MusicSubTab } from './components/music/MusicView';
 import { PublicSharePage } from './components/music/PublicSharePage';
@@ -135,12 +135,7 @@ function KoraMusicApp() {
   }, [setActivePage]);
 
   if (cloudConfigured && !authReady) {
-    return (
-      <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-3 bg-[var(--bg)]">
-        <KoraLogo size={42} />
-        <span className="text-xs text-slate-400 animate-pulse">Chargement de ton studio…</span>
-      </div>
-    );
+    return <AppBootSkeleton />;
   }
 
   if (cloudConfigured && !cloudUser) {

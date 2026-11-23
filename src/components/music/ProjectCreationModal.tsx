@@ -241,7 +241,7 @@ export function ProjectCreationModal({ open, onClose, onCreated }: ProjectCreati
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 10 }}
           transition={{ duration: 0.16, ease: 'easeOut' }}
-          className="max-w-3xl mx-auto tempo-card rounded-3xl text-[var(--text)] overflow-hidden"
+          className="w-full tempo-card rounded-3xl text-[var(--text)] overflow-hidden"
         >
           {/* Apple-Style Top Navigation Bar */}
           <header className="px-4 sm:px-6 py-3.5 border-b border-[var(--border)]">

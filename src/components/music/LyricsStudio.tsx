@@ -899,10 +899,10 @@ export function LyricsStudio({
             </div>
           </header>
 
-          {/* Minimalist Integrated Beat / Instru Strip (top-docked under header so it never stacks with MiniAudioPlayer!) */}
+          {/* Minimalist Integrated Beat / Instru Strip (full-width inside studio card!) */}
           {beatBarOpen && (
-            <div className="shrink-0 border-b border-slate-100 dark:border-zinc-800/80 bg-slate-50/75 dark:bg-zinc-900/45 px-4 sm:px-6 py-2">
-              <div className="max-w-2xl mx-auto space-y-2">
+            <div className="shrink-0 border-b border-slate-100 dark:border-zinc-800/80 bg-slate-50/75 dark:bg-zinc-900/45 px-5 sm:px-7 py-2.5">
+              <div className="w-full space-y-2">
                 {beatMode === 'youtube' ? (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
@@ -1046,11 +1046,11 @@ export function LyricsStudio({
             </div>
           )}
 
-          {/* Editorial Body + Optional Tools Sidebar */}
+          {/* Editorial Body + Optional Tools Sidebar (full-width like Accueil / Sons / Projets!) */}
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col">
-            <div className="flex-1 min-h-full max-w-5xl w-full mx-auto px-4 sm:px-6 pt-5 sm:pt-7 pb-4 flex flex-col lg:flex-row gap-6">
-              {/* Centered Writing Column */}
-              <div className="flex-1 min-h-0 min-w-0 max-w-2xl mx-auto w-full flex flex-col">
+            <div className="flex-1 min-h-full w-full px-5 sm:px-8 pt-5 sm:pt-7 pb-4 flex flex-col lg:flex-row gap-6">
+              {/* Full-Width Writing Column */}
+              <div className="flex-1 min-h-0 min-w-0 w-full flex flex-col">
                 <input
                   type="text"
                   value={activeDoc.title}

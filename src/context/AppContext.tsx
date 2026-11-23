@@ -66,6 +66,10 @@ import {
 } from '../lib/firebase';
 import { deleteMediaBlob, saveMediaBlob } from '../lib/mediaDb';
 import { evaluateScheduledNotifications } from '../lib/notifications';
+import {
+  setCachedPrimaryDriveFolderId,
+  syncStudioBackupToUserDrive,
+} from '../lib/driveStorage';
 
 const STORAGE_KEY = 'kora_app_state_v2';
 const LEGACY_KEY = 'tempo_app_state_v1';
@@ -171,6 +175,9 @@ interface AppContextValue {
   autoSyncingDrive: boolean;
   driveSources: DriveSource[];
   serviceAccountEmail: string | null;
+  driveStorageStatus: 'idle' | 'syncing' | 'synced' | 'readonly';
+  driveLastBackupAt: string | null;
+  syncStudioDataToDriveNow: (silent?: boolean) => Promise<boolean>;
   connectDriveSource: (
     folderInput: string,
     customName?: string
@@ -1737,6 +1744,95 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [saveDriveSources, syncAllConnectedDrives]
   );
 
+  // ===== GOOGLE DRIVE-FIRST STORAGE (_Rowav_Data/ covers + studio backups) =====
+  const [driveStorageStatus, setDriveStorageStatus] = useState<
+    'idle' | 'syncing' | 'synced' | 'readonly'
+  >('idle');
+  const [driveLastBackupAt, setDriveLastBackupAt] = useState<string | null>(null);
+
+  const primaryDriveFolderId = useMemo(() => {
+    const enabled = driveSources.find((s) => s.enabled !== false && Boolean(s.folderId));
+    return enabled?.folderId || driveSources[0]?.folderId || null;
+  }, [driveSources]);
+
+  useEffect(() => {
+    setCachedPrimaryDriveFolderId(primaryDriveFolderId);
+  }, [primaryDriveFolderId]);
+
+  const syncStudioDataToDriveNow = useCallback(
+    async (silent = false): Promise<boolean> => {
+      if (!primaryDriveFolderId) {
+        if (!silent) notify('Connecte d’abord un dossier Google Drive.');
+        return false;
+      }
+      setDriveStorageStatus('syncing');
+      try {
+        const cur = latestStateRef.current;
+        const res = await syncStudioBackupToUserDrive(
+          primaryDriveFolderId,
+          {
+            profile: {
+              name: cur.preferences.name,
+              avatarUrl: cur.preferences.avatarUrl,
+            },
+            musicProjects: cur.musicProjects || [],
+            playlists: cur.preferences.lastSession?.playlists || [],
+            lyricsFolders: cur.lyricsFolders || [],
+            lyricsDocs: cur.lyricsDocs || [],
+          },
+          resolvedFbConfig
+        );
+        if (res.ok) {
+          setDriveStorageStatus('synced');
+          setDriveLastBackupAt(res.syncedAt || new Date().toISOString());
+          if (!silent) {
+            notify('Textes, projets et playlists sauvegardés sur ton Google Drive (_Rowav_Data) ✓');
+          }
+          return true;
+        }
+        if (res.readonly) {
+          setDriveStorageStatus('readonly');
+          if (!silent) {
+            notify(
+              'Dossier Drive en lecture seule — partage-le en mode Éditeur pour activer le stockage Drive automatique.'
+            );
+          }
+          return false;
+        }
+        setDriveStorageStatus('idle');
+        if (!silent) notify(res.error || 'Sauvegarde Google Drive impossible');
+        return false;
+      } catch {
+        setDriveStorageStatus('idle');
+        if (!silent) notify('Erreur réseau lors de la sauvegarde Google Drive');
+        return false;
+      }
+    },
+    [primaryDriveFolderId, resolvedFbConfig, notify]
+  );
+
+  // Automatic debounced background backup of texts, projects & playlists to _Rowav_Data on user's Drive
+  const driveBackupTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!cloudUser || !lastCloudSyncAt || !primaryDriveFolderId) return;
+    if (driveStorageStatus === 'readonly') return;
+    if (driveBackupTimerRef.current) window.clearTimeout(driveBackupTimerRef.current);
+    driveBackupTimerRef.current = window.setTimeout(() => {
+      void syncStudioDataToDriveNow(true);
+    }, 6000);
+    return () => {
+      if (driveBackupTimerRef.current) window.clearTimeout(driveBackupTimerRef.current);
+    };
+  }, [
+    cloudUser,
+    lastCloudSyncAt,
+    primaryDriveFolderId,
+    state.lyricsDocs,
+    state.lyricsFolders,
+    state.musicProjects,
+    state.preferences.lastSession?.playlists,
+  ]);
+
   const playlists = useMemo<MusicPlaylist[]>(
     () => state.preferences.lastSession?.playlists || [],
     [state.preferences.lastSession?.playlists]
@@ -2876,6 +2972,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         autoSyncingDrive,
         driveSources,
         serviceAccountEmail,
+        driveStorageStatus,
+        driveLastBackupAt,
+        syncStudioDataToDriveNow,
         connectDriveSource,
         updateDriveSource,
         toggleDriveSource,

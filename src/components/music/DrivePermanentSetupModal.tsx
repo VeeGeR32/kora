@@ -2,6 +2,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
+  CloudUpload,
   Copy,
   ExternalLink,
   FolderPlus,
@@ -10,6 +11,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  ShieldCheck,
   Trash2,
   X,
 } from 'lucide-react';
@@ -27,6 +29,9 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
     driveSources,
     serviceAccountEmail,
     autoSyncingDrive,
+    driveStorageStatus,
+    driveLastBackupAt,
+    syncStudioDataToDriveNow,
     connectDriveSource,
     updateDriveSource,
     toggleDriveSource,
@@ -332,6 +337,61 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
               );
             })}
           </div>
+
+          {/* Google Drive-First Storage Status Banner (_Rowav_Data/) */}
+          <div className="rounded-2xl border border-[#8C271E]/20 bg-[#8C271E]/[0.04] dark:bg-[#8C271E]/[0.08] p-3.5 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+              <div className="h-8 w-8 rounded-xl bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82] flex items-center justify-center shrink-0 mt-0.5">
+                <ShieldCheck size={15} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
+                    Stockage 100% Google Drive
+                  </p>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      driveStorageStatus === 'synced'
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : driveStorageStatus === 'readonly'
+                        ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                        : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {driveStorageStatus === 'syncing'
+                      ? 'Sauvegarde…'
+                      : driveStorageStatus === 'synced'
+                      ? 'Actif · _Rowav_Data'
+                      : driveStorageStatus === 'readonly'
+                      ? 'Lecture seule'
+                      : 'Prêt · _Rowav_Data'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 leading-snug">
+                  {driveStorageStatus === 'readonly'
+                    ? 'Passe le partage de ton dossier en mode Éditeur pour stocker automatiquement tes pochettes HD, textes et sauvegardes sur ton Drive.'
+                    : driveLastBackupAt
+                    ? `Pochettes HD, textes et projets sauvegardés dans _Rowav_Data/ sur ton Drive (dernière sync : ${new Date(
+                        driveLastBackupAt
+                      ).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}).`
+                    : 'Tes audios, pochettes HD, textes et projets sont enregistrés automatiquement dans le dossier _Rowav_Data/ de ton Google Drive.'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={driveStorageStatus === 'syncing'}
+              onClick={() => void syncStudioDataToDriveNow(false)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white px-3 py-1.5 text-[11px] font-semibold hover:bg-[#752019] disabled:opacity-50 transition cursor-pointer shrink-0"
+            >
+              {driveStorageStatus === 'syncing' ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <CloudUpload size={12} />
+              )}
+              Sauvegarder sur Drive
+            </button>
+          </div>
         </div>
       )}
 
@@ -374,7 +434,8 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                 >
                   Google Drive <ExternalLink size={10} />
                 </a>
-                , partage ton dossier de sons en mode <strong>Lecteur</strong> avec :
+                , partage ton dossier de sons en mode <strong>Éditeur</strong> (recommandé pour stocker aussi tes pochettes HD, textes et sauvegardes dans{' '}
+                <code className="font-mono text-[10px]">_Rowav_Data</code>) avec :
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -385,14 +446,14 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                 type="button"
                 disabled={!serviceAccountEmail}
                 onClick={() => void handleCopyEmail()}
-                className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-[11px] font-semibold hover:opacity-90 disabled:opacity-40 cursor-pointer shrink-0"
+                className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white px-3 py-1.5 text-[11px] font-semibold hover:bg-[#752019] disabled:opacity-40 cursor-pointer shrink-0"
               >
                 {copied ? <Check size={12} /> : <Copy size={12} />}
                 {copied ? 'Copié' : 'Copier'}
               </button>
             </div>
             <p className="text-[10px] text-slate-400 dark:text-zinc-500">
-              Astuce : fonctionne aussi si le dossier est en « Tous les utilisateurs disposant du lien (Lecteur) ».
+              Astuce : fonctionne aussi en mode <strong>Lecteur</strong> pour l’écoute audio seule. En mode <strong>Éditeur</strong>, 100 % de tes données lourdes restent sur ton propre Drive.
             </p>
           </div>
 
@@ -446,7 +507,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
       <AppleConfirmDialog
         open={Boolean(confirmRemoveSource)}
         title={`Déconnecter « ${confirmRemoveSource?.name || 'ce Drive'} » ?`}
-        description="Les morceaux liés à ce dossier Google Drive seront retirés de Kora (tes fichiers sur Google Drive ne sont jamais modifiés)."
+        description="Les morceaux liés à ce dossier Google Drive seront retirés de Rowav (tes fichiers sur Google Drive ne sont jamais supprimés)."
         confirmLabel="Déconnecter"
         destructive
         onConfirm={() => {
