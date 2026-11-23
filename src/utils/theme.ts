@@ -189,9 +189,25 @@ export function normalizeTrackStatus(raw?: string | null): TrackStatus {
   }
 }
 
-export function isReadyForHarmonization(raw?: string | null): boolean {
+export function getTrackPipelineStep(raw?: string | null): number {
   const st = normalizeTrackStatus(raw);
-  return st === 'pre-mix' || st === 'masterise';
+  return TRACK_STATUS_META[st].step;
+}
+
+export function isAtLeastMaquette(raw?: string | null): boolean {
+  return getTrackPipelineStep(raw) >= 2;
+}
+
+export function isAtLeastRecFinal(raw?: string | null): boolean {
+  return getTrackPipelineStep(raw) >= 3;
+}
+
+export function isReadyForHarmonization(raw?: string | null): boolean {
+  return getTrackPipelineStep(raw) >= 4;
+}
+
+export function isMasteredTrack(raw?: string | null): boolean {
+  return getTrackPipelineStep(raw) >= 5;
 }
 
 export const TRACK_MOOD_META: Record<

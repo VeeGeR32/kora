@@ -9,8 +9,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
-  Eye,
-  EyeOff,
+  Disc3,
+  Flame,
   GitBranch,
   Globe,
   GripVertical,
@@ -50,13 +50,11 @@ import {
 } from '../../lib/trackCover';
 import { groupMusicTracks, type TrackGroup } from '../../lib/musicVersioning';
 import {
-  isReadyForHarmonization,
   TRACK_MOOD_META,
   TRACK_STATUS_META,
 } from '../../utils/theme';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 import { ProjectSprintView } from './ProjectSprintView';
-import { ProjectHarmonizationView } from './ProjectHarmonizationView';
 
 interface ProjectAlbumModalProps {
   projectId: string | null;
@@ -139,8 +137,8 @@ export function ProjectAlbumModal({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const todoSectionRef = useRef<HTMLDivElement>(null);
   const [todoInput, setTodoInput] = useState('');
-  const [projectTab, setProjectTab] = useState<'tracklist' | 'sprint' | 'harmonization'>('tracklist');
-  const [showTracklistDetails, setShowTracklistDetails] = useState<boolean>(() => {
+  // Two explicit modes: Mode Production (Tracklist & listening) vs Mode Studio (5-phase workflow, NO tracklist!)
+  const [isStudioMode, setIsStudioMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('kora_project_tracklist_details') === '1';
   });
@@ -149,25 +147,16 @@ export function ProjectAlbumModal({
     [projectId, state.musicProjects]
   );
 
-  const toggleTracklistDetails = () => {
-    setShowTracklistDetails((prev) => {
-      const next = !prev;
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('kora_project_tracklist_details', next ? '1' : '0');
-      }
-      const hasActiveSprint = (project?.sprints || []).some((s) => !s.completedAt);
-      if (!next) {
-        // Hidden details mode -> main page is Tracklist
-        setProjectTab('tracklist');
-        setShowAddTrack(false);
-        setOpenTrackMenuId(null);
-        setVersionPickerTrackId(null);
-      } else {
-        // Details / Studio mode active -> main page is active Sprint if present, else Tracklist
-        setProjectTab(hasActiveSprint ? 'sprint' : 'tracklist');
-      }
-      return next;
-    });
+  const selectProjectMode = (studio: boolean) => {
+    setIsStudioMode(studio);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('kora_project_tracklist_details', studio ? '1' : '0');
+    }
+    if (studio) {
+      setShowAddTrack(false);
+      setOpenTrackMenuId(null);
+      setVersionPickerTrackId(null);
+    }
   };
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [addTrackSearch, setAddTrackSearch] = useState('');
@@ -198,12 +187,8 @@ export function ProjectAlbumModal({
     timerId: number | null;
   } | null>(null);
 
-  // When hidden-details mode is ON (!showTracklistDetails), main page is Tracklist.
-  // When hidden-details mode is OFF (showTracklistDetails), main page is Sprint if present!
   useEffect(() => {
     if (!project) return;
-    const hasActiveSprint = (project.sprints || []).some((s) => !s.completedAt);
-    setProjectTab(showTracklistDetails && hasActiveSprint ? 'sprint' : 'tracklist');
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [project?.id]);
 
@@ -349,20 +334,9 @@ export function ProjectAlbumModal({
     return items;
   }, [projectTracks]);
 
-  const harmonizationReadyCount = useMemo(() => {
-    let count = 0;
-    for (const trk of projectTracks) {
-      const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
-      const wf = resolveTrackWorkflow(trk, grp?.versions.map((v) => v.track));
-      if (isReadyForHarmonization(wf.status)) count++;
-    }
-    return count;
-  }, [projectTracks, allGroups]);
-
   if (!project) return null;
 
   const isLocked = Boolean(project.isTracklistLocked);
-  const activeSprint = (project.sprints || []).find((s) => !s.completedAt) || null;
   const totalSec = projectTracks.reduce((acc, t) => acc + (t.durationSec || 0), 0);
   const doneSteps =
     project.steps.filter((s) => s.done).length +
@@ -669,7 +643,7 @@ export function ProjectAlbumModal({
                   {projectTracks.length > 1 ? 'titres' : 'titre'}
                   {totalSec > 0 ? ` · ${fmtTotalDuration(totalSec)}` : ''}
                 </span>
-                {isLocked && showTracklistDetails && (
+                {isLocked && !isStudioMode && (
                   <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-amber-500/12 text-amber-600 dark:text-amber-400 px-2.5 py-1 text-[10px] font-semibold shrink-0">
                     <Lock size={10} /> Figée
                   </span>
@@ -677,7 +651,7 @@ export function ProjectAlbumModal({
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
-                {showTracklistDetails && (
+                {!isStudioMode && (
                   <>
                     <button
                       type="button"
@@ -706,15 +680,13 @@ export function ProjectAlbumModal({
                     <button
                       type="button"
                       onClick={() => {
-                        setProjectTab('tracklist');
-                        setShowTracklistDetails(true);
                         window.setTimeout(
                           () => todoSectionRef.current?.scrollIntoView({ behavior: 'smooth' }),
                           60
                         );
                       }}
                       title="Voir la TODO"
-                      className="h-9 px-3 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1.5 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer"
+                      className="hidden sm:inline-flex h-9 px-3 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 items-center gap-1.5 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer"
                     >
                       <ListChecks size={14} />
                       <span className="font-mono text-[11px]">
@@ -724,23 +696,41 @@ export function ProjectAlbumModal({
                   </>
                 )}
 
-                <button
-                  type="button"
-                  onClick={toggleTracklistDetails}
-                  title={
-                    showTracklistDetails
-                      ? 'Masquer les détails (vue Tracklist épurée)'
-                      : 'Afficher le mode Studio (Sprint & outils)'
-                  }
-                  className={`h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-[11px] font-semibold transition cursor-pointer ${
-                    showTracklistDetails
-                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
-                      : 'bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 hover:bg-slate-200/80 dark:hover:bg-zinc-800'
-                  }`}
+                {/* Explicit 2-Mode Switch: Production (Tracklist) vs Studio (5-Phase Sprints, ZERO Tracklist!) */}
+                <div
+                  role="tablist"
+                  aria-label="Mode du projet"
+                  className="inline-flex items-center rounded-full bg-slate-100 dark:bg-zinc-900 p-0.5 border border-slate-200/70 dark:border-zinc-800"
                 >
-                  {showTracklistDetails ? <Eye size={13} /> : <EyeOff size={13} />}
-                  <span>{showTracklistDetails ? 'Studio' : 'Détails'}</span>
-                </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={!isStudioMode}
+                    onClick={() => selectProjectMode(false)}
+                    className={`h-8 px-3 rounded-full inline-flex items-center gap-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                      !isStudioMode
+                        ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                    }`}
+                  >
+                    <Disc3 size={12} />
+                    <span>Production</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={isStudioMode}
+                    onClick={() => selectProjectMode(true)}
+                    className={`h-8 px-3 rounded-full inline-flex items-center gap-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                      isStudioMode
+                        ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                    }`}
+                  >
+                    <Flame size={12} />
+                    <span>Studio</span>
+                  </button>
+                </div>
               </div>
             </div>
           </header>
@@ -1097,78 +1087,8 @@ export function ProjectAlbumModal({
               )}
             </AnimatePresence>
 
-            {/* Studio Sub-Tabs (visible in Studio/Details mode, hidden in pure listening mode!) */}
-            {showTracklistDetails && (
-            <nav
-              aria-label="Vues du projet"
-              className="flex items-center gap-5 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {(
-                activeSprint
-                  ? ([
-                      [
-                        'sprint',
-                        'Sprint actif',
-                        `${activeSprint.trackIds.length}/3`,
-                      ],
-                      ['tracklist', 'Tracklist', String(projectTracks.length)],
-                      [
-                        'harmonization',
-                        'Harmonisation',
-                        projectTracks.length > 0
-                          ? `${harmonizationReadyCount}/${projectTracks.length}`
-                          : null,
-                      ],
-                    ] as const)
-                  : ([
-                      ['tracklist', 'Tracklist', String(projectTracks.length)],
-                      ['sprint', 'Sprint actif', null],
-                      [
-                        'harmonization',
-                        'Harmonisation',
-                        projectTracks.length > 0
-                          ? `${harmonizationReadyCount}/${projectTracks.length}`
-                          : null,
-                      ],
-                    ] as const)
-              ).map(([id, label, badge]) => {
-                const active = projectTab === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setProjectTab(id)}
-                    className={`relative pb-2.5 text-xs font-semibold transition-colors whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
-                      active
-                        ? 'text-slate-950 dark:text-white'
-                        : 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300'
-                    }`}
-                  >
-                    <span>{label}</span>
-                    {badge && (
-                      <span
-                        className={`font-mono text-[10px] ${
-                          active ? 'text-slate-500 dark:text-zinc-400' : 'opacity-65'
-                        }`}
-                      >
-                        {badge}
-                      </span>
-                    )}
-                    {active && (
-                      <motion.span
-                        layoutId="projectSubTabUnderline"
-                        transition={{ type: 'spring', stiffness: 520, damping: 36 }}
-                        className="absolute left-0 right-0 bottom-0 h-[2px] rounded-full bg-slate-950 dark:bg-white"
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-            )}
-
-            {/* ================= SUB-TAB 2: SPRINT ACTIF (MICRO-BATCH MAX 3) ================= */}
-            {showTracklistDetails && projectTab === 'sprint' && (
+            {/* ================= MODE STUDIO: 5-PHASE PIPELINE ONLY (NO TRACKLIST!) ================= */}
+            {isStudioMode ? (
               <ProjectSprintView
                 project={project}
                 projectTracks={projectTracks}
@@ -1176,24 +1096,9 @@ export function ProjectAlbumModal({
                 onOpenTrackDetails={onOpenTrackDetails}
                 onOpenContextMenu={onOpenContextMenu}
               />
-            )}
-
-            {/* ================= SUB-TAB 3: HARMONISATION & MIX GLOBAL ================= */}
-            {showTracklistDetails && projectTab === 'harmonization' && (
-              <ProjectHarmonizationView
-                project={project}
-                projectTracks={projectTracks}
-                allGroups={allGroups}
-                onOpenTrackDetails={onOpenTrackDetails}
-                onOpenContextMenu={onOpenContextMenu}
-              />
-            )}
-
-            {/* ================= SUB-TAB 1: TRACKLIST + BACKLOG + ROLL-UP TODO ================= */}
-            {(!showTracklistDetails || projectTab === 'tracklist') && (
+            ) : (
               <>
-            {/* Full-Width Soft Action Pill (hidden in clean Spotify streaming view!) */}
-            {showTracklistDetails && (
+            {/* ================= MODE PRODUCTION: TRACKLIST + BACKLOG + TODO ================= */}
             <button
               type="button"
               onClick={() => setShowAddTrack((v) => !v)}
@@ -1206,11 +1111,10 @@ export function ProjectAlbumModal({
                   : 'Ajouter un son à ce projet'}
               </span>
             </button>
-            )}
 
             {/* Collapsible Library Track Picker with Analytical Sort */}
             <AnimatePresence>
-              {showTracklistDetails && showAddTrack && (
+              {showAddTrack && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -1335,11 +1239,7 @@ export function ProjectAlbumModal({
             </AnimatePresence>
 
             {/* Tracklist: Pure Divider-less Spotify Album Style in Clean View · Numbered Studio List in Details View */}
-            <div
-              className={`relative ${
-                showTracklistDetails ? 'divide-y divide-slate-100 dark:divide-zinc-900' : 'space-y-0.5'
-              }`}
-            >
+            <div className="relative divide-y divide-slate-100 dark:divide-zinc-900">
               {displayedProjectTracks.length === 0 ? (
                 <p className="py-6 text-center text-xs text-slate-400">
                   Aucun titre dans ce projet — clique sur « Ajouter un son » ci-dessus.
@@ -1444,21 +1344,19 @@ export function ProjectAlbumModal({
                           }}
                           className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
                         >
-                          {showTracklistDetails && (
-                            <span className="w-5 text-center font-mono text-xs text-slate-400 dark:text-zinc-500 shrink-0">
-                              {playing ? (
-                                <Pause
-                                  size={13}
-                                  className="mx-auto text-slate-950 dark:text-white"
-                                  fill="currentColor"
-                                />
-                              ) : (
-                                idx + 1
-                              )}
-                            </span>
-                          )}
-                          {/* Track Cover Thumbnail (shown in Studio Details mode; hidden in Spotify album view!) */}
-                          {showTracklistDetails && rowThumb && (
+                          <span className="w-5 text-center font-mono text-xs text-slate-400 dark:text-zinc-500 shrink-0">
+                            {playing ? (
+                              <Pause
+                                size={13}
+                                className="mx-auto text-[#8C271E] dark:text-[#E56B5F]"
+                                fill="currentColor"
+                              />
+                            ) : (
+                              idx + 1
+                            )}
+                          </span>
+                          {/* Track Cover Thumbnail */}
+                          {rowThumb && (
                             <img
                               src={rowThumb}
                               alt={displayTitle}
@@ -1468,18 +1366,15 @@ export function ProjectAlbumModal({
                           )}
                           <div className="min-w-0 flex-1">
                             <p
-                              className={`${
-                                showTracklistDetails ? 'text-sm' : 'text-[15px]'
-                              } font-semibold truncate ${
+                              className={`text-sm font-semibold truncate ${
                                 isCur
-                                  ? 'text-[#8C271E]'
+                                  ? 'text-[#8C271E] dark:text-[#E56B5F]'
                                   : 'text-slate-900 dark:text-zinc-100'
                               }`}
                             >
                               {displayTitle}
                             </p>
-                            {showTracklistDetails ? (
-                              <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-0.5 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-0.5 min-w-0">
                                 <span className="text-[11px] text-slate-400 dark:text-zinc-500 truncate min-w-0">
                                   {fmtAddedDate(trk.modifiedAt || trk.addedAt) ||
                                     state.preferences.name ||
@@ -1553,11 +1448,6 @@ export function ProjectAlbumModal({
                                   </span>
                                 )}
                               </div>
-                            ) : (
-                              <p className="text-xs text-slate-400 dark:text-zinc-500 truncate mt-0.5">
-                                {artistName}
-                              </p>
-                            )}
                           </div>
                         </button>
 
@@ -1567,7 +1457,7 @@ export function ProjectAlbumModal({
                               {fmtTrackDuration(trk.durationSec)}
                             </span>
                           ) : null}
-                          {showTracklistDetails && onOpenTrackDetails && (
+                          {onOpenTrackDetails && (
                             <button
                               type="button"
                               onClick={() => onOpenTrackDetails(trk.id)}
@@ -1816,7 +1706,7 @@ export function ProjectAlbumModal({
             </div>
 
             {/* Ultra-Discreet Collapsible "Mis de côté" (Maybe / Bench) Drawer */}
-            {showTracklistDetails && benchTracks.length > 0 && (
+            {benchTracks.length > 0 && (
               <div className="pt-1">
                 <button
                   type="button"
@@ -1928,8 +1818,7 @@ export function ProjectAlbumModal({
               </div>
             )}
 
-            {/* Integrated Project TODO Checklist (hidden in clean Spotify streaming view!) */}
-            {showTracklistDetails && (
+            {/* Integrated Project TODO Checklist */}
             <section
               ref={todoSectionRef}
               className="pt-4 border-t border-slate-100 dark:border-zinc-900 space-y-3"
@@ -2037,7 +1926,6 @@ export function ProjectAlbumModal({
                 )}
               </form>
             </section>
-            )}
               </>
             )}
           </div>

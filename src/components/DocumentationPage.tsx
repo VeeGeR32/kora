@@ -421,20 +421,10 @@ export function DocumentationPage({
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/35 p-4 space-y-1.5">
               <p className="font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
                 <Flame size={13} className="text-[#8C271E]" />
-                Sprints (Micro-batch de 3 titres max)
+                Mode Production vs Mode Studio (5 phases strictes)
               </p>
               <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
-                Dans le mode Studio d’un projet, l’onglet <strong>Sprint actif</strong> te permet de sélectionner <strong>maximum 3 titres à la fois</strong> (et de planifier les sprints suivants à l’avance) pour les amener jusqu’à <strong>v4 - Pré-mix</strong> sans t’éparpiller sur 15 morceaux en même temps.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/35 p-4 space-y-1.5">
-              <p className="font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
-                <Sparkles size={13} className="text-[#8C271E]" />
-                Harmonisation & Séquençage
-              </p>
-              <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
-                L’onglet <strong>Harmonisation</strong> affiche ta jauge de préparation globale (<code className="font-mono">≥ v4 - Pré-mix</code>), un tableau de séquençage rapide pour alterner les ambiances (<em>⚡ Énergique</em>, <em>🌊 Chill</em>, <em>🧪 Expé</em>) et la checklist finale (chaîne vocale, LUFS, transitions, export).
+                Le mode <strong>Production</strong> affiche la Tracklist, le Backlog et la TODO. Le mode <strong>Studio</strong> masque la tracklist pour te guider étape par étape : <strong>1. Sprints v2</strong> (2–3 sons verrouillés jusqu’à v2 - Maquette) → <strong>2. Écoute globale & Verrouillage des maquettes</strong> → <strong>3. Sprints Rec final v3</strong> (avec les mêmes divisions 2–3 sons) → <strong>4. Sprint global Pré-mix + Master (v4–v5)</strong> de tous les sons ensemble → <strong>5. Écoute finale & Ordre de la mixtape</strong>.
               </p>
             </div>
 

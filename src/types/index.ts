@@ -340,7 +340,8 @@ export interface MusicProjectStep {
 export interface MusicProjectSprint {
   id: string;
   title: string;
-  trackIds: string[]; // max 3 titres actifs
+  trackIds: string[]; // 2 à 3 titres actifs
+  phase?: 'maquette' | 'rec'; // Phase 1 (v0->v2) ou Phase 3 (v2->v3)
   targetDate?: string; // ISO YYYY-MM-DD optionnelle
   createdAt: string;
   completedAt?: string;
@@ -361,8 +362,12 @@ export interface MusicProject {
   pinnedVersionByGroup?: Record<string, string>;
   benchTrackIds?: string[]; // Backlog / Hors-projet (sons mis de côté / en réflexion)
   isTracklistLocked?: boolean; // Gel de la tracklist définitive
-  sprints?: MusicProjectSprint[]; // Production par Sprints (micro-batching, max 3 titres)
-  harmonizationChecklist?: MusicProjectStep[]; // Checklist finale phase Harmonisation & Mix global
+  sprints?: MusicProjectSprint[]; // Phase 1 : Sprints Maquettes (v0 -> v2, 2 à 3 titres)
+  maquettesLockedAt?: string; // Phase 2 : Verrouillage des maquettes v2 après écoute globale
+  recSprints?: MusicProjectSprint[]; // Phase 3 : Sprints Rec Final (v2 -> v3, mêmes divisions que Phase 1)
+  globalMixDoneAt?: string; // Phase 4 : Sprint Global Pré-mix + Master (tous les sons ensemble -> v5)
+  finalSequenceDoneAt?: string; // Phase 5 : Écoute finale & ordre définitif de la mixtape validé
+  harmonizationChecklist?: MusicProjectStep[]; // Checklist d'homogénéité Pré-mix & Master
   notes?: string;
 }
 
