@@ -202,12 +202,11 @@ async function cleanupAccidentalSaRowavFolders(saToken) {
 }
 
 /**
- * Resolves the TRUE top-level shared music folder (e.g. "musique"), NEVER a nested subfolder
- * like "25/26/vers le ciel" and NEVER "_Rowav_Data".
- * Uses `sharedWithMe=true`, which in Google Drive API ONLY matches folders explicitly shared
- * with the Service Account (not inherited child folders).
+ * Resolves the TRUE top-level shared music folder owned by the current user (e.g. "Mon Drive > musique"),
+ * NEVER a nested subfolder (like "25/26/vers le ciel"), NEVER "_Rowav_Data", and NEVER another user's
+ * shared folder (e.g. "Partagés avec moi > musique").
  */
-async function resolveTrueSharedMusicFolderId(saToken, requestedFolderId) {
+async function resolveTrueSharedMusicFolderId(saToken, requestedFolderId, userEmail) {
   if (requestedFolderId && requestedFolderId !== 'root') {
     const metaRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
@@ -227,23 +226,41 @@ async function resolveTrueSharedMusicFolderId(saToken, requestedFolderId) {
     "sharedWithMe=true and mimeType='application/vnd.google-apps.folder' and trashed=false and name != '_Rowav_Data' and name != 'covers'"
   );
   const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,capabilities(canAddChildren))&pageSize=20&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,owners(emailAddress),capabilities(canAddChildren))&pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${saToken}` } }
   );
   if (!res.ok) return null;
   const data = await res.json();
   const files = Array.isArray(data.files) ? data.files : [];
+  const normalizedEmail = typeof userEmail === 'string' ? userEmail.trim().toLowerCase() : '';
+
+  // 1. Strongly prefer folders OWNED by the authenticated user (prevents picking someone else's "Partagés avec moi > musique"!)
+  if (normalizedEmail) {
+    const ownedByUser = files.filter(
+      (f) =>
+        Array.isArray(f.owners) &&
+        f.owners.some((o) => String(o?.emailAddress || '').toLowerCase() === normalizedEmail)
+    );
+    if (ownedByUser.length > 0) {
+      const exactMusic = ownedByUser.find(
+        (f) => f.capabilities?.canAddChildren && String(f.name || '').trim().toLowerCase() === 'musique'
+      );
+      const ownedWritable = ownedByUser.find((f) => f.capabilities?.canAddChildren);
+      return exactMusic?.id || ownedWritable?.id || ownedByUser[0].id;
+    }
+  }
+
   const writable = files.find((f) => f.capabilities?.canAddChildren);
   return writable?.id || files[0]?.id || null;
 }
 
 /**
  * Ensures ONE single `_Rowav_Data` folder directly at the root of the user's shared music folder
- * (e.g. `musique/_Rowav_Data`), owned by the user (using their personal 15 Go / 5 To quota).
+ * (e.g. `Mon Drive > musique > _Rowav_Data`), owned by the user (using their personal 15 Go / 5 To quota).
  * NEVER creates `_Rowav_Data` in a subfolder or inside another `_Rowav_Data`.
  */
-async function ensureUserRowavDataFolder(userToken, saToken, saEmail, requestedFolderId) {
-  const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId);
+async function ensureUserRowavDataFolder(userToken, saToken, saEmail, requestedFolderId, userEmail) {
+  const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId, userEmail);
   const targetParentId = musicRootId || 'root';
 
   // 1. Search ONLY directly inside `targetParentId` (e.g. `musique/`)
@@ -321,10 +338,10 @@ async function ensureUserRowavDataFolder(userToken, saToken, saEmail, requestedF
 
 /**
  * Finds an EXISTING user-owned `_Rowav_Data` folder directly inside the user's shared music folder
- * (e.g. `musique/_Rowav_Data`). NEVER creates a Service-Account-owned `_Rowav_Data` folder.
+ * (e.g. `Mon Drive > musique > _Rowav_Data`). NEVER creates a Service-Account-owned `_Rowav_Data` folder.
  */
-async function findExistingSharedUserRowavFolder(saToken, requestedFolderId) {
-  const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId);
+async function findExistingSharedUserRowavFolder(saToken, requestedFolderId, userEmail) {
+  const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId, userEmail);
   if (!musicRootId) return null;
 
   const inMusicQ = encodeURIComponent(
@@ -544,7 +561,8 @@ export default async function handler(req, res) {
         rawUserDriveToken,
         saToken,
         sa.client_email,
-        body.folderId
+        body.folderId,
+        verified.email
       );
       if (!dataFolder.ok) return res.status(200).json(dataFolder);
 
@@ -572,14 +590,19 @@ export default async function handler(req, res) {
           rawUserDriveToken,
           saToken,
           sa.client_email,
-          body.folderId
+          body.folderId,
+          verified.email
         );
         if (!ensured.ok) return res.status(200).json(ensured);
         dataFolderId = ensured.id;
         activeToken = rawUserDriveToken;
         allowCreate = true;
       } else {
-        dataFolderId = await findExistingSharedUserRowavFolder(saToken, body.folderId);
+        dataFolderId = await findExistingSharedUserRowavFolder(
+          saToken,
+          body.folderId,
+          verified.email
+        );
         if (!dataFolderId) {
           return res.status(200).json({
             ok: false,
@@ -622,7 +645,11 @@ export default async function handler(req, res) {
     }
 
     if (action === 'load_studio_data') {
-      const dataFolderId = await findExistingSharedUserRowavFolder(saToken, body.folderId);
+      const dataFolderId = await findExistingSharedUserRowavFolder(
+        saToken,
+        body.folderId,
+        verified.email
+      );
       if (!dataFolderId) return res.status(200).json({ ok: true, found: false });
 
       const q = encodeURIComponent(
