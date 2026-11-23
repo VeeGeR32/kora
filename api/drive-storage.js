@@ -202,33 +202,101 @@ async function cleanupAccidentalSaRowavFolders(saToken) {
 }
 
 /**
- * Ensures ONE single `_Rowav_Data` folder directly at the root of the user's "Mon Drive"
- * using the user's own `drive.file` OAuth token (non-sensitive scope -> no red warning screen!),
- * and shares it with the Service Account as Editor so background syncs & cover streaming work
- * permanently across PC & iPhone without future popups.
+ * Resolves the TRUE top-level shared music folder (e.g. "musique"), NEVER a nested subfolder
+ * like "25/26/vers le ciel" and NEVER "_Rowav_Data".
+ * Uses `sharedWithMe=true`, which in Google Drive API ONLY matches folders explicitly shared
+ * with the Service Account (not inherited child folders).
  */
-async function ensureUserRootRowavDataFolder(userToken, saEmail) {
-  // 1. Search ONLY at the root of the user's Drive ('root' in parents) -> recursion is impossible!
+async function resolveTrueSharedMusicFolderId(saToken, requestedFolderId) {
+  if (requestedFolderId && requestedFolderId !== 'root') {
+    const metaRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        requestedFolderId
+      )}?fields=id,name,trashed&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${saToken}` } }
+    );
+    if (metaRes.ok) {
+      const meta = await metaRes.json();
+      if (meta?.id && !meta.trashed && meta.name !== '_Rowav_Data' && meta.name !== 'covers') {
+        return meta.id;
+      }
+    }
+  }
+
   const q = encodeURIComponent(
-    "'root' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    "sharedWithMe=true and mimeType='application/vnd.google-apps.folder' and trashed=false and name != '_Rowav_Data' and name != 'covers'"
   );
-  const searchRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=5`,
-    { headers: { Authorization: `Bearer ${userToken}` } }
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,capabilities(canAddChildren))&pageSize=20&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    { headers: { Authorization: `Bearer ${saToken}` } }
   );
-  if (searchRes.status === 401) {
-    const txt = await searchRes.text().catch(() => '');
-    return classifyDriveError(401, txt);
-  }
+  if (!res.ok) return null;
+  const data = await res.json();
+  const files = Array.isArray(data.files) ? data.files : [];
+  const writable = files.find((f) => f.capabilities?.canAddChildren);
+  return writable?.id || files[0]?.id || null;
+}
 
+/**
+ * Ensures ONE single `_Rowav_Data` folder owned by the user (using non-sensitive `drive.file` scope),
+ * shares it with the Service Account as Editor, and automatically places it at the root of the user's
+ * shared music folder (e.g. `musique/_Rowav_Data`) whenever possible (never in a subfolder!).
+ */
+async function ensureUserRowavDataFolder(userToken, saToken, saEmail, requestedFolderId) {
+  const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId);
+
+  // 1. First check if a user-owned `_Rowav_Data` already exists directly inside `musique/`
   let folderId = null;
-  if (searchRes.ok) {
-    const searchData = await searchRes.json();
-    folderId = searchData.files?.[0]?.id || null;
+  if (musicRootId) {
+    const inMusicQ = encodeURIComponent(
+      `'${musicRootId}' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners`
+    );
+    const inMusicRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${inMusicQ}&fields=files(id,name)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      { headers: { Authorization: `Bearer ${saToken}` } }
+    );
+    if (inMusicRes.ok) {
+      const inMusicData = await inMusicRes.json();
+      const candidateId = inMusicData.files?.[0]?.id || null;
+      if (candidateId) {
+        // Verify our `drive.file` token has access to this folder (i.e. created by Rowav)
+        const checkUserAccess = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(candidateId)}?fields=id`,
+          { headers: { Authorization: `Bearer ${userToken}` } }
+        );
+        if (checkUserAccess.status === 401) {
+          const txt = await checkUserAccess.text().catch(() => '');
+          return classifyDriveError(401, txt);
+        }
+        if (checkUserAccess.ok) {
+          folderId = candidateId;
+        }
+      }
+    }
   }
 
+  // 2. Otherwise check at the user's "Mon Drive" root ('root' in parents)
   if (!folderId) {
-    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+    const rootQ = encodeURIComponent(
+      "'root' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    );
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${rootQ}&fields=files(id,name,parents)&pageSize=5`,
+      { headers: { Authorization: `Bearer ${userToken}` } }
+    );
+    if (searchRes.status === 401) {
+      const txt = await searchRes.text().catch(() => '');
+      return classifyDriveError(401, txt);
+    }
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      folderId = searchData.files?.[0]?.id || null;
+    }
+  }
+
+  // 3. Create ONE `_Rowav_Data` folder if none exists yet
+  if (!folderId) {
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,parents', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${userToken}`,
@@ -249,7 +317,7 @@ async function ensureUserRootRowavDataFolder(userToken, saEmail) {
     folderId = created.id;
   }
 
-  // Share the root `_Rowav_Data` folder with the Service Account (writer) so future PATCHes & cover GETs work silently
+  // 4. Share `_Rowav_Data` with the Service Account (writer) so future PATCHes & cover GETs work silently
   if (folderId && saEmail) {
     await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
@@ -272,14 +340,78 @@ async function ensureUserRootRowavDataFolder(userToken, saEmail) {
     });
   }
 
-  return { ok: true, id: folderId };
+  // 5. Try moving `_Rowav_Data` directly into the root of `musique/` (e.g. `musique/_Rowav_Data`)
+  // using the Service Account (which has Editor on both `musique` and `_Rowav_Data`).
+  let placedInMusicRoot = false;
+  if (folderId && musicRootId && folderId !== musicRootId) {
+    try {
+      const metaRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+          folderId
+        )}?fields=parents&supportsAllDrives=true`,
+        { headers: { Authorization: `Bearer ${userToken}` } }
+      );
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        const currentParents = Array.isArray(meta.parents) ? meta.parents : [];
+        if (currentParents.includes(musicRootId)) {
+          placedInMusicRoot = true;
+        } else {
+          const removeParam =
+            currentParents.length > 0
+              ? `&removeParents=${encodeURIComponent(currentParents.join(','))}`
+              : '';
+          const moveRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+              folderId
+            )}?addParents=${encodeURIComponent(musicRootId)}${removeParam}&fields=id,parents&supportsAllDrives=true`,
+            {
+              method: 'PATCH',
+              headers: {
+                Authorization: `Bearer ${saToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({}),
+            }
+          );
+          if (moveRes.ok) {
+            placedInMusicRoot = true;
+          }
+        }
+      }
+    } catch {
+      // Non-fatal: stays cleanly at Mon Drive/_Rowav_Data if Google disallows SA move
+    }
+  }
+
+  return { ok: true, id: folderId, placedInMusicRoot };
 }
 
 /**
- * Finds an EXISTING user-owned `_Rowav_Data` folder shared with the Service Account.
- * NEVER creates a Service-Account-owned `_Rowav_Data` folder (which has 0-byte quota and caused nesting!).
+ * Finds an EXISTING user-owned `_Rowav_Data` folder — checking `musique/_Rowav_Data` first,
+ * then fallback to `Mon Drive/_Rowav_Data` shared with the Service Account.
+ * NEVER creates a Service-Account-owned `_Rowav_Data` folder.
  */
-async function findExistingSharedUserRowavFolder(saToken) {
+async function findExistingSharedUserRowavFolder(saToken, requestedFolderId) {
+  // 1. Prefer `_Rowav_Data` directly at the root of the user's shared music folder (e.g. `musique/_Rowav_Data`)
+  const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId);
+  if (musicRootId) {
+    const inMusicQ = encodeURIComponent(
+      `'${musicRootId}' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners`
+    );
+    const inMusicRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${inMusicQ}&fields=files(id,name)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      { headers: { Authorization: `Bearer ${saToken}` } }
+    );
+    if (inMusicRes.ok) {
+      const inMusicData = await inMusicRes.json();
+      if (inMusicData.files?.[0]?.id) {
+        return inMusicData.files[0].id;
+      }
+    }
+  }
+
+  // 2. Fallback: `_Rowav_Data` shared directly from the root of "Mon Drive"
   const q = encodeURIComponent(
     "sharedWithMe=true and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners"
   );
@@ -493,7 +625,12 @@ export default async function handler(req, res) {
       const ext = mimeType.includes('webp') ? 'webp' : mimeType.includes('png') ? 'png' : 'jpg';
       const imgBuf = Buffer.from(match[2], 'base64');
 
-      const dataFolder = await ensureUserRootRowavDataFolder(rawUserDriveToken, sa.client_email);
+      const dataFolder = await ensureUserRowavDataFolder(
+        rawUserDriveToken,
+        saToken,
+        sa.client_email,
+        body.folderId
+      );
       if (!dataFolder.ok) return res.status(200).json(dataFolder);
 
       const coversFolder = await ensureSubFolder(rawUserDriveToken, dataFolder.id, 'covers');
@@ -516,20 +653,25 @@ export default async function handler(req, res) {
       let allowCreate = false;
 
       if (rawUserDriveToken) {
-        const ensured = await ensureUserRootRowavDataFolder(rawUserDriveToken, sa.client_email);
+        const ensured = await ensureUserRowavDataFolder(
+          rawUserDriveToken,
+          saToken,
+          sa.client_email,
+          body.folderId
+        );
         if (!ensured.ok) return res.status(200).json(ensured);
         dataFolderId = ensured.id;
         activeToken = rawUserDriveToken;
         allowCreate = true;
       } else {
-        dataFolderId = await findExistingSharedUserRowavFolder(saToken);
+        dataFolderId = await findExistingSharedUserRowavFolder(saToken, body.folderId);
         if (!dataFolderId) {
           return res.status(200).json({
             ok: false,
             needsUserOAuth: true,
             cleanedCount,
             error:
-              'Autorise ton compte Google 1 seule fois pour créer _Rowav_Data à la racine de ton Google Drive (ensuite les sauvegardes sont automatiques).',
+              'Autorise ton compte Google 1 seule fois pour créer _Rowav_Data (ensuite les sauvegardes sont automatiques).',
           });
         }
       }
@@ -565,7 +707,7 @@ export default async function handler(req, res) {
     }
 
     if (action === 'load_studio_data') {
-      const dataFolderId = await findExistingSharedUserRowavFolder(saToken);
+      const dataFolderId = await findExistingSharedUserRowavFolder(saToken, body.folderId);
       if (!dataFolderId) return res.status(200).json({ ok: true, found: false });
 
       const q = encodeURIComponent(
