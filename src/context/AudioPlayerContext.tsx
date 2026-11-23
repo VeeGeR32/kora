@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { LivePlaybackCommand, LivePlaybackState, MusicTrack } from '../types';
 import { getMediaObjectUrl, saveMediaBlob } from '../lib/mediaDb';
 import { downloadGoogleDriveAudioBlob, ensureGoogleDriveToken } from '../lib/googleDrive';
@@ -56,7 +56,7 @@ interface AudioPlayerContextValue {
   pendingOpenTrackId: string | null;
   requestOpenTrackPage: (trackId: string) => void;
   clearPendingOpenTrackPage: () => void;
-  // Kora Connect (Spotify Connect-style cross-device live playback & remote control)
+  // Rowav Connect (Spotify Connect-style cross-device live playback & remote control)
   localDevice: LocalDeviceInfo;
   remoteDevice: { id: string; name: string; type: 'mobile' | 'tablet' | 'desktop' } | null;
   isRemotePlayback: boolean;
@@ -922,7 +922,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     notify(`Lecture transférée sur ${localDevice.name} ✓`);
   }, [state.musicTracks, getLiveTime, playTrack, localDevice.name, notify]);
 
-  // Real-time Kora Connect synchronization listener (Spotify Connect style!)
+  // Real-time Rowav Connect synchronization listener (Spotify Connect style!)
   const incomingLivePlayback = state.preferences.lastSession?.livePlayback ?? null;
   useEffect(() => {
     if (!incomingLivePlayback) {

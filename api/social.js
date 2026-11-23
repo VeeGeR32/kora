@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+﻿import crypto from 'node:crypto';
 
 let cachedDatastoreToken = null;
 let cachedDatastoreExpiryMs = 0;
@@ -591,9 +591,9 @@ function formatHubForViewer(hub, viewerUid) {
 
     return {
       uid: p.uid,
-      name: p.name || 'Artiste Kora',
+      name: p.name || 'Artiste Rowav',
       handle: p.handle || `@${String(p.name || 'artiste').toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-      bio: p.bio || 'Producteur & Artiste sur Kora Studio.',
+      bio: p.bio || 'Producteur & Artiste sur Rowav Studio.',
       avatarUrl: p.avatarUrl,
       coverGradient: p.coverGradient || 'sunset',
       location: p.location || 'Studio',
@@ -682,10 +682,10 @@ export default async function handler(req, res) {
         uid: viewerUid,
         name: callerName,
         handle: `@${callerName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'artiste'}`,
-        bio: String(body.userBio || 'Artiste & Producteur sur Kora Music Studio.').trim(),
+        bio: String(body.userBio || 'Artiste & Producteur sur Rowav Music Studio.').trim(),
         avatarUrl: body.userAvatarUrl || verified?.picture || undefined,
         coverGradient: body.coverGradient || 'sunset',
-        location: body.location || 'Kora Studio',
+        location: body.location || 'Rowav Studio',
         genres: Array.isArray(body.genres) ? body.genres : ['Studio', 'Production'],
         followersIds: [],
         followingIds: [],
@@ -949,9 +949,9 @@ export default async function handler(req, res) {
         if (existingReplies.length < 2) {
           const autoReplies = {
             artist_nox:
-              'Merci pour le message ! Je viens d’écouter tes dernières maquettes sur Kora, le mix est super propre. Partant pour bosser sur une prod ensemble quand tu veux.',
+              'Merci pour le message ! Je viens d’écouter tes dernières maquettes sur Rowav, le mix est super propre. Partant pour bosser sur une prod ensemble quand tu veux.',
             artist_sora:
-              'Hey ! Trop cool de connecter sur Kora Studio. Si tu cherches une topline ou des harmonies sur un de tes projets, fais-moi signe !',
+              'Hey ! Trop cool de connecter sur Rowav Studio. Si tu cherches une topline ou des harmonies sur un de tes projets, fais-moi signe !',
             artist_leo:
               'Salut ! Bien reçu, l’ambiance de tes sons est grave lourde. Hésite pas à partager ton prochain projet sur le hub !',
           };
@@ -979,7 +979,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: err?.message || 'Erreur serveur Kora Social',
+      error: err?.message || 'Erreur serveur Rowav Social',
     });
   }
 }

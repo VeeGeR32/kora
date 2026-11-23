@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Check,
   ChevronLeft,
@@ -88,7 +88,7 @@ export function SocialHubView({
     state.preferences.name?.trim() ||
     cloudUser?.displayName?.trim() ||
     cloudUser?.email?.split('@')[0] ||
-    'Artiste Kora';
+    'Artiste Rowav';
 
   const [mode, setMode] = useState<SocialViewMode>(initialMode);
   const [viewingArtistUid, setViewingArtistUid] = useState<string | null>(initialArtistUid);
@@ -114,7 +114,7 @@ export function SocialHubView({
   const [editingProfile, setEditingProfile] = useState(false);
   const [editName, setEditName] = useState(myName);
   const [editBio, setEditBio] = useState(
-    state.preferences.bio || 'Producteur & Artiste sur Kora Music Studio.'
+    state.preferences.bio || 'Producteur & Artiste sur Rowav Music Studio.'
   );
   const [editLocation, setEditLocation] = useState('Paris, FR');
   const [editGenres, setEditGenres] = useState('Rap FR, Cloud, Melodic');
@@ -185,7 +185,7 @@ export function SocialHubView({
         uid: myUid,
         name: myName,
         handle: `@${myName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'artiste'}`,
-        bio: state.preferences.bio || 'Producteur & Artiste sur Kora Music Studio.',
+        bio: state.preferences.bio || 'Producteur & Artiste sur Rowav Music Studio.',
         avatarUrl: state.preferences.avatarUrl || cloudUser?.photoURL || undefined,
         coverGradient: 'sunset',
         location: 'Paris, FR',
@@ -208,9 +208,9 @@ export function SocialHubView({
     return (
       profiles.find((p) => p.uid === targetUid) || {
         uid: targetUid,
-        name: 'Artiste Kora',
+        name: 'Artiste Rowav',
         handle: '@artiste',
-        bio: 'Artiste Kora Studio',
+        bio: 'Artiste Rowav Studio',
         coverGradient: 'sunset',
         followersCount: 0,
         followingCount: 0,
@@ -471,7 +471,7 @@ export function SocialHubView({
         setProfiles(res.profiles);
         setSocialProjects(res.projects);
         setShowPublishSheet(false);
-        notify(`Projet « ${proj.title} » publié sur Kora Social & ton Portfolio ✓`);
+        notify(`Projet « ${proj.title} » publié sur Rowav Social & ton Portfolio ✓`);
       } else {
         notify(res.error || 'Impossible de publier ce projet');
       }
@@ -495,7 +495,7 @@ export function SocialHubView({
       if (viewingSocialProjectId === projectId) {
         setViewingSocialProjectId(null);
       }
-      notify(`« ${title} » retiré de Kora Social`);
+      notify(`« ${title} » retiré de Rowav Social`);
     }
   };
 
@@ -580,7 +580,7 @@ export function SocialHubView({
         onClick={() => handlePlaySocialTrack(trk, queueList)}
         className={`group flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl transition cursor-pointer ${
           isCurrent
-            ? 'bg-[#FF5500]/8 dark:bg-[#FF5500]/12'
+            ? 'bg-[#8C271E]/8 dark:bg-[#8C271E]/12'
             : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800/50'
         }`}
       >
@@ -593,7 +593,7 @@ export function SocialHubView({
             }}
             className={`h-8 w-8 rounded-xl inline-flex items-center justify-center shrink-0 transition cursor-pointer ${
               isCurrent
-                ? 'bg-[#FF5500] text-white shadow-sm'
+                ? 'bg-[#8C271E] text-white shadow-sm'
                 : 'bg-slate-100 dark:bg-zinc-800/90 text-slate-600 dark:text-zinc-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-zinc-100 dark:group-hover:text-zinc-950'
             }`}
           >
@@ -608,7 +608,7 @@ export function SocialHubView({
             <div className="flex items-center gap-1.5">
               <p
                 className={`text-xs sm:text-sm font-semibold truncate ${
-                  isCurrent ? 'text-[#FF5500]' : 'text-slate-900 dark:text-zinc-100'
+                  isCurrent ? 'text-[#8C271E]' : 'text-slate-900 dark:text-zinc-100'
                 }`}
               >
                 {trk.title}
@@ -626,7 +626,7 @@ export function SocialHubView({
                   e.stopPropagation();
                   openArtistPortfolio(trk.ownerUid);
                 }}
-                className="hover:text-[#FF5500] hover:underline truncate cursor-pointer"
+                className="hover:text-[#8C271E] hover:underline truncate cursor-pointer"
               >
                 {trk.artist}
               </button>
@@ -658,7 +658,7 @@ export function SocialHubView({
             title="Noter ce morceau sur 10"
             className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold transition cursor-pointer ${
               trk.myRating
-                ? 'bg-[#FF5500]/15 text-[#FF5500]'
+                ? 'bg-[#8C271E]/15 text-[#8C271E]'
                 : (trk.ratingAvg || 0) > 0
                   ? 'bg-slate-100 dark:bg-zinc-800/90 text-slate-700 dark:text-zinc-200 hover:bg-slate-200 dark:hover:bg-zinc-700'
                   : 'border border-slate-200/80 dark:border-zinc-800 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200'
@@ -667,7 +667,7 @@ export function SocialHubView({
             <Star
               size={11}
               className={
-                trk.myRating || (trk.ratingAvg || 0) > 0 ? 'text-[#FF5500]' : 'text-slate-400'
+                trk.myRating || (trk.ratingAvg || 0) > 0 ? 'text-[#8C271E]' : 'text-slate-400'
               }
               fill={trk.myRating || (trk.ratingAvg || 0) > 0 ? 'currentColor' : 'none'}
             />
@@ -769,7 +769,7 @@ export function SocialHubView({
           >
             <MessageCircle size={13} /> Messages
             {messages.length > 0 && (
-              <span className="rounded-full bg-[#FF5500] text-white px-1.5 py-0.2 font-mono text-[10px]">
+              <span className="rounded-full bg-[#8C271E] text-white px-1.5 py-0.2 font-mono text-[10px]">
                 {messages.length}
               </span>
             )}
@@ -780,7 +780,7 @@ export function SocialHubView({
           <button
             type="button"
             onClick={() => setShowPublishSheet(true)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500] text-white px-4 py-1.5 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-1.5 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
           >
             <Share2 size={13} /> Partager un projet
           </button>
@@ -823,7 +823,7 @@ export function SocialHubView({
 
               <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
                 <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
-                  {activeSocialProject.kind} · Kora Social
+                  {activeSocialProject.kind} · Rowav Social
                 </span>
                 <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
                   {activeSocialProject.title}
@@ -837,7 +837,7 @@ export function SocialHubView({
                   <button
                     type="button"
                     onClick={() => openArtistPortfolio(activeSocialProject.ownerUid)}
-                    className="font-bold text-slate-900 dark:text-zinc-100 hover:text-[#FF5500] hover:underline cursor-pointer"
+                    className="font-bold text-slate-900 dark:text-zinc-100 hover:text-[#8C271E] hover:underline cursor-pointer"
                   >
                     {activeSocialProject.ownerName}
                   </button>
@@ -903,7 +903,7 @@ export function SocialHubView({
                       );
                     }
                   }}
-                  className="h-12 w-12 rounded-full bg-[#FF5500] text-white shadow-lg shadow-[#FF5500]/25 inline-flex items-center justify-center hover:scale-105 transition cursor-pointer"
+                  className="h-12 w-12 rounded-full bg-[#8C271E] text-white shadow-lg shadow-[#8C271E]/25 inline-flex items-center justify-center hover:scale-105 transition cursor-pointer"
                 >
                   <Play size={20} fill="currentColor" className="ml-0.5" />
                 </button>
@@ -924,7 +924,7 @@ export function SocialHubView({
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                Artistes & Studios sur Kora
+                Artistes & Studios sur Rowav
               </h2>
               <span className="text-[11px] text-slate-400">
                 Clique sur un profil pour voir son portfolio, t’abonner ou envoyer un message
@@ -964,7 +964,7 @@ export function SocialHubView({
                             {artist.name}
                           </p>
                           {isMe && (
-                            <span className="rounded-md bg-[#FF5500]/12 text-[#FF5500] px-1.5 py-0.5 text-[9px] font-semibold">
+                            <span className="rounded-md bg-[#8C271E]/12 text-[#8C271E] px-1.5 py-0.5 text-[9px] font-semibold">
                               Moi
                             </span>
                           )}
@@ -1051,7 +1051,7 @@ export function SocialHubView({
           {/* Projects Feed */}
           {loading ? (
             <div className="tempo-card rounded-3xl p-12 flex items-center justify-center gap-2 text-xs text-slate-400">
-              <Loader2 size={16} className="animate-spin text-[#FF5500]" />
+              <Loader2 size={16} className="animate-spin text-[#8C271E]" />
               <span>Chargement des projets de la communauté…</span>
             </div>
           ) : (
@@ -1091,7 +1091,7 @@ export function SocialHubView({
                             <button
                               type="button"
                               onClick={() => openArtistPortfolio(proj.ownerUid)}
-                              className="text-xs font-semibold text-[#FF5500] hover:underline cursor-pointer"
+                              className="text-xs font-semibold text-[#8C271E] hover:underline cursor-pointer"
                             >
                               {proj.ownerName}
                             </button>
@@ -1102,7 +1102,7 @@ export function SocialHubView({
 
                           <h3
                             onClick={() => setViewingSocialProjectId(proj.id)}
-                            className="text-base sm:text-lg font-bold text-slate-900 dark:text-zinc-100 hover:text-[#FF5500] transition cursor-pointer truncate"
+                            className="text-base sm:text-lg font-bold text-slate-900 dark:text-zinc-100 hover:text-[#8C271E] transition cursor-pointer truncate"
                           >
                             {proj.title}
                           </h3>
@@ -1144,7 +1144,7 @@ export function SocialHubView({
                               handlePlaySocialTrack(proj.tracks[0], proj.tracks);
                             }
                           }}
-                          className="h-10 w-10 rounded-full bg-[#FF5500] text-white shadow-md shadow-[#FF5500]/20 inline-flex items-center justify-center hover:scale-105 transition cursor-pointer"
+                          className="h-10 w-10 rounded-full bg-[#8C271E] text-white shadow-md shadow-[#8C271E]/20 inline-flex items-center justify-center hover:scale-105 transition cursor-pointer"
                         >
                           {isPlayingProj ? (
                             <Pause size={16} fill="currentColor" />
@@ -1208,8 +1208,8 @@ export function SocialHubView({
                 </div>
 
                 <div className="space-y-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500]/12 text-[#FF5500] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
-                    <Sparkles size={11} /> Artiste Vérifié · Portfolio Kora
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 text-[#8C271E] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                    <Sparkles size={11} /> Artiste Vérifié · Portfolio Rowav
                   </div>
                   <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
                     {activeArtistProfile.name}
@@ -1260,7 +1260,7 @@ export function SocialHubView({
                     <button
                       type="button"
                       onClick={() => setShowPublishSheet(true)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500] text-white px-4 py-2 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
                     >
                       <Plus size={14} /> Publier au portfolio
                     </button>
@@ -1289,7 +1289,7 @@ export function SocialHubView({
                     <button
                       type="button"
                       onClick={() => openDirectMessageWith(activeArtistProfile.uid)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500] text-white px-4 py-2 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
                     >
                       <MessageCircle size={14} /> Message
                     </button>
@@ -1340,7 +1340,7 @@ export function SocialHubView({
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Note moyenne
                 </p>
-                <p className="font-mono text-lg font-bold text-[#FF5500] mt-0.5">
+                <p className="font-mono text-lg font-bold text-[#8C271E] mt-0.5">
                   {activeArtistProfile.averageRating > 0
                     ? `★ ${activeArtistProfile.averageRating}/10`
                     : '— /10'}
@@ -1367,7 +1367,7 @@ export function SocialHubView({
                       <button
                         type="button"
                         onClick={() => handlePlaySocialTrack(artistTracks[0], artistTracks)}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500] text-white px-3.5 py-1 text-xs font-semibold cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-3.5 py-1 text-xs font-semibold cursor-pointer"
                       >
                         <Play size={12} fill="currentColor" /> Tout écouter
                       </button>
@@ -1410,7 +1410,7 @@ export function SocialHubView({
                       <button
                         type="button"
                         onClick={() => setShowPublishSheet(true)}
-                        className="text-xs font-semibold text-[#FF5500] hover:underline cursor-pointer"
+                        className="text-xs font-semibold text-[#8C271E] hover:underline cursor-pointer"
                       >
                         + Ajouter un projet au portfolio
                       </button>
@@ -1448,7 +1448,7 @@ export function SocialHubView({
                                   handlePlaySocialTrack(proj.tracks[0], proj.tracks);
                                 }
                               }}
-                              className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-full bg-[#FF5500] text-white flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer"
+                              className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-full bg-[#8C271E] text-white flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer"
                             >
                               <Play size={16} fill="currentColor" className="ml-0.5" />
                             </button>
@@ -1610,7 +1610,7 @@ export function SocialHubView({
                         {partner.name.slice(0, 2).toUpperCase()}
                       </div>
                       <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-zinc-100 hover:text-[#FF5500]">
+                        <p className="text-xs font-bold text-slate-900 dark:text-zinc-100 hover:text-[#8C271E]">
                           {partner.name}
                         </p>
                         <p className="text-[11px] text-slate-400">
@@ -1654,7 +1654,7 @@ export function SocialHubView({
                             <div
                               className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-xs space-y-1 ${
                                 isMine
-                                  ? 'bg-[#FF5500] text-white rounded-br-xs'
+                                  ? 'bg-[#8C271E] text-white rounded-br-xs'
                                   : 'bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 rounded-bl-xs'
                               }`}
                             >
@@ -1691,7 +1691,7 @@ export function SocialHubView({
                     <button
                       type="submit"
                       disabled={!messageDraft.trim() || sendingMsg}
-                      className="h-9 px-4 rounded-full bg-[#FF5500] text-white inline-flex items-center gap-1.5 text-xs font-semibold disabled:opacity-40 transition cursor-pointer"
+                      className="h-9 px-4 rounded-full bg-[#8C271E] text-white inline-flex items-center gap-1.5 text-xs font-semibold disabled:opacity-40 transition cursor-pointer"
                     >
                       <Send size={12} /> Envoyer
                     </button>
@@ -1741,8 +1741,8 @@ export function SocialHubView({
                     onClick={() => void handleRateTrack(ratingTargetTrack, num)}
                     className={`py-2.5 rounded-xl font-mono text-xs font-bold transition cursor-pointer ${
                       active
-                        ? 'bg-[#FF5500] text-white shadow-md'
-                        : 'bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 hover:bg-[#FF5500]/15 hover:text-[#FF5500]'
+                        ? 'bg-[#8C271E] text-white shadow-md'
+                        : 'bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 hover:bg-[#8C271E]/15 hover:text-[#8C271E]'
                     }`}
                   >
                     {num}/10
@@ -1811,7 +1811,7 @@ export function SocialHubView({
                       <span
                         className={`h-6 w-6 rounded-full inline-flex items-center justify-center ${
                           inPl
-                            ? 'bg-[#FF5500] text-white'
+                            ? 'bg-[#8C271E] text-white'
                             : 'border border-slate-300 dark:border-zinc-700 text-transparent'
                         }`}
                       >
@@ -1846,7 +1846,7 @@ export function SocialHubView({
               />
               <button
                 type="submit"
-                className="rounded-xl bg-[#FF5500] text-white px-3.5 py-2 text-xs font-semibold shrink-0 cursor-pointer"
+                className="rounded-xl bg-[#8C271E] text-white px-3.5 py-2 text-xs font-semibold shrink-0 cursor-pointer"
               >
                 + Créer
               </button>
@@ -1868,7 +1868,7 @@ export function SocialHubView({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-zinc-100">
-                  Publier un projet sur Kora Social & mon Portfolio
+                  Publier un projet sur Rowav Social & mon Portfolio
                 </h3>
                 <p className="text-[11px] text-slate-400">
                   Les autres utilisateurs pourront écouter, liker et noter les sons de ce projet
@@ -1940,7 +1940,7 @@ export function SocialHubView({
                           className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
                             alreadyPublished
                               ? 'bg-slate-100 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200'
-                              : 'bg-[#FF5500] text-white'
+                              : 'bg-[#8C271E] text-white'
                           }`}
                         >
                           {isBusy ? (
@@ -2034,7 +2034,7 @@ export function SocialHubView({
                       type="button"
                       onClick={() => setEditGradient(g.id)}
                       className={`h-5 w-5 rounded-full transition cursor-pointer ${
-                        editGradient === g.id ? 'ring-2 ring-offset-2 ring-[#FF5500] scale-110' : ''
+                        editGradient === g.id ? 'ring-2 ring-offset-2 ring-[#8C271E] scale-110' : ''
                       }`}
                       style={{ background: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
                     />
@@ -2053,7 +2053,7 @@ export function SocialHubView({
               </button>
               <button
                 type="submit"
-                className="rounded-full bg-[#FF5500] text-white px-5 py-1.5 text-xs font-semibold cursor-pointer"
+                className="rounded-full bg-[#8C271E] text-white px-5 py-1.5 text-xs font-semibold cursor-pointer"
               >
                 Enregistrer
               </button>

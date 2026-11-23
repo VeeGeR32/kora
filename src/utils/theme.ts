@@ -151,8 +151,8 @@ export const TRACK_STATUS_META: Record<
     label: 'Pré-mix (v3)',
     shortLabel: 'Pré-mix v3',
     hint: "Balance et nettoyage prêts pour l'harmonisation",
-    badge: 'bg-orange-500/12 text-orange-700 dark:text-orange-300',
-    dot: 'bg-[#FF5500]',
+    badge: 'bg-[#8C271E]/12 text-[#8C271E] dark:text-[#E56B5F]',
+    dot: 'bg-[#8C271E]',
   },
   masterise: {
     step: 5,

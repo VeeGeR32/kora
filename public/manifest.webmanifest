@@ -1,11 +1,11 @@
 {
-  "name": "Kora",
-  "short_name": "Kora",
-  "description": "Studio musique minimaliste : bibliothèque Drive, projets, sprints et textes.",
+  "name": "Rowav",
+  "short_name": "Rowav",
+  "description": "Rowav Music Studio : bibliothèque Google Drive, projets, sprints, textes et communauté.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0e0e11",
-  "theme_color": "#0e0e11",
+  "background_color": "#0b0909",
+  "theme_color": "#8C271E",
   "orientation": "portrait-primary",
   "icons": [
     {

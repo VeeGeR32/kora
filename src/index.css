@@ -9,28 +9,28 @@
 
 :root {
   color-scheme: light;
-  --bg: #f6f6f4;
+  --bg: #f8f5f4;
   --surface: #ffffff;
-  --surface-muted: #efefec;
-  --border: rgba(17, 17, 19, 0.08);
-  --border-strong: rgba(17, 17, 19, 0.16);
-  --text: #111113;
-  --text-muted: #686870;
-  --kora-signal: #ff5500;
-  --kora-signal-soft: rgba(255, 85, 0, 0.12);
+  --surface-muted: #f2ecea;
+  --border: rgba(140, 39, 30, 0.11);
+  --border-strong: rgba(140, 39, 30, 0.22);
+  --text: #161111;
+  --text-muted: #6e6260;
+  --kora-signal: #8C271E;
+  --kora-signal-soft: rgba(140, 39, 30, 0.12);
 }
 
 .dark {
   color-scheme: dark;
-  --bg: #09090b;
-  --surface: #111114;
-  --surface-muted: #18181c;
-  --border: rgba(255, 255, 255, 0.075);
-  --border-strong: rgba(255, 255, 255, 0.15);
-  --text: #f4f4f6;
-  --text-muted: #8e8e98;
-  --kora-signal: #ff5500;
-  --kora-signal-soft: rgba(255, 85, 0, 0.15);
+  --bg: #0b0909;
+  --surface: #141010;
+  --surface-muted: #1c1616;
+  --border: rgba(140, 39, 30, 0.22);
+  --border-strong: rgba(168, 50, 39, 0.36);
+  --text: #f7f3f2;
+  --text-muted: #9e8f8d;
+  --kora-signal: #8C271E;
+  --kora-signal-soft: rgba(140, 39, 30, 0.20);
 }
 
 * {
@@ -46,6 +46,12 @@ body {
   margin: 0;
   padding: 0;
   background-color: var(--bg);
+  background-image: radial-gradient(
+    ellipse 85% 360px at 50% -110px,
+    rgba(140, 39, 30, 0.13),
+    transparent 72%
+  );
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-sans);
   letter-spacing: -0.011em;
@@ -55,15 +61,23 @@ body {
   caret-color: transparent;
 }
 
+.dark body {
+  background-image: radial-gradient(
+    ellipse 85% 420px at 50% -120px,
+    rgba(140, 39, 30, 0.26),
+    transparent 74%
+  );
+}
+
 ::selection {
-  background-color: rgba(255, 85, 0, 0.18);
+  background-color: rgba(140, 39, 30, 0.24);
   color: inherit;
 }
 
 input,
 textarea,
 [contenteditable='true'] {
-  caret-color: #ff5500;
+  caret-color: #8C271E;
 }
 
 button,
@@ -78,18 +92,18 @@ header {
   font-variant-numeric: tabular-nums;
 }
 
-/* Studio Hairline Card — Apple / Teenage Engineering precision */
+/* Rowav Studio Card — Warm crimson hairline & depth */
 .tempo-card {
   background-color: var(--surface);
   border: 1px solid var(--border);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02), 0 6px 20px -8px rgba(0, 0, 0, 0.035);
+  box-shadow: 0 1px 2px rgba(140, 39, 30, 0.03), 0 8px 24px -10px rgba(140, 39, 30, 0.06);
 }
 
 .dark .tempo-card {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 12px 32px -12px rgba(140, 39, 30, 0.14);
 }
 
-/* Subtle custom scrollbars */
+/* Subtle custom scrollbars tinted with #8C271E */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -100,12 +114,12 @@ header {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(120, 120, 130, 0.22);
+  background: rgba(140, 39, 30, 0.28);
   border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(120, 120, 130, 0.42);
+  background: rgba(140, 39, 30, 0.55);
 }
 
 /* Safe area for mobile bottom bar */

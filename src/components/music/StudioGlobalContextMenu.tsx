@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+﻿import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   Circle,
@@ -126,7 +126,7 @@ export function StudioGlobalContextMenu({
           return (
             <>
               <div className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 flex items-center gap-2">
-                <Disc3 size={14} className="text-[#FF5500] shrink-0" />
+                <Disc3 size={14} className="text-[#8C271E] shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-slate-900 dark:text-zinc-100 truncate">
                     {proj.title}
@@ -162,9 +162,9 @@ export function StudioGlobalContextMenu({
                       className={itemCls}
                     >
                       {isPlayingProj ? (
-                        <Pause size={14} className="text-[#FF5500] shrink-0" />
+                        <Pause size={14} className="text-[#8C271E] shrink-0" />
                       ) : (
-                        <Play size={14} className="text-[#FF5500] shrink-0" />
+                        <Play size={14} className="text-[#8C271E] shrink-0" />
                       )}
                       <span>{isPlayingProj ? 'Mettre en pause' : 'Lire le projet'}</span>
                     </button>
@@ -251,7 +251,7 @@ export function StudioGlobalContextMenu({
           return (
             <>
               <div className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 flex items-center gap-2">
-                <FileText size={14} className="text-[#FF5500] shrink-0" />
+                <FileText size={14} className="text-[#8C271E] shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-slate-900 dark:text-zinc-100 truncate">
                     {doc.title || 'Sans titre'}
@@ -285,7 +285,7 @@ export function StudioGlobalContextMenu({
                     }}
                     className={itemCls}
                   >
-                    <Play size={14} className="text-[#FF5500] shrink-0" />
+                    <Play size={14} className="text-[#8C271E] shrink-0" />
                     <span className="truncate">
                       Écouter « {linkedTrack.manualGroupTitle || linkedTrack.title} »
                     </span>
@@ -389,9 +389,9 @@ export function StudioGlobalContextMenu({
           <>
             <div className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-[#FF5500]" />
+                <span className="h-2 w-2 rounded-full bg-[#8C271E]" />
                 <span className="font-semibold text-slate-900 dark:text-zinc-100">
-                  Kora Studio
+                  Rowav Studio
                 </span>
               </div>
               <span className="font-mono text-[10px] text-slate-400">
@@ -409,7 +409,7 @@ export function StudioGlobalContextMenu({
                 }}
                 className={itemCls}
               >
-                <Plus size={14} className="text-[#FF5500] shrink-0" />
+                <Plus size={14} className="text-[#8C271E] shrink-0" />
                 <span>Nouveau projet…</span>
               </button>
 
@@ -421,7 +421,7 @@ export function StudioGlobalContextMenu({
                 }}
                 className={itemCls}
               >
-                <FileText size={14} className="text-[#FF5500] shrink-0" />
+                <FileText size={14} className="text-[#8C271E] shrink-0" />
                 <span>Nouveau texte…</span>
               </button>
 

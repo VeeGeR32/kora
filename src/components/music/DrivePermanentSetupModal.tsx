@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
@@ -253,7 +253,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                         }
                         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer disabled:opacity-50 ${
                           isEnabled
-                            ? 'bg-[#FF5500]'
+                            ? 'bg-[#8C271E]'
                             : 'bg-slate-300 dark:bg-zinc-700'
                         }`}
                       >

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Camera,
@@ -444,7 +444,7 @@ export function TrackDetailModal({
                 <ChevronLeft size={16} /> Retour
               </button>
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
-                <GitBranch size={11} className="text-[#FF5500] shrink-0" />
+                <GitBranch size={11} className="text-[#8C271E] shrink-0" />
                 {activeEntry.versionLabel}
               </span>
               {group.yearFolder && (
@@ -742,7 +742,7 @@ export function TrackDetailModal({
               <div className="h-4 flex items-center justify-center">
                 <span
                   ref={scrubPillTextRef}
-                  className={`rounded-full bg-[#FF5500] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
+                  className={`rounded-full bg-[#8C271E] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
                     scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
                   }`}
                 />
@@ -848,7 +848,7 @@ export function TrackDetailModal({
                   </div>
                 </div>
 
-                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#FF5500] z-30" />
+                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E] z-30" />
               </div>
 
               <p
@@ -1054,10 +1054,10 @@ export function TrackDetailModal({
               <div className="space-y-1.5 pt-2 border-t border-slate-200/60 dark:border-zinc-800/70">
                 <div className="flex items-center justify-between">
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
-                    <TrendingUp size={12} className="text-[#FF5500]" />
+                    <TrendingUp size={12} className="text-[#8C271E]" />
                     Potentiel
                   </span>
-                  <span className="font-mono text-xs font-semibold tabular-nums text-[#FF5500]">
+                  <span className="font-mono text-xs font-semibold tabular-nums text-[#8C271E]">
                     {ratings.potential !== null ? `${ratings.potential}/10` : '—'}
                   </span>
                 </div>
@@ -1076,10 +1076,10 @@ export function TrackDetailModal({
                         }
                         className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
                           active
-                            ? 'bg-[#FF5500] text-white'
+                            ? 'bg-[#8C271E] text-white'
                             : filled
-                            ? 'bg-[#FF5500]/15 text-orange-700 dark:text-orange-300'
-                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-[#FF5500]'
+                            ? 'bg-[#8C271E]/15 text-orange-700 dark:text-orange-300'
+                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-[#8C271E]'
                         }`}
                       >
                         {val}
@@ -1436,9 +1436,9 @@ export function TrackDetailModal({
                     <button
                       type="button"
                       onClick={() => void player.playTrack(track, mk.timeSec)}
-                      className="inline-flex items-center gap-1 hover:text-[#FF5500] cursor-pointer"
+                      className="inline-flex items-center gap-1 hover:text-[#8C271E] cursor-pointer"
                     >
-                      <Tag size={10} className="text-[#FF5500]" />
+                      <Tag size={10} className="text-[#8C271E]" />
                       {mk.label}
                       <span className="font-mono text-[10px] text-slate-400">
                         {fmt(mk.timeSec)}

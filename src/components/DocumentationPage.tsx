@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   BookOpen,
   Check,
@@ -38,7 +38,7 @@ const SECTIONS: { id: DocSectionId; label: string }[] = [
   { id: 'workflow', label: '3. Pipeline & Notes' },
   { id: 'projects', label: '4. Projets & Sprints' },
   { id: 'lyrics', label: '5. Textes & [FIX]' },
-  { id: 'player', label: '6. Kora Connect & Raccourcis' },
+  { id: 'player', label: '6. Rowav Connect & Raccourcis' },
 ];
 
 export function DocumentationPage({
@@ -69,9 +69,9 @@ export function DocumentationPage({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500]/12 text-[#FF5500] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider mb-2">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 text-[#8C271E] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider mb-2">
             <BookOpen size={11} />
-            <span>Manuel Kora Studio</span>
+            <span>Manuel Rowav Studio</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
             Guide & Documentation
@@ -143,7 +143,7 @@ export function DocumentationPage({
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40 p-3.5 space-y-1.5">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#FF5500] text-white font-mono text-[10px] font-bold">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#8C271E] text-white font-mono text-[10px] font-bold">
                 1
               </span>
               <p className="font-semibold text-slate-900 dark:text-zinc-100">
@@ -164,7 +164,7 @@ export function DocumentationPage({
             </div>
 
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40 p-3.5 space-y-1.5">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#FF5500] text-white font-mono text-[10px] font-bold">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#8C271E] text-white font-mono text-[10px] font-bold">
                 2
               </span>
               <p className="font-semibold text-slate-900 dark:text-zinc-100">
@@ -176,7 +176,7 @@ export function DocumentationPage({
             </div>
 
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/40 p-3.5 space-y-1.5">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#FF5500] text-white font-mono text-[10px] font-bold">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#8C271E] text-white font-mono text-[10px] font-bold">
                 3
               </span>
               <p className="font-semibold text-slate-900 dark:text-zinc-100">
@@ -241,7 +241,7 @@ export function DocumentationPage({
             <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50/40 dark:bg-zinc-900/30">
               <div className="space-y-0.5">
                 <p className="font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
-                  <GitBranch size={13} className="text-[#FF5500]" />
+                  <GitBranch size={13} className="text-[#8C271E]" />
                   Regroupement automatique des versions
                 </p>
                 <p className="text-slate-500 dark:text-zinc-400">
@@ -250,10 +250,10 @@ export function DocumentationPage({
               </div>
               <div className="flex flex-wrap sm:flex-col items-end gap-1 font-mono text-[11px] shrink-0">
                 <span className="rounded-lg bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1 text-slate-700 dark:text-zinc-300">
-                  Minuit_1.mp3 → <strong className="text-[#FF5500]">v1</strong>
+                  Minuit_1.mp3 → <strong className="text-[#8C271E]">v1</strong>
                 </span>
                 <span className="rounded-lg bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1 text-slate-700 dark:text-zinc-300">
-                  Minuit_v3.2.mp3 → <strong className="text-[#FF5500]">v3.2 (Actuelle)</strong>
+                  Minuit_v3.2.mp3 → <strong className="text-[#8C271E]">v3.2 (Actuelle)</strong>
                 </span>
               </div>
             </div>
@@ -357,7 +357,7 @@ export function DocumentationPage({
                   <span className="font-semibold text-slate-900 dark:text-zinc-100">
                     {st.title}
                   </span>
-                  <span className="font-mono text-[10px] text-[#FF5500] font-semibold">
+                  <span className="font-mono text-[10px] text-[#8C271E] font-semibold">
                     {st.step}
                   </span>
                 </div>
@@ -371,11 +371,11 @@ export function DocumentationPage({
           {/* Dual Rating Explanation */}
           <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/60 dark:bg-zinc-900/45 p-4 space-y-2 text-xs">
             <p className="font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
-              <TrendingUp size={14} className="text-[#FF5500]" />
+              <TrendingUp size={14} className="text-[#8C271E]" />
               Pourquoi noter « Note actuelle » ET « Potentiel ↗ » (/10) ?
             </p>
             <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
-              Sur chaque page de morceau, attribue une <strong>Note actuelle</strong> (l’état du mix/prise aujourd’hui, ex. <code className="font-mono">4/10</code>) et une note de <strong>Potentiel ↗</strong> (la force du titre une fois terminé, ex. <code className="font-mono text-[#FF5500]">↗9/10</code>). Dans l’onglet <strong>Sons</strong> ou lors de l’ajout de titres à un <strong>Projet</strong>, trie par <strong>« Δ Écart »</strong> : Kora fait remonter en premier les sons qui ont le plus grand écart (<code className="font-mono">9 − 4 = +5</code>), c’est-à-dire tes pépites inachevées à travailler immédiatement.
+              Sur chaque page de morceau, attribue une <strong>Note actuelle</strong> (l’état du mix/prise aujourd’hui, ex. <code className="font-mono">4/10</code>) et une note de <strong>Potentiel ↗</strong> (la force du titre une fois terminé, ex. <code className="font-mono text-[#8C271E]">↗9/10</code>). Dans l’onglet <strong>Sons</strong> ou lors de l’ajout de titres à un <strong>Projet</strong>, trie par <strong>« Δ Écart »</strong> : Kora fait remonter en premier les sons qui ont le plus grand écart (<code className="font-mono">9 − 4 = +5</code>), c’est-à-dire tes pépites inachevées à travailler immédiatement.
             </p>
           </div>
         </section>
@@ -402,7 +402,7 @@ export function DocumentationPage({
             <button
               type="button"
               onClick={() => onNavigateTab('projects')}
-              className="text-xs font-semibold text-[#FF5500] hover:underline cursor-pointer"
+              className="text-xs font-semibold text-[#8C271E] hover:underline cursor-pointer"
             >
               Ouvrir mes projets →
             </button>
@@ -420,7 +420,7 @@ export function DocumentationPage({
 
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/35 p-4 space-y-1.5">
               <p className="font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
-                <Flame size={13} className="text-[#FF5500]" />
+                <Flame size={13} className="text-[#8C271E]" />
                 Sprints (Micro-batch de 3 titres max)
               </p>
               <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
@@ -430,7 +430,7 @@ export function DocumentationPage({
 
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/35 p-4 space-y-1.5">
               <p className="font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-1.5">
-                <Sparkles size={13} className="text-[#FF5500]" />
+                <Sparkles size={13} className="text-[#8C271E]" />
                 Harmonisation & Séquençage
               </p>
               <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
@@ -472,7 +472,7 @@ export function DocumentationPage({
             <button
               type="button"
               onClick={onCreateLyrics}
-              className="text-xs font-semibold text-[#FF5500] hover:underline cursor-pointer"
+              className="text-xs font-semibold text-[#8C271E] hover:underline cursor-pointer"
             >
               + Créer un texte →
             </button>
@@ -504,7 +504,7 @@ export function DocumentationPage({
             </div>
 
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/35 p-3.5 space-y-1.5">
-              <span className="inline-flex items-center gap-1 rounded-md bg-[#FF5500]/14 text-[#FF5500] px-2 py-0.5 text-[10px] font-semibold">
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#8C271E]/14 text-[#8C271E] px-2 py-0.5 text-[10px] font-semibold">
                 <Sparkles size={10} /> Outils
               </span>
               <p className="font-semibold text-slate-900 dark:text-zinc-100">
@@ -527,7 +527,7 @@ export function DocumentationPage({
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-zinc-50">
-                6. Kora Connect, Partage public & Raccourcis
+                6. Rowav Connect, Partage public & Raccourcis
               </h2>
               <p className="text-xs text-slate-400">
                 Contrôle multi-appareils en direct et gestes rapides
@@ -539,7 +539,7 @@ export function DocumentationPage({
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20 p-4 space-y-1.5">
               <p className="font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                Kora Connect (Style Spotify Connect)
+                Rowav Connect (Style Spotify Connect)
               </p>
               <p className="text-slate-600 dark:text-zinc-300 leading-relaxed">
                 Écoute un son sur ton iPhone et ouvre Kora sur ton PC : le lecteur affiche la progression en direct (<em>« Lecture sur iPhone »</em>). Tu peux mettre en pause, changer de titre ou avancer à distance, ou cliquer sur <strong>« Ici / Jouer ici »</strong> pour transférer instantanément l’audio sur ton PC.

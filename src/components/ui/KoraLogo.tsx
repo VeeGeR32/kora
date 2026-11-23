@@ -1,35 +1,73 @@
 export function KoraLogo({ size = 32 }: { size?: number }) {
-  const radius = Math.max(8, Math.round(size * 0.3));
+  const radius = Math.max(8, Math.round(size * 0.28));
+  const svgSize = Math.round(size * 0.66);
   return (
     <div
-      style={{ width: size, height: size, borderRadius: radius }}
-      className="bg-[#111113] dark:bg-[#f4f4f6] text-white dark:text-[#111113] flex items-center justify-center shadow-xs border border-black/10 dark:border-white/15 shrink-0 select-none"
-      aria-label="Kora"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: radius,
+        background: 'linear-gradient(145deg, #A32E24 0%, #8C271E 55%, #661A13 100%)',
+      }}
+      className="text-white flex items-center justify-center shadow-sm shadow-[#8C271E]/30 border border-white/15 shrink-0 select-none"
+      aria-label="Rowav"
     >
       <svg
         viewBox="0 0 32 32"
-        width={Math.round(size * 0.68)}
-        height={Math.round(size * 0.68)}
+        width={svgSize}
+        height={svgSize}
         fill="none"
       >
-        {/* Precision Studio Vinyl / Acoustic Ring */}
-        <path
-          d="M23.8 11.4A9.2 9.2 0 1 0 21.6 23.2"
-          stroke="currentColor"
-          strokeWidth="2.5"
+        {/* Minimalist 5-bar sculpted .WAV acoustic wave (SoundCloud x Apple aesthetic) */}
+        <line
+          x1="5.5"
+          y1="13"
+          x2="5.5"
+          y2="19"
+          stroke="#FFFFFF"
+          strokeOpacity="0.72"
+          strokeWidth="2.6"
           strokeLinecap="round"
         />
-        <path
-          d="M25.2 16a9.2 9.2 0 0 1-1.3 4.7"
-          stroke="currentColor"
-          strokeWidth="2.5"
+        <line
+          x1="10.75"
+          y1="8.5"
+          x2="10.75"
+          y2="23.5"
+          stroke="#FFFFFF"
+          strokeOpacity="0.92"
+          strokeWidth="2.6"
           strokeLinecap="round"
-          strokeOpacity="0.32"
         />
-        {/* Studio Spindle Core */}
-        <circle cx="16" cy="16" r="2.6" fill="currentColor" />
-        {/* Kora Signature Signal Orange Satellite */}
-        <circle cx="24.2" cy="9.4" r="2.35" fill="#FF5500" />
+        <line
+          x1="16"
+          y1="5"
+          x2="16"
+          y2="27"
+          stroke="#FFFFFF"
+          strokeWidth="2.8"
+          strokeLinecap="round"
+        />
+        <line
+          x1="21.25"
+          y1="9.5"
+          x2="21.25"
+          y2="22.5"
+          stroke="#FFFFFF"
+          strokeOpacity="0.92"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+        />
+        <line
+          x1="26.5"
+          y1="12.5"
+          x2="26.5"
+          y2="19.5"
+          stroke="#FFFFFF"
+          strokeOpacity="0.72"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+        />
       </svg>
     </div>
   );

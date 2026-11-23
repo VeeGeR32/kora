@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+﻿import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
@@ -186,7 +186,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                       key={`${p.name}-${idx}`}
                       className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 pl-2.5 pr-1.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-200"
                     >
-                      <FileJson size={12} className="text-[#FF5500]" />
+                      <FileJson size={12} className="text-[#8C271E]" />
                       {p.name}
                       <button
                         type="button"
@@ -281,7 +281,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                   onClick={handleConfirmImport}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:opacity-90 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
                 >
-                  <Upload size={13} /> Importer dans Kora
+                  <Upload size={13} /> Importer dans Rowav
                 </button>
               </div>
             </div>

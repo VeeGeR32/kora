@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Pause, Play, RefreshCw, Sparkles } from 'lucide-react';
 
 type InspirationCategory = 'mix' | 'mots' | 'familier' | 'expressions' | 'dictons';
@@ -213,7 +213,7 @@ export function LexCoreInspirationWidget({
     <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/50 p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
-          <Sparkles size={12} className="text-[#FF5500]" />
+          <Sparkles size={12} className="text-[#8C271E]" />
           Inspiration
         </h4>
         <button
@@ -275,7 +275,7 @@ export function LexCoreInspirationWidget({
               onClick={() => setSyllables(opt.val)}
               className={`flex-1 rounded-lg py-1 text-[10px] font-medium transition cursor-pointer ${
                 syllables === opt.val
-                  ? 'bg-[#FF5500]/14 text-[#FF5500] font-semibold'
+                  ? 'bg-[#8C271E]/14 text-[#8C271E] font-semibold'
                   : 'bg-white/70 dark:bg-zinc-900/60 text-slate-400 dark:text-zinc-500 border border-slate-200/50 dark:border-zinc-800/70 hover:text-slate-700 dark:hover:text-zinc-300'
               }`}
             >
@@ -295,7 +295,7 @@ export function LexCoreInspirationWidget({
               type="button"
               onClick={() => onInsertWord?.(item)}
               title={onInsertWord ? 'Cliquer pour insérer dans ton texte' : item}
-              className={`rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 dark:text-zinc-200 hover:border-[#FF5500] hover:text-slate-950 dark:hover:text-white active:scale-[0.98] transition cursor-pointer ${
+              className={`rounded-xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 dark:text-zinc-200 hover:border-[#8C271E] hover:text-slate-950 dark:hover:text-white active:scale-[0.98] transition cursor-pointer ${
                 isLongPhrase ? 'w-full' : ''
               }`}
             >
@@ -367,7 +367,7 @@ export function MetronomeWidget({ initialBpm = 120 }: { initialBpm?: number }) {
         </span>
         <span
           className={`h-2 w-2 rounded-full ${
-            isPlaying ? 'bg-[#FF5500] animate-pulse' : 'bg-slate-300 dark:bg-zinc-700'
+            isPlaying ? 'bg-[#8C271E] animate-pulse' : 'bg-slate-300 dark:bg-zinc-700'
           }`}
         />
       </div>

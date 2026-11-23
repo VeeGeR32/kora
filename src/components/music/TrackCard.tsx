@@ -160,8 +160,8 @@ export function TrackCard({
       title="Clic sur la carte pour ouvrir la page du morceau · Clic sur ▶ pour lire · Clic droit pour options"
       className={`group relative rounded-2xl border p-3.5 transition-all cursor-pointer select-none flex flex-col justify-between gap-3 ${
         isCurrentTrack
-          ? 'border-slate-900/45 dark:border-zinc-200/40 bg-slate-50/90 dark:bg-zinc-900/85 ring-1 ring-slate-900/10 dark:ring-white/10 shadow-sm'
-          : 'border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#121215] hover:border-slate-300 dark:hover:border-zinc-700 hover:shadow-sm'
+          ? 'border-[#8C271E]/65 dark:border-[#8C271E]/75 bg-[#8C271E]/[0.04] dark:bg-[#8C271E]/[0.11] ring-1 ring-[#8C271E]/25 shadow-sm'
+          : 'border-slate-200/80 dark:border-zinc-800/80 bg-white dark:bg-[#141010] hover:border-[#8C271E]/35 dark:hover:border-[#8C271E]/45 hover:shadow-sm'
       }`}
     >
       {/* Top Row: Playable Cover + Title + Star / Context Menu Trigger */}
@@ -291,7 +291,7 @@ export function TrackCard({
                   <span className="opacity-35">·</span>
                 )}
                 {ratings.potential !== null && (
-                  <span className="text-[#FF5500]">↗{ratings.potential}</span>
+                  <span className="text-[#8C271E] dark:text-[#E56B5F]">↗{ratings.potential}</span>
                 )}
               </span>
             )}

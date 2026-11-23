@@ -130,9 +130,9 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               <KoraLogo size={32} />
               <div className="leading-tight">
                 <p className="text-sm font-bold tracking-tight text-slate-900 dark:text-zinc-50">
-                  Kora
+                  Rowav
                 </p>
-                <p className="text-[10px] font-medium text-slate-400 dark:text-zinc-500">
+                <p className="text-[10px] font-medium text-[#8C271E] dark:text-[#E56B5F]">
                   Music Studio
                 </p>
               </div>
@@ -147,7 +147,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                 {cloudUser ? (
                   <Cloud
                     size={14}
-                    className={cloudSyncing ? 'text-[#FF5500] animate-pulse' : 'text-emerald-500'}
+                    className={cloudSyncing ? 'text-[#8C271E] animate-pulse' : 'text-emerald-500'}
                   />
                 ) : (
                   <CloudOff size={14} />
@@ -178,15 +178,15 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   onClick={() => onPageChange(item.id)}
                   className={`relative w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition cursor-pointer ${
                     active
-                      ? 'text-slate-900 dark:text-zinc-50'
-                      : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200 hover:bg-slate-100/70 dark:hover:bg-zinc-800/50'
+                      ? 'text-white'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200 hover:bg-[#8C271E]/6 dark:hover:bg-[#8C271E]/12'
                   }`}
                 >
                   {active && (
                     <motion.span
                       layoutId="desktopNavPill"
                       transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                      className="absolute inset-0 rounded-xl bg-slate-100 dark:bg-zinc-800/85"
+                      className="absolute inset-0 rounded-xl bg-[#8C271E] shadow-sm shadow-[#8C271E]/30"
                     />
                   )}
                   <span className="relative z-10 flex items-center gap-3">
@@ -194,11 +194,21 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                     {item.label}
                   </span>
                   {badge !== null ? (
-                    <span className="relative z-10 font-mono text-[10px] font-semibold rounded-full bg-slate-200/70 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 px-2 py-0.5 tabular-nums">
+                    <span
+                      className={`relative z-10 font-mono text-[10px] font-semibold rounded-full px-2 py-0.5 tabular-nums ${
+                        active
+                          ? 'bg-white/20 text-white'
+                          : 'bg-[#8C271E]/10 dark:bg-[#8C271E]/20 text-[#8C271E] dark:text-[#E56B5F]'
+                      }`}
+                    >
                       {badge}
                     </span>
                   ) : (
-                    <span className="relative z-10 font-mono text-[10px] text-slate-300 dark:text-zinc-600">
+                    <span
+                      className={`relative z-10 font-mono text-[10px] ${
+                        active ? 'text-white/70' : 'text-slate-300 dark:text-zinc-600'
+                      }`}
+                    >
                       {item.shortcut}
                     </span>
                   )}
@@ -232,17 +242,17 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   state.preferences.avatarColor === 'indigo'
                     ? 'bg-zinc-700 text-white'
                     : state.preferences.avatarColor === 'violet'
-                    ? 'bg-[#FF5500] text-white'
+                    ? 'bg-[#8C271E] text-white'
                     : state.preferences.avatarColor === 'emerald'
                     ? 'bg-emerald-600 text-white'
                     : state.preferences.avatarColor === 'fuchsia'
-                    ? 'bg-orange-600 text-white'
+                    ? 'bg-[#8C271E] text-white'
                     : state.preferences.avatarColor === 'amber'
                     ? 'bg-amber-500 text-white'
-                    : 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                    : 'bg-[#8C271E] text-white'
                 }`}
               >
-                {(state.preferences.name || cloudUser?.displayName || cloudUser?.email || 'K')
+                {(state.preferences.name || cloudUser?.displayName || cloudUser?.email || 'R')
                   .slice(0, 2)
                   .toUpperCase()}
               </div>
@@ -306,7 +316,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
           >
             <KoraLogo size={26} />
             <span className="text-sm font-bold tracking-tight text-slate-900 dark:text-zinc-50">
-              Kora
+              Rowav
             </span>
           </button>
 
@@ -379,13 +389,13 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               type="button"
               onClick={() => onPageChange(item.id)}
               className={`relative flex-1 flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10px] font-medium transition ${
-                active ? 'text-slate-900 dark:text-zinc-50' : 'text-slate-400 dark:text-zinc-500'
+                active ? 'text-white' : 'text-slate-400 dark:text-zinc-500'
               }`}
             >
               {active && (
                 <motion.span
                   layoutId="mobileNavPill"
-                  className="absolute inset-x-1 inset-y-0 rounded-xl bg-slate-100 dark:bg-zinc-800/85"
+                  className="absolute inset-x-1 inset-y-0 rounded-xl bg-[#8C271E] shadow-xs shadow-[#8C271E]/25"
                 />
               )}
               <span className="relative z-10">

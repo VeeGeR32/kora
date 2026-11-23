@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ChevronDown,
@@ -663,7 +663,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
                 <div className="flex items-center gap-3.5 min-w-0">
                   <span className="w-5 text-center font-mono text-xs text-zinc-400 shrink-0">
                     {playingThis ? (
-                      <span className="inline-block h-2 w-2 rounded-full bg-[#FF5500] animate-pulse" />
+                      <span className="inline-block h-2 w-2 rounded-full bg-[#8C271E] animate-pulse" />
                     ) : (
                       idx + 1
                     )}

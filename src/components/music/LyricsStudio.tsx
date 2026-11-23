@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   Check,
@@ -875,11 +875,11 @@ export function LyricsStudio({
                   onClick={() => setToolsOpen((v) => !v)}
                   className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium transition cursor-pointer ${
                     toolsOpen
-                      ? 'bg-[#FF5500] text-white'
+                      ? 'bg-[#8C271E] text-white'
                       : 'border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
                   }`}
                 >
-                  <Sparkles size={12} className={toolsOpen ? 'text-white' : 'text-[#FF5500]'} />
+                  <Sparkles size={12} className={toolsOpen ? 'text-white' : 'text-[#8C271E]'} />
                   <span className="hidden sm:inline">Outils</span>
                 </button>
 

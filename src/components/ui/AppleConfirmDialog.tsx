@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+﻿import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 
 interface AppleConfirmDialogProps {
@@ -80,7 +80,7 @@ export function AppleConfirmDialog({
                 className={`py-3 text-xs font-semibold transition cursor-pointer ${
                   destructive
                     ? 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 active:bg-rose-500/20'
-                    : 'text-[#FF5500] hover:bg-[#FF5500]/10 active:bg-[#FF5500]/20'
+                    : 'text-[#8C271E] hover:bg-[#8C271E]/10 active:bg-[#8C271E]/20'
                 }`}
               >
                 {confirmLabel}

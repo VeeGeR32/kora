@@ -767,12 +767,12 @@ export function reconcileProjectTrackVersions(
 }
 
 export const COVER_GRADIENTS: Array<{ id: string; label: string; from: string; to: string }> = [
-  { id: 'sunset', label: 'Kora Orange', from: '#FF5500', to: '#9A3412' },
+  { id: 'sunset', label: 'Rowav Crimson', from: '#8C271E', to: '#4A120D' },
   { id: 'violet', label: 'Studio Dark', from: '#27272A', to: '#09090B' },
   { id: 'ocean', label: 'Ocean Slate', from: '#334155', to: '#0F172A' },
   { id: 'emerald', label: 'Emerald Mix', from: '#059669', to: '#064E3B' },
   { id: 'amber', label: 'Warm Amber', from: '#D97706', to: '#78350F' },
-  { id: 'rose', label: 'Velvet Rose', from: '#E11D48', to: '#881337' },
+  { id: 'rose', label: 'Velvet Rose', from: '#B91C1C', to: '#450A0A' },
 ];
 
 export function getCoverGradientStyle(gradientId?: string): { background: string } {

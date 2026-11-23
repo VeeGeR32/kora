@@ -526,7 +526,7 @@ export function MusicView({
                   <button
                     type="button"
                     onClick={() => setShowNewProj(true)}
-                    className="inline-flex items-center gap-1 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-3 py-1 text-[11px] font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
                   >
                     <Plus size={12} /> Nouveau
                   </button>
@@ -534,7 +534,7 @@ export function MusicView({
                     <button
                       type="button"
                       onClick={() => setSubTab('projects')}
-                      className="text-xs font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:underline cursor-pointer"
+                      className="text-xs font-medium text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
                     >
                       Tout voir ({state.musicProjects.length}) →
                     </button>
@@ -544,7 +544,7 @@ export function MusicView({
                 <button
                   type="button"
                   onClick={() => setShowNewProj(true)}
-                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-xl bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
                 >
                   <Plus size={13} /> Nouveau projet
                 </button>
@@ -559,7 +559,7 @@ export function MusicView({
                 <button
                   type="button"
                   onClick={() => setShowNewProj(true)}
-                  className="inline-flex items-center gap-1 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-2 text-xs font-semibold cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-xl bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 cursor-pointer"
                 >
                   <Plus size={13} /> Créer un projet
                 </button>
@@ -780,8 +780,8 @@ export function MusicView({
               title="Gérer les dossiers Google Drive connectés"
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition cursor-pointer ${
                 driveSources.length === 0
-                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold hover:opacity-90'
-                  : 'border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-700 hover:text-slate-900 dark:hover:text-zinc-100'
+                  ? 'bg-[#8C271E] text-white font-semibold hover:bg-[#A32E24] shadow-xs shadow-[#8C271E]/25'
+                  : 'border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50 hover:text-slate-900 dark:hover:text-zinc-100'
               }`}
             >
               <HardDrive size={11} />
@@ -796,17 +796,17 @@ export function MusicView({
               disabled={syncingDrive || autoSyncingDrive}
               onClick={() => void handleSyncAllDrive(true)}
               title="Synchroniser tous les Google Drives connectés"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-slate-300 dark:hover:border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-50 transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-[#8C271E]/50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-50 transition cursor-pointer"
             >
               <RefreshCw
                 size={11}
-                className={syncingDrive || autoSyncingDrive ? 'animate-spin text-slate-900 dark:text-zinc-100' : ''}
+                className={syncingDrive || autoSyncingDrive ? 'animate-spin text-[#8C271E]' : ''}
               />
               <span>
                 {syncingDrive || autoSyncingDrive ? 'Sync…' : 'Sync'}
               </span>
               {driveSources.length > 0 && !syncingDrive && !autoSyncingDrive && (
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span className="h-1.5 w-1.5 rounded-full bg-[#8C271E]" />
               )}
             </button>
           </div>
@@ -817,7 +817,7 @@ export function MusicView({
         <section className="tempo-card rounded-2xl p-5 space-y-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-              Bienvenue sur Kora Studio
+              Bienvenue sur Rowav Studio
             </h2>
             <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
               Connecte un ou plusieurs dossiers Google Drive pour synchroniser tous tes MP3, versions et projets en quelques secondes.
@@ -842,8 +842,8 @@ export function MusicView({
                 onClick={() => setYearFilter('all')}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition cursor-pointer shrink-0 ${
                   yearFilter === 'all'
-                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
-                    : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
+                    ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                    : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50'
                 }`}
               >
                 Toutes ({trackGroups.length})
@@ -855,11 +855,11 @@ export function MusicView({
                   onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
                   className={`rounded-full px-3 py-1 font-mono text-xs font-semibold transition cursor-pointer shrink-0 ${
                     yearFilter === year
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 shadow-xs'
-                      : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400 dark:hover:border-zinc-600'
+                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                      : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50'
                   }`}
                 >
-                  {year} <span className="opacity-65">({count})</span>
+                  {year} <span className="opacity-75">({count})</span>
                 </button>
               ))}
             </div>
@@ -1099,7 +1099,7 @@ export function MusicView({
                 <button
                   type="button"
                   onClick={() => setSubTab('social')}
-                  className="text-xs font-medium text-[#FF5500] hover:underline cursor-pointer"
+                  className="text-xs font-medium text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
                 >
                   Explorer la communauté →
                 </button>
@@ -1109,12 +1109,12 @@ export function MusicView({
             {likedSocialTracks.length === 0 ? (
               <div className="tempo-card rounded-2xl px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <p className="text-xs text-slate-400">
-                  Découvre les projets des autres artistes sur <strong>Kora Social</strong> — tous les sons que tu likes (<span className="text-rose-500 font-semibold">♥</span>) apparaissent ici et peuvent être ajoutés à tes playlists.
+                  Découvre les projets des autres artistes sur <strong>Rowav Social</strong> — tous les sons que tu likes (<span className="text-rose-500 font-semibold">♥</span>) apparaissent ici et peuvent être ajoutés à tes playlists.
                 </p>
                 <button
                   type="button"
                   onClick={() => setSubTab('social')}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 shrink-0 cursor-pointer"
                 >
                   <Users size={12} /> Découvrir les sons
                 </button>
@@ -1139,8 +1139,8 @@ export function MusicView({
                       }}
                       className={`tempo-card rounded-2xl p-3.5 flex items-center justify-between gap-3 transition cursor-pointer ${
                         isCurrent
-                          ? 'ring-1 ring-[#FF5500] bg-[#FF5500]/5'
-                          : 'hover:border-slate-300 dark:hover:border-zinc-700'
+                          ? 'ring-1 ring-[#8C271E] bg-[#8C271E]/8'
+                          : 'hover:border-[#8C271E]/40'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -1169,7 +1169,7 @@ export function MusicView({
                         <div className="min-w-0">
                           <p
                             className={`text-xs font-bold truncate ${
-                              isCurrent ? 'text-[#FF5500]' : 'text-slate-900 dark:text-zinc-100'
+                              isCurrent ? 'text-[#8C271E] dark:text-[#E56B5F]' : 'text-slate-900 dark:text-zinc-100'
                             }`}
                           >
                             {soc.title}
@@ -1182,14 +1182,14 @@ export function MusicView({
                                 setSocialTargetArtistUid(soc.ownerUid);
                                 setSubTab('social');
                               }}
-                              className="hover:text-[#FF5500] hover:underline truncate cursor-pointer"
+                              className="hover:text-[#8C271E] dark:hover:text-[#E56B5F] hover:underline truncate cursor-pointer"
                             >
                               {soc.artist}
                             </button>
                             {soc.myRating && (
                               <>
                                 <span>·</span>
-                                <span className="font-mono text-[#FF5500] font-semibold">
+                                <span className="font-mono text-[#8C271E] dark:text-[#E56B5F] font-semibold">
                                   ★ {soc.myRating}/10
                                 </span>
                               </>
@@ -1221,7 +1221,7 @@ export function MusicView({
           <section className="space-y-3.5 pt-1">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <ListMusic size={15} className="text-[#FF5500]" />
+                <ListMusic size={15} className="text-[#8C271E] dark:text-[#E56B5F]" />
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
                   Mes Playlists
                 </h2>
@@ -1234,7 +1234,7 @@ export function MusicView({
               <button
                 type="button"
                 onClick={() => setShowCreatePlaylist(true)}
-                className="inline-flex items-center gap-1 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer"
+                className="inline-flex items-center gap-1 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-3 py-1 text-[11px] font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
               >
                 <Plus size={12} /> Nouvelle playlist
               </button>
@@ -1248,7 +1248,7 @@ export function MusicView({
                 <button
                   type="button"
                   onClick={() => setShowCreatePlaylist(true)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500] text-white px-3.5 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 shrink-0 cursor-pointer"
                 >
                   <Plus size={12} /> Créer une playlist
                 </button>
@@ -1320,7 +1320,7 @@ export function MusicView({
                   onClick={() => setGroupVersions((v) => !v)}
                   className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition cursor-pointer shrink-0 ${
                     groupVersions
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-slate-900 dark:border-zinc-100'
+                      ? 'bg-[#8C271E] text-white border-[#8C271E] shadow-xs shadow-[#8C271E]/25'
                       : 'border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1360,7 +1360,7 @@ export function MusicView({
                     onClick={() => setLibFilter(id)}
                     className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
                       libFilter === id
-                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                        ? 'bg-[#8C271E] text-white shadow-2xs'
                         : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
                     }`}
                   >
@@ -1384,7 +1384,7 @@ export function MusicView({
                   onClick={() => setLibSort('recent')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'recent'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1395,7 +1395,7 @@ export function MusicView({
                   onClick={() => setLibSort('name')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'name'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1407,7 +1407,7 @@ export function MusicView({
                     onClick={() => setLibSort('versions')}
                     className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                       libSort === 'versions'
-                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                        ? 'bg-[#8C271E] text-white'
                         : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                     }`}
                   >
@@ -1419,7 +1419,7 @@ export function MusicView({
                   onClick={() => setLibSort('rating')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'rating'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1430,7 +1430,7 @@ export function MusicView({
                   onClick={() => setLibSort('potential')}
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'potential'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1442,7 +1442,7 @@ export function MusicView({
                   title="Trier par écart Potentiel − Note actuelle (titres prioritaires)"
                   className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
                     libSort === 'gap'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white'
                       : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
@@ -1461,7 +1461,7 @@ export function MusicView({
                   onClick={() => setYearFilter('all')}
                   className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
                     yearFilter === 'all'
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white'
                       : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
                   }`}
                 >
@@ -1474,7 +1474,7 @@ export function MusicView({
                     onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
                     className={`rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold transition cursor-pointer ${
                       yearFilter === year
-                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                        ? 'bg-[#8C271E] text-white'
                         : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                     }`}
                   >

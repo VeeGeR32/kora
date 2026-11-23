@@ -70,7 +70,7 @@ export function AuthGate() {
         <div className="flex flex-col items-center text-center space-y-2.5">
           <KoraLogo size={46} />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Kora Studio</h1>
+            <h1 className="text-lg font-bold tracking-tight">Rowav Studio</h1>
             <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
               Sons · Projets · Textes — connecté à ton Google Drive
             </p>
@@ -124,7 +124,7 @@ export function AuthGate() {
           type="button"
           disabled={busy}
           onClick={() => void handleGoogle()}
-          className="w-full flex items-center justify-center gap-2.5 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-3 text-xs font-semibold hover:opacity-92 active:scale-[0.985] transition cursor-pointer disabled:opacity-50 shadow-xs"
+          className="w-full flex items-center justify-center gap-2.5 rounded-2xl bg-[#8C271E] hover:bg-[#A32E24] text-white py-3 text-xs font-semibold active:scale-[0.985] transition cursor-pointer disabled:opacity-50 shadow-sm shadow-[#8C271E]/25"
         >
           {busy ? (
             <Loader2 size={15} className="animate-spin" />
@@ -190,7 +190,7 @@ export function AuthGate() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-2.5 text-xs font-semibold hover:opacity-92 transition cursor-pointer disabled:opacity-50"
+            className="w-full rounded-2xl bg-[#8C271E] hover:bg-[#A32E24] text-white py-2.5 text-xs font-semibold transition cursor-pointer disabled:opacity-50 shadow-xs shadow-[#8C271E]/20"
           >
             {mode === 'login' ? 'Connexion' : 'Créer mon compte'}
           </button>

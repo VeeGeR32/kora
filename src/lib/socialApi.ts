@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   FirebaseUserConfig,
   MusicTrack,
   ProjectKind,
@@ -56,7 +56,7 @@ export async function fetchSocialHub(fbConfig?: FirebaseUserConfig): Promise<Soc
   } catch (err) {
     return {
       ok: false,
-      error: (err as Error)?.message || 'Impossible de charger Kora Social',
+      error: (err as Error)?.message || 'Impossible de charger Rowav Social',
       profiles: [],
       projects: [],
       messages: [],
@@ -97,7 +97,7 @@ export async function postSocialAction(
   } catch (err) {
     return {
       ok: false,
-      error: (err as Error)?.message || 'Erreur réseau Kora Social',
+      error: (err as Error)?.message || 'Erreur réseau Rowav Social',
       profiles: [],
       projects: [],
       messages: [],
@@ -119,7 +119,7 @@ export function socialTrackToMusicTrack(item: SocialTrackItem): MusicTrack {
     mood: item.mood as TrackMood | undefined,
     ratingCurrent: item.myRating || (item.ratingAvg ? Math.round(item.ratingAvg) : undefined),
     status: 'masterise',
-    tags: ['Kora Social', item.ownerName],
+    tags: ['Rowav Social', item.ownerName],
     markers: [],
     addedAt: item.publishedAt || new Date().toISOString(),
   };

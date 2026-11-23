@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 interface MarkdownViewProps {
   content: string;
@@ -48,7 +48,7 @@ function renderInline(text: string): React.ReactNode[] {
             href={m[2]}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline decoration-[#FF5500]/60 underline-offset-2 hover:text-[#FF5500]"
+            className="underline decoration-[#8C271E]/60 underline-offset-2 hover:text-[#8C271E]"
           >
             {m[1]}
           </a>
@@ -135,7 +135,7 @@ export function MarkdownView({ content, className = '' }: MarkdownViewProps) {
         i++;
       }
       blocks.push(
-        <ul key={k++} className="my-1.5 space-y-1 pl-4 list-disc marker:text-[#FF5500]">
+        <ul key={k++} className="my-1.5 space-y-1 pl-4 list-disc marker:text-[#8C271E]">
           {items.map((it, idx) => (
             <li key={idx}>{renderInline(it)}</li>
           ))}
@@ -152,7 +152,7 @@ export function MarkdownView({ content, className = '' }: MarkdownViewProps) {
         i++;
       }
       blocks.push(
-        <ol key={k++} className="my-1.5 space-y-1 pl-4 list-decimal marker:text-[#FF5500]">
+        <ol key={k++} className="my-1.5 space-y-1 pl-4 list-decimal marker:text-[#8C271E]">
           {items.map((it, idx) => (
             <li key={idx}>{renderInline(it)}</li>
           ))}

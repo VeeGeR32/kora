@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronDown,
@@ -34,7 +34,7 @@ import {
 } from '../../lib/trackCover';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
-  { id: 'pink', label: 'Kora Signal', css: 'from-orange-500 via-[#FF5500] to-amber-800' },
+  { id: 'pink', label: 'Rowav Crimson', css: 'from-[#B83529] via-[#8C271E] to-[#4A120D]' },
   { id: 'violet', label: 'Carbon Slate', css: 'from-zinc-500 via-zinc-700 to-zinc-900' },
   { id: 'emerald', label: 'Emerald Studio', css: 'from-emerald-500 via-teal-700 to-zinc-900' },
   { id: 'amber', label: 'Warm Bronze', css: 'from-amber-400 via-orange-600 to-stone-900' },
@@ -652,7 +652,7 @@ export function MiniAudioPlayer() {
                     {miniUnplayedBarsEl}
                   </div>
                 </div>
-                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#FF5500]" />
+                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E]" />
               </div>
 
               {/* Compact Transport Controls (Connect Transfer / Prev / Play-Pause / Next / Close) */}
@@ -927,7 +927,7 @@ export function MiniAudioPlayer() {
                   <div className="h-5 flex items-center justify-center">
                     <span
                       ref={scrubPillTextRef}
-                      className={`rounded-full bg-[#FF5500] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
+                      className={`rounded-full bg-[#8C271E] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
                         scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
                       }`}
                     />
@@ -967,7 +967,7 @@ export function MiniAudioPlayer() {
                       </div>
                     </div>
 
-                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#FF5500] z-30" />
+                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E] z-30" />
                   </div>
 
                   {isLoadingTrack ? (
@@ -1013,13 +1013,13 @@ export function MiniAudioPlayer() {
                     aria-label="Aléatoire"
                     className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
                       shuffle
-                        ? 'text-[#FF5500] bg-[#FF5500]/12 dark:bg-white/10'
+                        ? 'text-[#8C271E] bg-[#8C271E]/12 dark:bg-white/10'
                         : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
                     }`}
                   >
                     <Shuffle size={18} />
                     {shuffle && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#FF5500]" />
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#8C271E]" />
                     )}
                   </button>
 
@@ -1084,18 +1084,18 @@ export function MiniAudioPlayer() {
                     aria-label="Mode boucle"
                     className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
                       repeatMode !== 'off'
-                        ? 'text-[#FF5500] bg-[#FF5500]/12 dark:bg-white/10'
+                        ? 'text-[#8C271E] bg-[#8C271E]/12 dark:bg-white/10'
                         : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
                     }`}
                   >
                     {repeatMode === 'one' ? <Repeat1 size={18} /> : <Repeat size={18} />}
                     {repeatMode !== 'off' && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#FF5500]" />
+                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#8C271E]" />
                     )}
                   </button>
                 </div>
 
-                {/* Kora Connect Device Bar (Spotify Connect style: Live device status + 1-tap transfer!) */}
+                {/* Rowav Connect Device Bar (Spotify Connect style: Live device status + 1-tap transfer!) */}
                 <div
                   className={`rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-2.5 transition ${
                     isRemotePlayback && remoteDevice

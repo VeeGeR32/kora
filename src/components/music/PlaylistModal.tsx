@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+﻿import React, { useMemo, useRef, useState } from 'react';
 import {
   Check,
   ChevronLeft,
@@ -276,7 +276,7 @@ export function PlaylistPage({
 
           {/* Playlist Info */}
           <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500]/10 text-[#FF5500] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/10 text-[#8C271E] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
               <ListMusic size={11} /> Playlist Hybride · Mes sons & Likes
             </span>
 
@@ -300,7 +300,7 @@ export function PlaylistPage({
                   <button
                     type="button"
                     onClick={saveEditing}
-                    className="rounded-full bg-[#FF5500] text-white px-3.5 py-1 text-xs font-semibold cursor-pointer"
+                    className="rounded-full bg-[#8C271E] text-white px-3.5 py-1 text-xs font-semibold cursor-pointer"
                   >
                     Enregistrer
                   </button>
@@ -377,7 +377,7 @@ export function PlaylistPage({
                   void player.playTrack(playableQueue[0], 0, playableQueue);
                 }
               }}
-              className="h-12 w-12 rounded-full bg-[#FF5500] text-white shadow-lg shadow-[#FF5500]/25 inline-flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-40 transition cursor-pointer"
+              className="h-12 w-12 rounded-full bg-[#8C271E] text-white shadow-lg shadow-[#8C271E]/25 inline-flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-40 transition cursor-pointer"
             >
               {isPlayingPlaylist ? (
                 <Pause size={20} fill="currentColor" />
@@ -399,7 +399,7 @@ export function PlaylistPage({
             <button
               type="button"
               onClick={() => setShowAddTracksSheet(true)}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500] text-white px-4 py-2 text-xs font-semibold cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold cursor-pointer"
             >
               <Plus size={14} /> Choisir des sons
             </button>
@@ -421,7 +421,7 @@ export function PlaylistPage({
                   }}
                   className={`group flex items-center justify-between gap-3 px-4 py-3 transition cursor-pointer ${
                     isCurrent
-                      ? 'bg-[#FF5500]/6 dark:bg-[#FF5500]/10'
+                      ? 'bg-[#8C271E]/6 dark:bg-[#8C271E]/10'
                       : 'hover:bg-slate-50/90 dark:hover:bg-zinc-900/60'
                   }`}
                 >
@@ -429,7 +429,7 @@ export function PlaylistPage({
                     <span
                       className={`w-5 text-center font-mono text-xs ${
                         isCurrent
-                          ? 'text-[#FF5500] font-bold'
+                          ? 'text-[#8C271E] font-bold'
                           : 'text-slate-400 dark:text-zinc-500'
                       }`}
                     >
@@ -456,7 +456,7 @@ export function PlaylistPage({
                         <p
                           className={`text-xs sm:text-sm font-semibold truncate ${
                             isCurrent
-                              ? 'text-[#FF5500]'
+                              ? 'text-[#8C271E]'
                               : 'text-slate-900 dark:text-zinc-100'
                           }`}
                         >
@@ -465,7 +465,7 @@ export function PlaylistPage({
                         <span
                           className={`rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider shrink-0 ${
                             item.kind === 'social'
-                              ? 'bg-[#FF5500]/12 text-[#FF5500]'
+                              ? 'bg-[#8C271E]/12 text-[#8C271E]'
                               : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
                           }`}
                         >
@@ -480,7 +480,7 @@ export function PlaylistPage({
                               e.stopPropagation();
                               onOpenArtistProfile(item.ownerUid!);
                             }}
-                            className="hover:text-[#FF5500] hover:underline cursor-pointer"
+                            className="hover:text-[#8C271E] hover:underline cursor-pointer"
                           >
                             {item.artist}
                           </button>
@@ -583,7 +583,7 @@ export function PlaylistPage({
                       : 'text-slate-500 dark:text-zinc-400'
                   }`}
                 >
-                  <Heart size={13} className="text-[#FF5500]" /> Sons likés ({likedSocialTracks.length})
+                  <Heart size={13} className="text-[#8C271E]" /> Sons likés ({likedSocialTracks.length})
                 </button>
               </div>
 
@@ -630,7 +630,7 @@ export function PlaylistPage({
                         <span
                           className={`h-6 w-6 rounded-full inline-flex items-center justify-center shrink-0 transition ${
                             checked
-                              ? 'bg-[#FF5500] text-white'
+                              ? 'bg-[#8C271E] text-white'
                               : 'border border-slate-300 dark:border-zinc-700 text-transparent'
                           }`}
                         >
@@ -643,7 +643,7 @@ export function PlaylistPage({
               ) : filteredSocialTracks.length === 0 ? (
                 <div className="py-8 text-center space-y-2">
                   <p className="text-xs text-slate-400">
-                    Tu n’as pas encore liké de son dans la communauté Kora Social.
+                    Tu n’as pas encore liké de son dans la communauté Rowav Social.
                   </p>
                 </div>
               ) : (
@@ -661,13 +661,13 @@ export function PlaylistPage({
                           {soc.title}
                         </p>
                         <p className="text-[11px] text-slate-400 truncate">
-                          {soc.artist} · {soc.projectTitle || 'Kora Social'}
+                          {soc.artist} · {soc.projectTitle || 'Rowav Social'}
                         </p>
                       </div>
                       <span
                         className={`h-6 w-6 rounded-full inline-flex items-center justify-center shrink-0 transition ${
                           checked
-                            ? 'bg-[#FF5500] text-white'
+                            ? 'bg-[#8C271E] text-white'
                             : 'border border-slate-300 dark:border-zinc-700 text-transparent'
                         }`}
                       >
@@ -731,7 +731,7 @@ export function CreatePlaylistModal({ open, onClose, onCreated }: CreatePlaylist
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const newId = createPlaylist({
-      title: title.trim() || 'Ma Playlist Kora',
+      title: title.trim() || 'Ma Playlist Rowav',
       description: description.trim() || undefined,
       coverGradient,
       ownTrackIds: selectedOwnIds,
@@ -801,7 +801,7 @@ export function CreatePlaylistModal({ open, onClose, onCreated }: CreatePlaylist
                   type="button"
                   onClick={() => setCoverGradient(g.id)}
                   className={`h-5 w-5 rounded-full transition cursor-pointer ${
-                    coverGradient === g.id ? 'ring-2 ring-offset-2 ring-[#FF5500] scale-110' : ''
+                    coverGradient === g.id ? 'ring-2 ring-offset-2 ring-[#8C271E] scale-110' : ''
                   }`}
                   style={{ background: `linear-gradient(135deg, ${g.from}, ${g.to})` }}
                 />
@@ -832,7 +832,7 @@ export function CreatePlaylistModal({ open, onClose, onCreated }: CreatePlaylist
                     : 'text-slate-500 dark:text-zinc-400'
                 }`}
               >
-                <Users size={13} className="text-[#FF5500]" /> Sons likés ({selectedSocialIds.length})
+                <Users size={13} className="text-[#8C271E]" /> Sons likés ({selectedSocialIds.length})
               </button>
             </div>
 
@@ -868,7 +868,7 @@ export function CreatePlaylistModal({ open, onClose, onCreated }: CreatePlaylist
                         <span
                           className={`h-5 w-5 rounded-full inline-flex items-center justify-center shrink-0 ${
                             active
-                              ? 'bg-[#FF5500] text-white'
+                              ? 'bg-[#8C271E] text-white'
                               : 'border border-slate-300 dark:border-zinc-700 text-transparent'
                           }`}
                         >
@@ -909,7 +909,7 @@ export function CreatePlaylistModal({ open, onClose, onCreated }: CreatePlaylist
                       <span
                         className={`h-5 w-5 rounded-full inline-flex items-center justify-center shrink-0 ${
                           active
-                            ? 'bg-[#FF5500] text-white'
+                            ? 'bg-[#8C271E] text-white'
                             : 'border border-slate-300 dark:border-zinc-700 text-transparent'
                         }`}
                       >
@@ -933,7 +933,7 @@ export function CreatePlaylistModal({ open, onClose, onCreated }: CreatePlaylist
           </button>
           <button
             type="submit"
-            className="rounded-full bg-[#FF5500] text-white px-5 py-1.5 text-xs font-semibold hover:opacity-95 transition cursor-pointer"
+            className="rounded-full bg-[#8C271E] text-white px-5 py-1.5 text-xs font-semibold hover:opacity-95 transition cursor-pointer"
           >
             Créer la playlist
           </button>

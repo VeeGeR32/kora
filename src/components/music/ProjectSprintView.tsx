@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import {
   ArrowUp,
   Calendar,
@@ -640,7 +640,7 @@ export function ProjectSprintView({
                     <span
                       className={`h-4 w-4 rounded-full font-mono text-[10px] font-bold flex items-center justify-center shrink-0 ${
                         trk
-                          ? 'bg-[#FF5500] text-white'
+                          ? 'bg-[#8C271E] text-white'
                           : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-400'
                       }`}
                     >

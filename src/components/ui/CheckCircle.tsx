@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+﻿import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 
 interface CheckCircleProps {
@@ -11,7 +11,7 @@ interface CheckCircleProps {
 
 const ACCENT_MAP = {
   indigo: 'bg-slate-900 dark:bg-zinc-100 border-slate-900 dark:border-zinc-100 text-white dark:text-zinc-900',
-  violet: 'bg-[#FF5500] border-[#FF5500] text-white',
+  violet: 'bg-[#8C271E] border-[#8C271E] text-white',
   emerald: 'bg-emerald-600 border-emerald-600 text-white',
   amber: 'bg-amber-500 border-amber-500 text-white',
   slate: 'bg-slate-900 dark:bg-zinc-100 border-slate-900 dark:border-zinc-100 text-white dark:text-zinc-900',

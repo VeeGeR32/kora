@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+﻿import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Check,
   ChevronRight,
@@ -208,7 +208,7 @@ export function TrackContextMenu({
       >
         {/* Header Summary */}
         <div className="px-3 py-2 border-b border-slate-100 dark:border-zinc-800/80 flex items-center gap-2">
-          <Disc3 size={14} className="text-[#FF5500] shrink-0" />
+          <Disc3 size={14} className="text-[#8C271E] shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="font-semibold text-slate-900 dark:text-zinc-100 truncate">
               {group.baseTitle}
@@ -232,9 +232,9 @@ export function TrackContextMenu({
             className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
           >
             {isPlaying ? (
-              <Pause size={14} className="text-[#FF5500] shrink-0" />
+              <Pause size={14} className="text-[#8C271E] shrink-0" />
             ) : (
-              <Play size={14} className="text-[#FF5500] shrink-0" />
+              <Play size={14} className="text-[#8C271E] shrink-0" />
             )}
             <span className="font-medium">{isPlaying ? 'Mettre en pause' : 'Écouter'}</span>
           </button>
@@ -567,7 +567,7 @@ export function TrackContextMenu({
                         className="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-slate-700 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-800 transition cursor-pointer"
                       >
                         <span className="truncate">{proj.title}</span>
-                        {linked && <Check size={12} className="text-[#FF5500] shrink-0" />}
+                        {linked && <Check size={12} className="text-[#8C271E] shrink-0" />}
                       </button>
                     );
                   })}
@@ -586,7 +586,7 @@ export function TrackContextMenu({
               className="w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
             >
               <span className="flex items-center gap-2.5">
-                <ListMusic size={14} className="text-[#FF5500] shrink-0" />
+                <ListMusic size={14} className="text-[#8C271E] shrink-0" />
                 <span className="font-medium">Ajouter à une playlist</span>
               </span>
               <ChevronRight
@@ -616,7 +616,7 @@ export function TrackContextMenu({
                       className="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-slate-700 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-800 transition cursor-pointer"
                     >
                       <span className="truncate">{pl.title}</span>
-                      {inPl && <Check size={12} className="text-[#FF5500] shrink-0" />}
+                      {inPl && <Check size={12} className="text-[#8C271E] shrink-0" />}
                     </button>
                   );
                 })}
@@ -629,7 +629,7 @@ export function TrackContextMenu({
                     });
                     onClose();
                   }}
-                  className="w-full flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[#FF5500] font-semibold hover:bg-[#FF5500]/10 transition cursor-pointer"
+                  className="w-full flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[#8C271E] font-semibold hover:bg-[#8C271E]/10 transition cursor-pointer"
                 >
                   <Plus size={12} /> Nouvelle playlist avec ce son
                 </button>

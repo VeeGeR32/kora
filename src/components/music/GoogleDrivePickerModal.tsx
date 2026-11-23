@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertCircle,
@@ -462,13 +462,13 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                               >
                                 {selected && <Check size={12} strokeWidth={3} />}
                               </div>
-                              <FileAudio size={14} className="text-[#FF5500] shrink-0" />
+                              <FileAudio size={14} className="text-[#8C271E] shrink-0" />
                               <div className="min-w-0">
                                 <p className="text-xs font-medium text-slate-800 dark:text-zinc-100 truncate">
                                   {f.name}
                                 </p>
                                 <p className="text-[10px] text-slate-400 font-mono">
-                                  {[fmtSize(f.sizeBytes), dateStr, alreadyImported ? 'Déjà dans Kora' : '']
+                                  {[fmtSize(f.sizeBytes), dateStr, alreadyImported ? 'Déjà dans Rowav' : '']
                                     .filter(Boolean)
                                     .join(' · ')}
                                 </p>

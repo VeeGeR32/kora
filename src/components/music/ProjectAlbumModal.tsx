@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Archive,
@@ -1008,16 +1008,16 @@ export function ProjectAlbumModal({
                         state.preferences.firebaseConfig
                       );
                       if (res.ok) {
-                        notify(`Projet « ${project.title} » publié sur Kora Social & ton Portfolio ✓`);
+                        notify(`Projet « ${project.title} » publié sur Rowav Social & ton Portfolio ✓`);
                       } else {
-                        notify(res.error || 'Impossible de publier sur Kora Social');
+                        notify(res.error || 'Impossible de publier sur Rowav Social');
                       }
                     } finally {
                       setSharing(false);
                     }
                   }}
-                  title="Publier ce projet sur la communauté Kora Social et ton Portfolio Artiste"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500]/12 hover:bg-[#FF5500]/20 text-[#FF5500] px-3 py-1.5 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                  title="Publier ce projet sur la communauté Rowav Social et ton Portfolio Artiste"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 hover:bg-[#8C271E]/20 text-[#8C271E] px-3 py-1.5 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
                 >
                   <Globe size={13} />
                   <span>Publier sur Social</span>
@@ -1077,7 +1077,7 @@ export function ProjectAlbumModal({
                   aria-label="Lecture aléatoire"
                   className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer disabled:opacity-35 ${
                     player.shuffle && isPlayingThisProject
-                      ? 'text-[#FF5500]'
+                      ? 'text-[#8C271E]'
                       : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/10'
                   }`}
                 >
@@ -1088,7 +1088,7 @@ export function ProjectAlbumModal({
                   type="button"
                   onClick={handlePlayAlbum}
                   aria-label="Lire le projet"
-                  className="h-13 w-13 rounded-full bg-[#FF5500] hover:bg-[#ff661a] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-[0_12px_28px_-6px_rgba(255,85,0,0.55)] shrink-0 cursor-pointer"
+                  className="h-13 w-13 rounded-full bg-[#8C271E] hover:bg-[#ff661a] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-[0_12px_28px_-6px_rgba(255,85,0,0.55)] shrink-0 cursor-pointer"
                 >
                   {isPlayingThisProject ? (
                     <Pause size={22} fill="currentColor" />
@@ -1284,7 +1284,7 @@ export function ProjectAlbumModal({
                               {(r.current !== null || r.potential !== null) && (
                                 <span className="font-mono text-[10px] text-slate-400 shrink-0">
                                   {r.current ?? '—'}
-                                  <span className="text-[#FF5500]">↗{r.potential ?? '—'}</span>
+                                  <span className="text-[#8C271E]">↗{r.potential ?? '—'}</span>
                                 </span>
                               )}
                             </span>
@@ -1462,7 +1462,7 @@ export function ProjectAlbumModal({
                                 showTracklistDetails ? 'text-sm' : 'text-[15px]'
                               } font-semibold truncate ${
                                 isCur
-                                  ? 'text-[#FF5500]'
+                                  ? 'text-[#8C271E]'
                                   : 'text-slate-900 dark:text-zinc-100'
                               }`}
                             >
@@ -1524,7 +1524,7 @@ export function ProjectAlbumModal({
                                       <span className="opacity-35">·</span>
                                     )}
                                     {trkRatings.potential !== null && (
-                                      <span className="text-[#FF5500]">
+                                      <span className="text-[#8C271E]">
                                         ↗{trkRatings.potential}
                                       </span>
                                     )}

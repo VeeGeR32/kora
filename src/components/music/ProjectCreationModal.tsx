@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Calendar,
@@ -611,7 +611,7 @@ export function ProjectCreationModal({ open, onClose, onCreated }: ProjectCreati
                               <div
                                 className={`h-6 w-6 rounded-full flex items-center justify-center font-mono text-[11px] font-bold shrink-0 transition ${
                                   isSelected
-                                    ? 'bg-[#FF5500] text-white shadow-xs'
+                                    ? 'bg-[#8C271E] text-white shadow-xs'
                                     : 'border border-slate-300 dark:border-zinc-700 text-transparent'
                                 }`}
                               >
@@ -670,7 +670,7 @@ export function ProjectCreationModal({ open, onClose, onCreated }: ProjectCreati
                                     <span className="font-mono text-[10px] text-slate-400">
                                       {ratings.current ?? '—'}
                                       {ratings.potential !== null && (
-                                        <span className="text-[#FF5500] ml-0.5">
+                                        <span className="text-[#8C271E] ml-0.5">
                                           ↗{ratings.potential}
                                         </span>
                                       )}
