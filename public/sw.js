@@ -10,9 +10,9 @@ self.addEventListener('activate', (event) => {
 // Handle real Web Push payloads (iOS Home Screen PWA / Desktop / Android)
 self.addEventListener('push', (event) => {
   let payload = {
-    title: 'Kora',
-    body: 'Nouvelle notification Kora',
-    tag: 'kora-push',
+    title: 'Rowav',
+    body: 'Nouvelle notification Rowav',
+    tag: 'rowav-push',
     url: '/',
   };
   try {
@@ -29,9 +29,9 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: '/kora-icon.svg',
-      badge: '/kora-icon.svg',
-      tag: payload.tag || 'kora-push',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: payload.tag || 'rowav-push',
       renotify: true,
       data: { url: payload.url || '/' },
     })
@@ -44,11 +44,11 @@ self.addEventListener('message', (event) => {
   if (msg && msg.type === 'SHOW_NOTIFICATION' && msg.payload) {
     const { title, body, tag, url } = msg.payload;
     event.waitUntil(
-      self.registration.showNotification(title || 'Kora', {
+      self.registration.showNotification(title || 'Rowav', {
         body: body || '',
-        icon: '/kora-icon.svg',
-        badge: '/kora-icon.svg',
-        tag: tag || 'kora-local',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: tag || 'rowav-local',
         renotify: true,
         data: { url: url || '/' },
       })
