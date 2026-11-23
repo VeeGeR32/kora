@@ -56,6 +56,7 @@ import {
   listenAuthState,
   pushLivePlaybackDelta,
   pushStateToCloud,
+  requestGoogleDriveWriteAccessToken,
   signInWithEmail,
   signInWithGoogle,
   signOutFirebase,
@@ -68,6 +69,7 @@ import { deleteMediaBlob, saveMediaBlob } from '../lib/mediaDb';
 import { evaluateScheduledNotifications } from '../lib/notifications';
 import {
   setCachedPrimaryDriveFolderId,
+  setCachedUserDriveWriteToken,
   syncStudioBackupToUserDrive,
 } from '../lib/driveStorage';
 
@@ -175,9 +177,10 @@ interface AppContextValue {
   autoSyncingDrive: boolean;
   driveSources: DriveSource[];
   serviceAccountEmail: string | null;
-  driveStorageStatus: 'idle' | 'syncing' | 'synced' | 'readonly';
+  driveStorageStatus: 'idle' | 'syncing' | 'synced' | 'readonly' | 'needs_oauth';
   driveLastBackupAt: string | null;
-  syncStudioDataToDriveNow: (silent?: boolean) => Promise<boolean>;
+  syncStudioDataToDriveNow: (silent?: boolean, explicitUserDriveToken?: string | null) => Promise<boolean>;
+  authorizeDriveWriteAndSync: () => Promise<boolean>;
   connectDriveSource: (
     folderInput: string,
     customName?: string
@@ -1746,7 +1749,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ===== GOOGLE DRIVE-FIRST STORAGE (_Rowav_Data/ covers + studio backups) =====
   const [driveStorageStatus, setDriveStorageStatus] = useState<
-    'idle' | 'syncing' | 'synced' | 'readonly'
+    'idle' | 'syncing' | 'synced' | 'readonly' | 'needs_oauth'
   >('idle');
   const [driveLastBackupAt, setDriveLastBackupAt] = useState<string | null>(null);
 
@@ -1760,7 +1763,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [primaryDriveFolderId]);
 
   const syncStudioDataToDriveNow = useCallback(
-    async (silent = false): Promise<boolean> => {
+    async (silent = false, explicitUserDriveToken?: string | null): Promise<boolean> => {
       if (!primaryDriveFolderId) {
         if (!silent) notify('Connecte d’abord un dossier Google Drive.');
         return false;
@@ -1780,7 +1783,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             lyricsFolders: cur.lyricsFolders || [],
             lyricsDocs: cur.lyricsDocs || [],
           },
-          resolvedFbConfig
+          resolvedFbConfig,
+          explicitUserDriveToken
         );
         if (res.ok) {
           setDriveStorageStatus('synced');
@@ -1789,6 +1793,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             notify('Textes, projets et playlists sauvegardés sur ton Google Drive (_Rowav_Data) ✓');
           }
           return true;
+        }
+        if (res.needsUserOAuth) {
+          setDriveStorageStatus('needs_oauth');
+          if (!silent) {
+            notify(
+              'Autorisation Google requise 1 fois pour créer _Rowav_Data sur ton espace Drive — clique sur « Autoriser Google & Sauvegarder ».'
+            );
+          }
+          return false;
         }
         if (res.readonly) {
           setDriveStorageStatus('readonly');
@@ -1811,11 +1824,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [primaryDriveFolderId, resolvedFbConfig, notify]
   );
 
+  /**
+   * Opens the Google OAuth Drive popup synchronously (so browsers never block it),
+   * caches the user's Drive write token, and immediately creates/updates `_Rowav_Data/`
+   * owned by the user using their personal Google Drive quota (15 Go / 5 To).
+   */
+  const authorizeDriveWriteAndSync = useCallback(async (): Promise<boolean> => {
+    if (!primaryDriveFolderId) {
+      notify('Connecte d’abord un dossier Google Drive.');
+      return false;
+    }
+    try {
+      const token = await requestGoogleDriveWriteAccessToken(resolvedFbConfig);
+      setCachedUserDriveWriteToken(token);
+      return await syncStudioDataToDriveNow(false, token);
+    } catch (err) {
+      notify(formatAuthError(err));
+      return false;
+    }
+  }, [primaryDriveFolderId, resolvedFbConfig, syncStudioDataToDriveNow, notify]);
+
   // Automatic debounced background backup of texts, projects & playlists to _Rowav_Data on user's Drive
   const driveBackupTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (!cloudUser || !lastCloudSyncAt || !primaryDriveFolderId) return;
-    if (driveStorageStatus === 'readonly') return;
+    if (driveStorageStatus === 'readonly' || driveStorageStatus === 'needs_oauth') return;
     if (driveBackupTimerRef.current) window.clearTimeout(driveBackupTimerRef.current);
     driveBackupTimerRef.current = window.setTimeout(() => {
       void syncStudioDataToDriveNow(true);
@@ -2975,6 +3008,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         driveStorageStatus,
         driveLastBackupAt,
         syncStudioDataToDriveNow,
+        authorizeDriveWriteAndSync,
         connectDriveSource,
         updateDriveSource,
         toggleDriveSource,

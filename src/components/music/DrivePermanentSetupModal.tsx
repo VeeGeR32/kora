@@ -32,6 +32,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
     driveStorageStatus,
     driveLastBackupAt,
     syncStudioDataToDriveNow,
+    authorizeDriveWriteAndSync,
     connectDriveSource,
     updateDriveSource,
     toggleDriveSource,
@@ -347,12 +348,14 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
-                    Stockage 100% Google Drive
+                    Sauvegarde & Pochettes Google Drive
                   </p>
                   <span
                     className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                       driveStorageStatus === 'synced'
                         ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : driveStorageStatus === 'needs_oauth'
+                        ? 'bg-[#8C271E]/15 text-[#8C271E] dark:text-[#f08b82]'
                         : driveStorageStatus === 'readonly'
                         ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
                         : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
@@ -362,26 +365,34 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                       ? 'Sauvegarde…'
                       : driveStorageStatus === 'synced'
                       ? 'Actif · _Rowav_Data'
+                      : driveStorageStatus === 'needs_oauth'
+                      ? 'Activation 1 fois requise'
                       : driveStorageStatus === 'readonly'
                       ? 'Lecture seule'
                       : 'Prêt · _Rowav_Data'}
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                  {driveStorageStatus === 'readonly'
+                  {driveStorageStatus === 'needs_oauth'
+                    ? 'Google bloque la création initiale par compte de service dans « Mon Drive ». Autorise ton compte Google 1 seule fois pour créer _Rowav_Data/ avec ton propre espace Drive (ensuite c’est 100 % automatique).'
+                    : driveStorageStatus === 'readonly'
                     ? 'Passe le partage de ton dossier en mode Éditeur pour stocker automatiquement tes pochettes HD, textes et sauvegardes sur ton Drive.'
                     : driveLastBackupAt
                     ? `Pochettes HD, textes et projets sauvegardés dans _Rowav_Data/ sur ton Drive (dernière sync : ${new Date(
                         driveLastBackupAt
                       ).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}).`
-                    : 'Tes audios, pochettes HD, textes et projets sont enregistrés automatiquement dans le dossier _Rowav_Data/ de ton Google Drive.'}
+                    : 'Tes audios, pochettes HD et sauvegardes de secours (projets, textes, playlists) sont stockés dans _Rowav_Data/ sur ton Google Drive.'}
                 </p>
               </div>
             </div>
             <button
               type="button"
               disabled={driveStorageStatus === 'syncing'}
-              onClick={() => void syncStudioDataToDriveNow(false)}
+              onClick={() =>
+                void (driveStorageStatus === 'needs_oauth'
+                  ? authorizeDriveWriteAndSync()
+                  : syncStudioDataToDriveNow(false))
+              }
               className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white px-3 py-1.5 text-[11px] font-semibold hover:bg-[#752019] disabled:opacity-50 transition cursor-pointer shrink-0"
             >
               {driveStorageStatus === 'syncing' ? (
@@ -389,7 +400,9 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
               ) : (
                 <CloudUpload size={12} />
               )}
-              Sauvegarder sur Drive
+              {driveStorageStatus === 'needs_oauth'
+                ? 'Autoriser Google & Sauvegarder'
+                : 'Sauvegarder sur Drive'}
             </button>
           </div>
         </div>

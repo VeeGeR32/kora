@@ -124,6 +124,42 @@ async function resolveTargetRootFolderId(token, folderId) {
   return writable?.id || data.files?.[0]?.id || null;
 }
 
+function classifyDriveError(status, rawText) {
+  const txt = String(rawText || '');
+  const lower = txt.toLowerCase();
+  if (
+    lower.includes('storagequotaexceeded') ||
+    lower.includes('do not have storage quota') ||
+    lower.includes('storage quota')
+  ) {
+    return {
+      ok: false,
+      needsUserOAuth: true,
+      error:
+        'Google bloque la création de nouveaux fichiers par compte de service dans « Mon Drive » personnel. Clique sur « Autoriser Google & Sauvegarder » (1 seule fois) pour créer _Rowav_Data avec ton propre espace Drive.',
+    };
+  }
+  if (status === 401) {
+    return {
+      ok: false,
+      tokenExpired: true,
+      needsUserOAuth: true,
+      error: 'Session Google Drive expirée. Clique pour réautoriser.',
+    };
+  }
+  if (status === 403) {
+    return {
+      ok: false,
+      readonly: true,
+      error: 'Accès en écriture refusé (vérifie que le dossier est partagé en mode Éditeur).',
+    };
+  }
+  return {
+    ok: false,
+    error: `Erreur Google Drive (${status}): ${txt.slice(0, 160)}`,
+  };
+}
+
 async function ensureSubFolder(token, parentId, name) {
   const safeName = name.replace(/'/g, "\\'");
   const q = encodeURIComponent(
@@ -138,6 +174,9 @@ async function ensureSubFolder(token, parentId, name) {
     if (Array.isArray(searchData.files) && searchData.files.length > 0) {
       return { ok: true, id: searchData.files[0].id };
     }
+  } else if (searchRes.status === 401) {
+    const txt = await searchRes.text().catch(() => '');
+    return classifyDriveError(401, txt);
   }
 
   const createRes = await fetch(
@@ -155,12 +194,10 @@ async function ensureSubFolder(token, parentId, name) {
       }),
     }
   );
-  if (createRes.status === 403) {
-    return { ok: false, readonly: true };
-  }
   if (!createRes.ok) {
     const txt = await createRes.text().catch(() => '');
-    return { ok: false, error: `Impossible de créer ${name} (${createRes.status}): ${txt.slice(0, 120)}` };
+    console.error(`[drive-storage] ensureSubFolder(${name}) failed (${createRes.status}):`, txt.slice(0, 300));
+    return classifyDriveError(createRes.status, txt);
   }
   const created = await createRes.json();
   return { ok: true, id: created.id };
@@ -179,6 +216,9 @@ async function upsertMultipartFile(token, parentId, fileName, mimeType, buffer) 
   if (searchRes.ok) {
     const searchData = await searchRes.json();
     existingId = searchData.files?.[0]?.id || null;
+  } else if (searchRes.status === 401) {
+    const txt = await searchRes.text().catch(() => '');
+    return classifyDriveError(401, txt);
   }
 
   const boundary = `rowav_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -211,12 +251,10 @@ async function upsertMultipartFile(token, parentId, fileName, mimeType, buffer) 
     body: bodyBuf,
   });
 
-  if (res.status === 403) {
-    return { ok: false, readonly: true };
-  }
   if (!res.ok) {
     const errTxt = await res.text().catch(() => '');
-    return { ok: false, error: `Upload Drive échoué (${res.status}): ${errTxt.slice(0, 150)}` };
+    console.error(`[drive-storage] upsertMultipartFile(${fileName}) failed (${res.status}):`, errTxt.slice(0, 300));
+    return classifyDriveError(res.status, errTxt);
   }
   const uploaded = await res.json();
   return { ok: true, fileId: uploaded.id };
@@ -225,7 +263,7 @@ async function upsertMultipartFile(token, parentId, fileName, mimeType, buffer) 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Google-Drive-Token');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -237,7 +275,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const token = await getDriveRwToken(sa);
+    const saToken = await getDriveRwToken(sa);
 
     // GET /api/drive-storage?fileId=<driveFileId> -> Stream cover image directly from user's Google Drive!
     if (req.method === 'GET') {
@@ -249,7 +287,7 @@ export default async function handler(req, res) {
         `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
           fileId
         )}?alt=media&supportsAllDrives=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${saToken}` } }
       );
       if (!mediaRes.ok) {
         return res.status(mediaRes.status).end();
@@ -274,7 +312,17 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const action = body.action;
-    const rootFolderId = await resolveTargetRootFolderId(token, body.folderId);
+    const rawUserDriveToken =
+      (typeof body.userDriveToken === 'string' && body.userDriveToken.trim()) ||
+      (typeof req.headers['x-google-drive-token'] === 'string' &&
+        req.headers['x-google-drive-token'].trim()) ||
+      '';
+    // Use the user's own OAuth Drive token when provided (so new files are owned by the user
+    // and use their personal 15 Go / 5 To Google Drive quota!). Otherwise fall back to the
+    // Service Account (which can still PATCH files already owned by the user forever!).
+    const writeToken = rawUserDriveToken || saToken;
+
+    const rootFolderId = await resolveTargetRootFolderId(saToken, body.folderId);
     if (!rootFolderId) {
       return res.status(200).json({
         ok: false,
@@ -293,14 +341,14 @@ export default async function handler(req, res) {
       const ext = mimeType.includes('webp') ? 'webp' : mimeType.includes('png') ? 'png' : 'jpg';
       const imgBuf = Buffer.from(match[2], 'base64');
 
-      const dataFolder = await ensureSubFolder(token, rootFolderId, '_Rowav_Data');
+      const dataFolder = await ensureSubFolder(writeToken, rootFolderId, '_Rowav_Data');
       if (!dataFolder.ok) return res.status(200).json(dataFolder);
 
-      const coversFolder = await ensureSubFolder(token, dataFolder.id, 'covers');
+      const coversFolder = await ensureSubFolder(writeToken, dataFolder.id, 'covers');
       if (!coversFolder.ok) return res.status(200).json(coversFolder);
 
       const safeName = `${String(body.name || `cover_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
-      const up = await upsertMultipartFile(token, coversFolder.id, safeName, mimeType, imgBuf);
+      const up = await upsertMultipartFile(writeToken, coversFolder.id, safeName, mimeType, imgBuf);
       if (!up.ok) return res.status(200).json(up);
 
       return res.status(200).json({
@@ -311,7 +359,7 @@ export default async function handler(req, res) {
     }
 
     if (action === 'sync_studio_data') {
-      const dataFolder = await ensureSubFolder(token, rootFolderId, '_Rowav_Data');
+      const dataFolder = await ensureSubFolder(writeToken, rootFolderId, '_Rowav_Data');
       if (!dataFolder.ok) return res.status(200).json(dataFolder);
 
       const backupPayload = {
@@ -327,7 +375,7 @@ export default async function handler(req, res) {
       };
       const jsonBuf = Buffer.from(JSON.stringify(backupPayload, null, 2), 'utf8');
       const upJson = await upsertMultipartFile(
-        token,
+        writeToken,
         dataFolder.id,
         'rowav_studio_backup.json',
         'application/json',
@@ -343,7 +391,7 @@ export default async function handler(req, res) {
     }
 
     if (action === 'load_studio_data') {
-      const dataFolder = await ensureSubFolder(token, rootFolderId, '_Rowav_Data');
+      const dataFolder = await ensureSubFolder(saToken, rootFolderId, '_Rowav_Data');
       if (!dataFolder.ok) return res.status(200).json(dataFolder);
 
       const q = encodeURIComponent(
@@ -351,7 +399,7 @@ export default async function handler(req, res) {
       );
       const searchRes = await fetch(
         `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${saToken}` } }
       );
       if (!searchRes.ok) return res.status(200).json({ ok: false, found: false });
       const searchData = await searchRes.json();
@@ -362,7 +410,7 @@ export default async function handler(req, res) {
         `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
           fileId
         )}?alt=media&supportsAllDrives=true`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${saToken}` } }
       );
       if (!mediaRes.ok) return res.status(200).json({ ok: false, found: false });
       const parsed = await mediaRes.json();

@@ -189,6 +189,27 @@ export async function requestGoogleDriveAccessToken(
   return credential.accessToken;
 }
 
+/**
+ * Requests a read/write Google Drive OAuth access token directly from the user's Google account.
+ * Used to create `_Rowav_Data/` files owned by the user (using their personal Google Drive quota,
+ * e.g. 15 Go / 5 To) so personal "My Drive" folders bypass Google's 0-byte Service Account quota limit.
+ */
+export async function requestGoogleDriveWriteAccessToken(
+  config?: FirebaseUserConfig | null
+): Promise<string> {
+  const bundle = initFirebaseClient(config);
+  if (!bundle) throw new Error('Configuration Firebase manquante');
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive');
+  provider.setCustomParameters({ prompt: 'consent' });
+  const res = await signInWithPopup(bundle.auth, provider, browserPopupRedirectResolver);
+  const credential = GoogleAuthProvider.credentialFromResult(res);
+  if (!credential?.accessToken) {
+    throw new Error('Aucun token Google Drive retourné par Google. Réessaie en autorisant l’accès Drive.');
+  }
+  return credential.accessToken;
+}
+
 /** Requests a read-only Google Calendar OAuth access token via Google Sign-In popup */
 export async function requestGoogleCalendarAccessToken(
   config?: FirebaseUserConfig | null
