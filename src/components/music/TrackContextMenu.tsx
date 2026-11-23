@@ -11,9 +11,11 @@ import {
   ImagePlus,
   Link2,
   ListChecks,
+  ListMusic,
   Music2,
   Pause,
   Play,
+  Plus,
   Share2,
   Star,
   Trash2,
@@ -64,6 +66,9 @@ export function TrackContextMenu({
 }: TrackContextMenuProps) {
   const {
     state,
+    playlists,
+    createPlaylist,
+    toggleTrackInPlaylist,
     renameTrackGroup,
     setTrackGroupCover,
     setTrackGroupFavorite,
@@ -76,7 +81,7 @@ export function TrackContextMenu({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const [openSection, setOpenSection] = useState<'versions' | 'projects' | 'rename' | null>(null);
+  const [openSection, setOpenSection] = useState<'versions' | 'projects' | 'playlists' | 'rename' | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
@@ -570,6 +575,67 @@ export function TrackContextMenu({
               )}
             </div>
           )}
+
+          {/* Add to Hybrid Playlist */}
+          <div>
+            <button
+              type="button"
+              onClick={() =>
+                setOpenSection((s) => (s === 'playlists' ? null : 'playlists'))
+              }
+              className="w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+            >
+              <span className="flex items-center gap-2.5">
+                <ListMusic size={14} className="text-[#FF5500] shrink-0" />
+                <span className="font-medium">Ajouter à une playlist</span>
+              </span>
+              <ChevronRight
+                size={13}
+                className={`text-slate-400 transition-transform ${
+                  openSection === 'playlists' ? 'rotate-90' : ''
+                }`}
+              />
+            </button>
+
+            {openSection === 'playlists' && (
+              <div className="mt-0.5 mb-1 mx-1 rounded-xl bg-slate-50 dark:bg-zinc-900/90 border border-slate-100 dark:border-zinc-800 max-h-36 overflow-y-auto p-1 space-y-0.5">
+                {playlists.map((pl) => {
+                  const inPl = pl.ownTrackIds.includes(track.id);
+                  return (
+                    <button
+                      key={pl.id}
+                      type="button"
+                      onClick={() => {
+                        toggleTrackInPlaylist(pl.id, track.id, 'own');
+                        notify(
+                          inPl
+                            ? `Retiré de la playlist « ${pl.title} »`
+                            : `Ajouté à la playlist « ${pl.title} » ✓`
+                        );
+                      }}
+                      className="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-slate-700 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-800 transition cursor-pointer"
+                    >
+                      <span className="truncate">{pl.title}</span>
+                      {inPl && <Check size={12} className="text-[#FF5500] shrink-0" />}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    createPlaylist({
+                      title: `Playlist ${group.baseTitle}`,
+                      ownTrackIds: [track.id],
+                    });
+                    onClose();
+                  }}
+                  className="w-full flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[#FF5500] font-semibold hover:bg-[#FF5500]/10 transition cursor-pointer"
+                >
+                  <Plus size={12} /> Nouvelle playlist avec ce son
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="my-1 border-t border-slate-100 dark:border-zinc-800/80" />
 

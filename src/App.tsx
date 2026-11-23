@@ -127,6 +127,7 @@ function KoraMusicApp() {
       else if (e.key === '2') setActivePage('library');
       else if (e.key === '3') setActivePage('projects');
       else if (e.key === '4') setActivePage('lyrics');
+      else if (e.key === '5') setActivePage('social');
     };
 
     window.addEventListener('keydown', onKeyDown);

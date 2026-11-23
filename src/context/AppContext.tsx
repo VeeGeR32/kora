@@ -21,9 +21,11 @@ import type {
   LyricsFolder,
   MealEntry,
   MealPreset,
+  MusicPlaylist,
   MusicProject,
   MusicTrack,
   ScheduleEvent,
+  SocialTrackItem,
   TaskItem,
   UserPreferences,
   WeightEntry,
@@ -177,6 +179,7 @@ interface AppContextValue {
     sourceId: string,
     patch: { name?: string; folderInput?: string }
   ) => Promise<{ ok: boolean; error?: string }>;
+  toggleDriveSource: (sourceId: string) => Promise<void>;
   removeDriveSource: (sourceId: string) => Promise<void>;
   syncAllConnectedDrives: (options?: {
     overrideSources?: DriveSource[];
@@ -184,12 +187,28 @@ interface AppContextValue {
     forceRefresh?: boolean;
     onProgress?: (text: string) => void;
   }) => Promise<{ added: number; updated: number; removed: number }>;
+  playlists: MusicPlaylist[];
+  likedSocialTracks: SocialTrackItem[];
+  createPlaylist: (data: {
+    title: string;
+    description?: string;
+    coverDataUrl?: string;
+    coverGradient?: string;
+    ownTrackIds?: string[];
+    socialTrackIds?: string[];
+  }) => string;
+  updatePlaylist: (id: string, patch: Partial<MusicPlaylist>) => void;
+  deletePlaylist: (id: string) => void;
+  toggleTrackInPlaylist: (playlistId: string, trackId: string, kind: 'own' | 'social') => void;
+  toggleLikeSocialTrack: (track: SocialTrackItem, forceLiked?: boolean) => boolean;
+  updateLikedSocialTrackMeta: (trackId: string, patch: Partial<SocialTrackItem>) => void;
   addMusicTrack: (track: Omit<MusicTrack, 'id'>) => string;
   syncMusicTracksBatch: (
     incoming: Omit<MusicTrack, 'id'>[],
     excludedDriveIds?: string[],
     pruneMissingDriveIds?: boolean,
-    allowEmptyPrune?: boolean
+    allowEmptyPrune?: boolean,
+    preservedDriveSourceIds?: string[]
   ) => { added: number; updated: number; removed: number };
   updateMusicTrack: (id: string, patch: Partial<MusicTrack>) => void;
   renameTrackGroup: (trackIds: string[], newTitle: string) => void;
@@ -1298,9 +1317,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       incoming: Omit<MusicTrack, 'id'>[],
       excludedDriveIds?: string[],
       pruneMissingDriveIds = false,
-      allowEmptyPrune = false
+      allowEmptyPrune = false,
+      preservedDriveSourceIds?: string[]
     ) => {
       const excludedSet = new Set(excludedDriveIds || []);
+      const preservedSourceSet = new Set(preservedDriveSourceIds || []);
       const incomingDriveIdSet = new Set(
         incoming.map((it) => it.googleDriveFileId).filter((id): id is string => Boolean(id))
       );
@@ -1309,6 +1330,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const isRemovedExisting = (t: MusicTrack) => {
         if (!t.googleDriveFileId) return false;
+        if (t.driveSourceId && preservedSourceSet.has(t.driveSourceId)) return false;
         if (excludedSet.has(t.googleDriveFileId)) return true;
         if (isExcludedProdName(t.sourceFilename || '') || isExcludedProdName(t.title || '')) {
           return true;
@@ -1496,6 +1518,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return res;
         }
 
+        const activeSources = sources.filter((s) => s.enabled !== false);
+        const disabledSourceIds = sources.filter((s) => s.enabled === false).map((s) => s.id);
+
+        // If all connected Drives are temporarily disabled, keep them saved and skip network scan
+        if (activeSources.length === 0) {
+          saveDriveSources(sources);
+          if (!options?.silent) {
+            notify('Tous les Drives sont actuellement désactivés.');
+          }
+          return { added: 0, updated: 0, removed: 0 };
+        }
+
         if (!perm.configured || !perm.accessToken) {
           if (!options?.silent) {
             notify(perm.error || 'Connexion Google Drive indisponible.');
@@ -1509,7 +1543,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           '',
           (count) => options?.onProgress?.(`${count} MP3 détectés…`),
           12,
-          sources
+          activeSources
         );
         lastDriveAutoSyncAtRef.current = Date.now();
 
@@ -1539,27 +1573,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         });
 
-        // Update per-Drive track count & lastSyncedAt
-        const updatedSources = sources.map((s) => ({
-          ...s,
-          trackCount:
-            s.folderId === 'root' && sources.length === 1
-              ? files.length
-              : countBySource.get(s.id) ?? 0,
-          lastSyncedAt: nowIso,
-        }));
+        // Update per-Drive track count & lastSyncedAt for active sources, preserving disabled ones
+        const updatedSources = sources.map((s) => {
+          if (s.enabled === false) return s;
+          return {
+            ...s,
+            trackCount:
+              s.folderId === 'root' && activeSources.length === 1
+                ? files.length
+                : countBySource.get(s.id) ?? 0,
+            lastSyncedAt: nowIso,
+          };
+        });
         saveDriveSources(updatedSources);
 
         const res = syncMusicTracksBatch(
           payload,
           excludedFileIds,
           true,
-          Boolean(options?.overrideSources)
+          Boolean(options?.overrideSources),
+          disabledSourceIds
         );
 
         if (!options?.silent) {
           if (res.added === 0 && res.updated === 0 && res.removed === 0) {
-            notify(`Synchronisé (${files.length} MP3 sur ${updatedSources.length} Drive) ✓`);
+            notify(`Synchronisé (${files.length} MP3 sur ${activeSources.length} Drive actif${activeSources.length > 1 ? 's' : ''}) ✓`);
           } else {
             const parts: string[] = [];
             if (res.added > 0) parts.push(`+${res.added} ajouté${res.added > 1 ? 's' : ''}`);
@@ -1669,6 +1707,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [resolvedFbConfig, saveDriveSources, syncAllConnectedDrives, notify]
   );
 
+  const toggleDriveSource = useCallback(
+    async (sourceId: string): Promise<void> => {
+      const curSources = latestStateRef.current.preferences.lastSession?.driveSources || [];
+      const target = curSources.find((s) => s.id === sourceId);
+      if (!target) return;
+      const nextEnabled = target.enabled === false ? true : false;
+      const nextSources = curSources.map((s) =>
+        s.id === sourceId ? { ...s, enabled: nextEnabled } : s
+      );
+      saveDriveSources(nextSources);
+      if (nextEnabled) {
+        notify(`Drive « ${target.name} » activé — synchronisation…`);
+        await syncAllConnectedDrives({ overrideSources: nextSources, silent: true });
+      } else {
+        notify(`Drive « ${target.name} » désactivé (conservé dans tes Drives)`);
+      }
+    },
+    [saveDriveSources, syncAllConnectedDrives, notify]
+  );
+
   const removeDriveSource = useCallback(
     async (sourceId: string): Promise<void> => {
       const curSources = latestStateRef.current.preferences.lastSession?.driveSources || [];
@@ -1677,6 +1735,222 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await syncAllConnectedDrives({ overrideSources: nextSources, silent: false });
     },
     [saveDriveSources, syncAllConnectedDrives]
+  );
+
+  const playlists = useMemo<MusicPlaylist[]>(
+    () => state.preferences.lastSession?.playlists || [],
+    [state.preferences.lastSession?.playlists]
+  );
+
+  const likedSocialTracks = useMemo<SocialTrackItem[]>(
+    () => state.preferences.lastSession?.likedSocialTracks || [],
+    [state.preferences.lastSession?.likedSocialTracks]
+  );
+
+  const createPlaylist = useCallback(
+    (data: {
+      title: string;
+      description?: string;
+      coverDataUrl?: string;
+      coverGradient?: string;
+      ownTrackIds?: string[];
+      socialTrackIds?: string[];
+    }) => {
+      const id = uid('pl');
+      const nowIso = new Date().toISOString();
+      const newPl: MusicPlaylist = {
+        id,
+        title: data.title.trim() || 'Nouvelle Playlist',
+        description: data.description?.trim() || undefined,
+        coverDataUrl: data.coverDataUrl || undefined,
+        coverGradient: data.coverGradient || getDeterministicGradientId(data.title || id),
+        ownTrackIds: data.ownTrackIds || [],
+        socialTrackIds: data.socialTrackIds || [],
+        isPublic: true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      setState((prev) => {
+        const curSession: LastSessionState = prev.preferences.lastSession || {
+          activeTab: 'music',
+          savedAt: Date.now(),
+        };
+        const curPlaylists = curSession.playlists || [];
+        return {
+          ...prev,
+          updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+          preferences: {
+            ...prev.preferences,
+            lastSession: {
+              ...curSession,
+              playlists: [newPl, ...curPlaylists],
+              savedAt: Date.now(),
+            },
+          },
+        };
+      });
+      notify(`Playlist « ${newPl.title} » créée`);
+      return id;
+    },
+    [notify]
+  );
+
+  const updatePlaylist = useCallback((id: string, patch: Partial<MusicPlaylist>) => {
+    setState((prev) => {
+      const curSession: LastSessionState = prev.preferences.lastSession || {
+        activeTab: 'music',
+        savedAt: Date.now(),
+      };
+      const curPlaylists = curSession.playlists || [];
+      return {
+        ...prev,
+        updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+        preferences: {
+          ...prev.preferences,
+          lastSession: {
+            ...curSession,
+            playlists: curPlaylists.map((pl) =>
+              pl.id === id ? { ...pl, ...patch, updatedAt: new Date().toISOString() } : pl
+            ),
+            savedAt: Date.now(),
+          },
+        },
+      };
+    });
+  }, []);
+
+  const deletePlaylist = useCallback(
+    (id: string) => {
+      setState((prev) => {
+        const curSession: LastSessionState = prev.preferences.lastSession || {
+          activeTab: 'music',
+          savedAt: Date.now(),
+        };
+        const curPlaylists = curSession.playlists || [];
+        return {
+          ...prev,
+          updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+          preferences: {
+            ...prev.preferences,
+            lastSession: {
+              ...curSession,
+              playlists: curPlaylists.filter((pl) => pl.id !== id),
+              savedAt: Date.now(),
+            },
+          },
+        };
+      });
+      notify('Playlist supprimée');
+    },
+    [notify]
+  );
+
+  const toggleTrackInPlaylist = useCallback(
+    (playlistId: string, trackId: string, kind: 'own' | 'social') => {
+      setState((prev) => {
+        const curSession: LastSessionState = prev.preferences.lastSession || {
+          activeTab: 'music',
+          savedAt: Date.now(),
+        };
+        const curPlaylists = curSession.playlists || [];
+        return {
+          ...prev,
+          updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+          preferences: {
+            ...prev.preferences,
+            lastSession: {
+              ...curSession,
+              playlists: curPlaylists.map((pl) => {
+                if (pl.id !== playlistId) return pl;
+                if (kind === 'own') {
+                  const exists = pl.ownTrackIds.includes(trackId);
+                  return {
+                    ...pl,
+                    ownTrackIds: exists
+                      ? pl.ownTrackIds.filter((id) => id !== trackId)
+                      : [...pl.ownTrackIds, trackId],
+                    updatedAt: new Date().toISOString(),
+                  };
+                } else {
+                  const exists = pl.socialTrackIds.includes(trackId);
+                  return {
+                    ...pl,
+                    socialTrackIds: exists
+                      ? pl.socialTrackIds.filter((id) => id !== trackId)
+                      : [...pl.socialTrackIds, trackId],
+                    updatedAt: new Date().toISOString(),
+                  };
+                }
+              }),
+              savedAt: Date.now(),
+            },
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const toggleLikeSocialTrack = useCallback(
+    (track: SocialTrackItem, forceLiked?: boolean): boolean => {
+      const curList = latestStateRef.current.preferences.lastSession?.likedSocialTracks || [];
+      const alreadyLiked = curList.some((t) => t.id === track.id);
+      const nextLiked = forceLiked !== undefined ? forceLiked : !alreadyLiked;
+
+      setState((prev) => {
+        const curSession: LastSessionState = prev.preferences.lastSession || {
+          activeTab: 'music',
+          savedAt: Date.now(),
+        };
+        const existing = curSession.likedSocialTracks || [];
+        const filtered = existing.filter((t) => t.id !== track.id);
+        const nextList = nextLiked
+          ? [{ ...track, likedByMe: true }, ...filtered]
+          : filtered;
+        return {
+          ...prev,
+          updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+          preferences: {
+            ...prev.preferences,
+            lastSession: {
+              ...curSession,
+              likedSocialTracks: nextList,
+              savedAt: Date.now(),
+            },
+          },
+        };
+      });
+      return nextLiked;
+    },
+    []
+  );
+
+  const updateLikedSocialTrackMeta = useCallback(
+    (trackId: string, patch: Partial<SocialTrackItem>) => {
+      setState((prev) => {
+        const curSession: LastSessionState = prev.preferences.lastSession || {
+          activeTab: 'music',
+          savedAt: Date.now(),
+        };
+        const existing = curSession.likedSocialTracks || [];
+        if (!existing.some((t) => t.id === trackId)) return prev;
+        return {
+          ...prev,
+          updatedAt: Math.max(Date.now(), (prev.updatedAt || 0) + 1),
+          preferences: {
+            ...prev.preferences,
+            lastSession: {
+              ...curSession,
+              likedSocialTracks: existing.map((t) =>
+                t.id === trackId ? { ...t, ...patch } : t
+              ),
+              savedAt: Date.now(),
+            },
+          },
+        };
+      });
+    },
+    []
   );
 
   // Automatic silent Google Drive MP3 sync on every page load / refresh (after cloud hydration)
@@ -2507,10 +2781,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [notify]
   );
 
+  const exposedState = useMemo<AppState>(() => {
+    const disabledIds = new Set(
+      driveSources.filter((s) => s.enabled === false).map((s) => s.id)
+    );
+    if (disabledIds.size === 0) return state;
+    const allDisabled =
+      driveSources.length > 0 && driveSources.every((s) => s.enabled === false);
+    const singleDisabledId =
+      driveSources.length === 1 && driveSources[0].enabled === false
+        ? driveSources[0].id
+        : null;
+    return {
+      ...state,
+      musicTracks: state.musicTracks.filter((t) => {
+        if (!t.googleDriveFileId) return true;
+        if (allDisabled) return false;
+        if (t.driveSourceId && disabledIds.has(t.driveSourceId)) return false;
+        if (!t.driveSourceId && singleDisabledId) return false;
+        return true;
+      }),
+    };
+  }, [state, driveSources]);
+
   return (
     <AppContext.Provider
       value={{
-        state,
+        state: exposedState,
         toast,
         dismissToast,
         notify,
@@ -2581,8 +2878,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         serviceAccountEmail,
         connectDriveSource,
         updateDriveSource,
+        toggleDriveSource,
         removeDriveSource,
         syncAllConnectedDrives,
+        playlists,
+        likedSocialTracks,
+        createPlaylist,
+        updatePlaylist,
+        deletePlaylist,
+        toggleTrackInPlaylist,
+        toggleLikeSocialTrack,
+        updateLikedSocialTrackMeta,
         addMusicTrack,
         syncMusicTracksBatch,
         updateMusicTrack,

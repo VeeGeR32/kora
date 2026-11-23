@@ -3,7 +3,7 @@ import { getGradientClass } from './MiniAudioPlayer';
 interface ProjectCoverArtworkProps {
   title: string;
   projectCoverUrl?: string | null;
-  trackCoverUrls: string[];
+  trackCoverUrls?: string[];
   gradientId?: string;
 }
 
@@ -16,7 +16,7 @@ interface ProjectCoverArtworkProps {
 export function ProjectCoverArtwork({
   title,
   projectCoverUrl,
-  trackCoverUrls,
+  trackCoverUrls = [],
   gradientId,
 }: ProjectCoverArtworkProps) {
   if (projectCoverUrl) {

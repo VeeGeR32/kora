@@ -29,6 +29,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
     autoSyncingDrive,
     connectDriveSource,
     updateDriveSource,
+    toggleDriveSource,
     removeDriveSource,
     syncAllConnectedDrives,
   } = useApp();
@@ -172,24 +173,51 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
               const isEditing = editingId === src.id;
               const isBusyEdit = busyEditId === src.id;
               const isBusyRemove = busyRemoveId === src.id;
+              const isEnabled = src.enabled !== false;
               const driveHref =
                 src.folderId === 'root'
                   ? 'https://drive.google.com/drive/my-drive'
                   : src.url || `https://drive.google.com/drive/folders/${src.folderId}`;
 
               return (
-                <div key={src.id} className="p-3.5 space-y-2.5">
+                <div
+                  key={src.id}
+                  className={`p-3.5 space-y-2.5 transition ${
+                    isEnabled ? '' : 'opacity-65 bg-slate-100/50 dark:bg-zinc-950/40'
+                  }`}
+                >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="h-8 w-8 rounded-xl bg-slate-900/6 dark:bg-zinc-100/8 text-slate-700 dark:text-zinc-200 flex items-center justify-center shrink-0">
+                      <div
+                        className={`h-8 w-8 rounded-xl flex items-center justify-center shrink-0 transition ${
+                          isEnabled
+                            ? 'bg-slate-900/6 dark:bg-zinc-100/8 text-slate-700 dark:text-zinc-200'
+                            : 'bg-slate-200/60 dark:bg-zinc-800/60 text-slate-400 dark:text-zinc-500'
+                        }`}
+                      >
                         <HardDrive size={15} />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                          <p
+                            className={`text-xs font-semibold truncate ${
+                              isEnabled
+                                ? 'text-slate-900 dark:text-zinc-100'
+                                : 'text-slate-500 dark:text-zinc-400 line-through'
+                            }`}
+                          >
                             {src.name}
                           </p>
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                              isEnabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-zinc-600'
+                            }`}
+                          />
+                          {!isEnabled && (
+                            <span className="rounded-md bg-slate-200/80 dark:bg-zinc-800 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                              Désactivé
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-zinc-500">
                           <span className="font-mono">
@@ -210,7 +238,32 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Apple iOS Toggle Switch: Enable / Disable Drive without uninstalling */}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isEnabled}
+                        disabled={autoSyncingDrive}
+                        onClick={() => void toggleDriveSource(src.id)}
+                        title={
+                          isEnabled
+                            ? 'Désactiver temporairement ce Drive sans le désinstaller'
+                            : 'Réactiver ce Drive dans la bibliothèque'
+                        }
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer disabled:opacity-50 ${
+                          isEnabled
+                            ? 'bg-[#FF5500]'
+                            : 'bg-slate-300 dark:bg-zinc-700'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                            isEnabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => (isEditing ? setEditingId(null) : startEdit(src))}
@@ -223,7 +276,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                         type="button"
                         disabled={isBusyRemove || autoSyncingDrive}
                         onClick={() => setConfirmRemoveSource(src)}
-                        title="Déconnecter ce Drive"
+                        title="Déconnecter définitivement ce Drive"
                         className="h-7 w-7 rounded-lg inline-flex items-center justify-center text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 disabled:opacity-40 transition cursor-pointer"
                       >
                         {isBusyRemove ? (

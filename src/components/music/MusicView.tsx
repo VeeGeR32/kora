@@ -4,8 +4,10 @@ import {
   Calendar,
   GitBranch,
   HardDrive,
+  Heart,
   Layers,
   ListChecks,
+  ListMusic,
   Pause,
   Play,
   Plus,
@@ -13,19 +15,24 @@ import {
   Search,
   Shuffle,
   Star,
+  Users,
 } from 'lucide-react';
 import type { MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { DrivePermanentSetupModal, DriveSourcesManager } from './DrivePermanentSetupModal';
 import {
+  getCoverGradientStyle,
   groupMusicTracks,
   parseTrackVersion,
   type TrackGroup,
 } from '../../lib/musicVersioning';
+import { socialTrackToMusicTrack } from '../../lib/socialApi';
 import { LyricsStudio } from './LyricsStudio';
+import { CreatePlaylistModal, PlaylistPage } from './PlaylistModal';
 import { ProjectAlbumModal } from './ProjectAlbumModal';
 import { ProjectCreationModal } from './ProjectCreationModal';
+import { SocialHubView } from './SocialHubView';
 import {
   StudioGlobalContextMenu,
   type StudioContextMenuTarget,
@@ -43,7 +50,7 @@ import {
   resolveTrackRatings,
 } from '../../lib/trackCover';
 
-export type MusicSubTab = 'dashboard' | 'library' | 'projects' | 'lyrics';
+export type MusicSubTab = 'dashboard' | 'library' | 'projects' | 'lyrics' | 'social' | 'profile';
 
 interface MusicViewProps {
   subTab: MusicSubTab;
@@ -71,6 +78,9 @@ export function MusicView({
     lastCloudSyncAt,
     autoSyncingDrive,
     driveSources,
+    playlists,
+    likedSocialTracks,
+    toggleLikeSocialTrack,
     syncAllConnectedDrives,
     updateMusicTrack,
     setTrackGroupFavorite,
@@ -115,6 +125,7 @@ export function MusicView({
     if (navResetNonce === 0) return;
     setShowNewProj(false);
     setOpenProjectId(null);
+    setOpenPlaylistId(null);
     setDetailTarget(null);
     setContextMenu(null);
     setStudioContextMenu(null);
@@ -165,8 +176,11 @@ export function MusicView({
   const [groupVersions, setGroupVersions] = useState(true);
   const [yearFilter, setYearFilter] = useState<string>('all');
 
-  // Full-page Apple Studio project creation modal
+  // Full-page Apple Studio project creation modal & Playlist modal
   const [showNewProj, setShowNewProj] = useState(false);
+  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
+  const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
+  const [socialTargetArtistUid, setSocialTargetArtistUid] = useState<string | null>(null);
   const [openProjectId, setOpenProjectIdState] = useState<string | null>(
     () => state.preferences.lastSession?.openMusicProjectId || null
   );
@@ -642,7 +656,7 @@ export function MusicView({
   };
 
   const hasActiveSubPage = Boolean(
-    isSettingsOpen || isDocsOpen || showNewProj || detailGroup || openProjectId
+    isSettingsOpen || isDocsOpen || showNewProj || detailGroup || openProjectId || openPlaylistId
   );
 
   return (
@@ -721,6 +735,23 @@ export function MusicView({
             });
           }}
         />
+      ) : openPlaylistId ? (
+        <PlaylistPage
+          playlistId={openPlaylistId}
+          onClose={() => setOpenPlaylistId(null)}
+          onOpenOwnTrack={(trackId) => {
+            const grp = trackGroups.find((g) => g.allTrackIds.includes(trackId));
+            if (grp) {
+              setOpenPlaylistId(null);
+              setDetailTarget({ groupKey: grp.groupKey, trackId });
+            }
+          }}
+          onOpenArtistProfile={(artistUid) => {
+            setOpenPlaylistId(null);
+            setSocialTargetArtistUid(artistUid);
+            setSubTab('social');
+          }}
+        />
       ) : null}
 
       {!hasActiveSubPage && (
@@ -728,7 +759,18 @@ export function MusicView({
       {/* Section Header + Compact Drive Sync */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
-          {({ dashboard: 'Accueil', library: 'Sons', projects: 'Projets', lyrics: 'Textes' } as Record<MusicSubTab, string>)[subTab]}
+          {
+            (
+              {
+                dashboard: 'Accueil',
+                library: 'Sons',
+                projects: 'Projets',
+                lyrics: 'Textes',
+                social: 'Communauté & Social',
+                profile: 'Mon Profil & Portfolio',
+              } as Record<MusicSubTab, string>
+            )[subTab]
+          }
         </h1>
           {/* Ultra-compact Sync & Multi-Drive Controls */}
           <div className="flex items-center gap-1.5">
@@ -1025,6 +1067,226 @@ export function MusicView({
           </section>
 
           {renderProjectsSection(true)}
+
+          {/* ===== FEATURED SECTION 4: SONS LIKÉS (COMMUNAUTÉ KORA SOCIAL) ===== */}
+          <section className="space-y-3 pt-1">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Heart size={15} className="text-rose-500" fill="currentColor" />
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                  Sons likés · Communauté
+                </h2>
+                {likedSocialTracks.length > 0 && (
+                  <span className="font-mono text-[11px] text-slate-400">
+                    ({likedSocialTracks.length})
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {likedSocialTracks.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const q = likedSocialTracks.map(socialTrackToMusicTrack);
+                      if (q.length > 0) void player.playShuffled(q);
+                    }}
+                    title="Lecture aléatoire des sons likés"
+                    className="h-8 w-8 rounded-full inline-flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                  >
+                    <Shuffle size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSubTab('social')}
+                  className="text-xs font-medium text-[#FF5500] hover:underline cursor-pointer"
+                >
+                  Explorer la communauté →
+                </button>
+              </div>
+            </div>
+
+            {likedSocialTracks.length === 0 ? (
+              <div className="tempo-card rounded-2xl px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <p className="text-xs text-slate-400">
+                  Découvre les projets des autres artistes sur <strong>Kora Social</strong> — tous les sons que tu likes (<span className="text-rose-500 font-semibold">♥</span>) apparaissent ici et peuvent être ajoutés à tes playlists.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSubTab('social')}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+                >
+                  <Users size={12} /> Découvrir les sons
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {likedSocialTracks.slice(0, 6).map((soc) => {
+                  const playable = socialTrackToMusicTrack(soc);
+                  const isCurrent = player.currentTrack?.id === playable.id;
+                  const isPlayingThis = isCurrent && player.isPlaying;
+                  const queue = likedSocialTracks.map(socialTrackToMusicTrack);
+
+                  return (
+                    <div
+                      key={soc.id}
+                      onClick={() => {
+                        if (isCurrent) {
+                          player.togglePlay();
+                        } else {
+                          void player.playTrack(playable, 0, queue);
+                        }
+                      }}
+                      className={`tempo-card rounded-2xl p-3.5 flex items-center justify-between gap-3 transition cursor-pointer ${
+                        isCurrent
+                          ? 'ring-1 ring-[#FF5500] bg-[#FF5500]/5'
+                          : 'hover:border-slate-300 dark:hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className="relative h-12 w-12 rounded-xl overflow-hidden shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-xs"
+                          style={getCoverGradientStyle(soc.coverGradient)}
+                        >
+                          {soc.coverUrl ? (
+                            <img
+                              src={soc.coverUrl}
+                              alt={soc.title}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            soc.title.slice(0, 2).toUpperCase()
+                          )}
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white">
+                            {isPlayingThis ? (
+                              <Pause size={15} fill="currentColor" />
+                            ) : (
+                              <Play size={15} fill="currentColor" className="ml-0.5" />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p
+                            className={`text-xs font-bold truncate ${
+                              isCurrent ? 'text-[#FF5500]' : 'text-slate-900 dark:text-zinc-100'
+                            }`}
+                          >
+                            {soc.title}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 truncate">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSocialTargetArtistUid(soc.ownerUid);
+                                setSubTab('social');
+                              }}
+                              className="hover:text-[#FF5500] hover:underline truncate cursor-pointer"
+                            >
+                              {soc.artist}
+                            </button>
+                            {soc.myRating && (
+                              <>
+                                <span>·</span>
+                                <span className="font-mono text-[#FF5500] font-semibold">
+                                  ★ {soc.myRating}/10
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLikeSocialTrack(soc, false);
+                          notify(`« ${soc.title} » retiré des sons likés`);
+                        }}
+                        title="Retirer des sons likés"
+                        className="h-8 w-8 rounded-full bg-rose-500/10 text-rose-500 inline-flex items-center justify-center shrink-0 hover:bg-rose-500/20 transition cursor-pointer"
+                      >
+                        <Heart size={13} fill="currentColor" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* ===== FEATURED SECTION 5: MES PLAYLISTS (MES SONS + SONS LIKÉS) ===== */}
+          <section className="space-y-3.5 pt-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ListMusic size={15} className="text-[#FF5500]" />
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                  Mes Playlists
+                </h2>
+                {playlists.length > 0 && (
+                  <span className="font-mono text-[11px] text-slate-400">
+                    ({playlists.length})
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreatePlaylist(true)}
+                className="inline-flex items-center gap-1 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer"
+              >
+                <Plus size={12} /> Nouvelle playlist
+              </button>
+            </div>
+
+            {playlists.length === 0 ? (
+              <div className="tempo-card rounded-2xl px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <p className="text-xs text-slate-400">
+                  Crée des playlists hybrides en mélangeant <strong>tes propres sons</strong> et <strong>les sons que tu as likés</strong> dans la communauté.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePlaylist(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500] text-white px-3.5 py-1.5 text-xs font-semibold shrink-0 cursor-pointer"
+                >
+                  <Plus size={12} /> Créer une playlist
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
+                {playlists.map((pl) => {
+                  const totalTracks = pl.ownTrackIds.length + pl.socialTrackIds.length;
+                  return (
+                    <div
+                      key={pl.id}
+                      onClick={() => setOpenPlaylistId(pl.id)}
+                      className="group cursor-pointer space-y-2"
+                    >
+                      <div className="relative aspect-square w-full rounded-[24px] overflow-hidden shadow-md border border-slate-200/70 dark:border-zinc-800/80 transition group-hover:scale-[1.015]">
+                        <ProjectCoverArtwork
+                          title={pl.title}
+                          projectCoverUrl={pl.coverDataUrl}
+                          gradientId={pl.coverGradient}
+                        />
+                        <span className="absolute top-2.5 left-2.5 rounded-full bg-black/40 backdrop-blur-md px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white">
+                          Playlist
+                        </span>
+                      </div>
+                      <div className="px-0.5">
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                          {pl.title}
+                        </h3>
+                        <p className="text-xs text-slate-400 dark:text-zinc-500 truncate font-mono">
+                          {totalTracks} son{totalTracks > 1 ? 's' : ''} ({pl.ownTrackIds.length} perso · {pl.socialTrackIds.length} likés)
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </div>
       )}
 
@@ -1298,8 +1560,29 @@ export function MusicView({
           }}
         />
       )}
+
+      {/* ================= TAB 4 & 5: KORA SOCIAL & PROFIL ARTISTE PORTFOLIO ================= */}
+      {(subTab === 'social' || subTab === 'profile') && (
+        <SocialHubView
+          initialMode={subTab === 'profile' ? 'profile' : 'discover'}
+          initialArtistUid={
+            subTab === 'profile' ? null : socialTargetArtistUid
+          }
+          onOpenOwnProject={(projId) => setOpenProjectId(projId)}
+          onOpenPlaylist={(plId) => setOpenPlaylistId(plId)}
+        />
+      )}
         </>
       )}
+
+      <CreatePlaylistModal
+        open={showCreatePlaylist}
+        onClose={() => setShowCreatePlaylist(false)}
+        onCreated={(newPlaylistId) => {
+          setShowCreatePlaylist(false);
+          setOpenPlaylistId(newPlaylistId);
+        }}
+      />
 
       {/* ================= CONTEXT MENU & UTILITY MODALS ================= */}
       <TrackContextMenu

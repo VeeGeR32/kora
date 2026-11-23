@@ -382,7 +382,7 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
   }
   if (p.lastSession && typeof p.lastSession === 'object' && p.lastSession.activeTab) {
     const validTabs = ['today', 'planning', 'studies', 'sport', 'music'] as const;
-    const validMusicSub = ['dashboard', 'library', 'projects', 'lyrics'] as const;
+    const validMusicSub = ['dashboard', 'library', 'projects', 'lyrics', 'social', 'profile'] as const;
     const validSportSub = ['gym', 'nutrition', 'poids'] as const;
     const validStudiesSub = ['exams', 'cursus', 'docs', 'pronote'] as const;
     const ls = p.lastSession;
@@ -419,6 +419,12 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     }
     if (Array.isArray(ls.driveSources)) {
       cleanSession.driveSources = ls.driveSources.slice(0, 25);
+    }
+    if (Array.isArray(ls.playlists)) {
+      cleanSession.playlists = ls.playlists.slice(0, 80);
+    }
+    if (Array.isArray(ls.likedSocialTracks)) {
+      cleanSession.likedSocialTracks = ls.likedSocialTracks.slice(0, 300);
     }
     cleanPreferences.lastSession = cleanSession;
   }

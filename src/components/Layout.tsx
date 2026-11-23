@@ -14,6 +14,7 @@ import {
   Settings,
   Sun,
   Undo2,
+  Users,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
@@ -41,6 +42,7 @@ const NAV_ITEMS: {
   { id: 'library', label: 'Sons', mobileLabel: 'Sons', shortcut: '2', icon: ListMusic },
   { id: 'projects', label: 'Projets', mobileLabel: 'Projets', shortcut: '3', icon: Disc3 },
   { id: 'lyrics', label: 'Textes', mobileLabel: 'Textes', shortcut: '4', icon: FileText },
+  { id: 'social', label: 'Social', mobileLabel: 'Social', shortcut: '5', icon: Users },
 ];
 
 export function Layout({ activePage, onPageChange, children }: LayoutProps) {
@@ -210,9 +212,10 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
         <div className="space-y-2.5 pt-4 border-t border-slate-100 dark:border-zinc-800/80 min-w-[208px]">
           <button
             type="button"
-            onClick={() => onPageChange('settings')}
+            onClick={() => onPageChange('profile')}
+            title="Mon Profil Artiste, Stats & Portfolio"
             className={`w-full flex items-center gap-2.5 rounded-xl p-1.5 transition cursor-pointer text-left ${
-              activePage === 'settings'
+              activePage === 'profile'
                 ? 'bg-slate-100 dark:bg-zinc-800/85'
                 : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800/60'
             }`}
@@ -246,10 +249,10 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
             )}
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold truncate text-slate-900 dark:text-zinc-100">
-                {state.preferences.name || cloudUser?.displayName || 'Se connecter'}
+                {state.preferences.name || cloudUser?.displayName || 'Mon Profil'}
               </p>
               <p className="text-[10px] text-slate-400 truncate">
-                {state.preferences.bio || (cloudUser ? 'Cloud synchronisé' : 'Profil & Cloud')}
+                Portfolio & Stats · Spotify
               </p>
             </div>
           </button>

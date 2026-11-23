@@ -765,3 +765,20 @@ export function reconcileProjectTrackVersions(
     changed: true,
   };
 }
+
+export const COVER_GRADIENTS: Array<{ id: string; label: string; from: string; to: string }> = [
+  { id: 'sunset', label: 'Kora Orange', from: '#FF5500', to: '#9A3412' },
+  { id: 'violet', label: 'Studio Dark', from: '#27272A', to: '#09090B' },
+  { id: 'ocean', label: 'Ocean Slate', from: '#334155', to: '#0F172A' },
+  { id: 'emerald', label: 'Emerald Mix', from: '#059669', to: '#064E3B' },
+  { id: 'amber', label: 'Warm Amber', from: '#D97706', to: '#78350F' },
+  { id: 'rose', label: 'Velvet Rose', from: '#E11D48', to: '#881337' },
+];
+
+export function getCoverGradientStyle(gradientId?: string): { background: string } {
+  const found =
+    COVER_GRADIENTS.find((g) => g.id === gradientId) || COVER_GRADIENTS[0];
+  return {
+    background: `linear-gradient(135deg, ${found.from}, ${found.to})`,
+  };
+}

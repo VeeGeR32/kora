@@ -12,6 +12,7 @@ import {
   Eye,
   EyeOff,
   GitBranch,
+  Globe,
   GripVertical,
   Link2,
   ListChecks,
@@ -37,6 +38,7 @@ import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import { CheckCircle } from '../ui/CheckCircle';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { postSocialAction } from '../../lib/socialApi';
 import { triggerHapticTick } from '../../lib/haptics';
 import {
   countLyricsFixTags,
@@ -967,6 +969,59 @@ export function ProjectAlbumModal({
                     <img src={heroCoverUrl} alt="" className="h-full w-full object-cover" />
                   </button>
                 )}
+                <button
+                  type="button"
+                  disabled={sharing}
+                  onClick={async () => {
+                    setSharing(true);
+                    try {
+                      const tracksPayload = projectTracks.map((trk) => {
+                        const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+                        return {
+                          id: trk.id,
+                          title: grp?.baseTitle || trk.manualGroupTitle || trk.title,
+                          artist: trk.artist || artistName,
+                          versionLabel: grp?.latestVersionLabel,
+                          coverGradient: trk.coverGradient || project.coverGradient || 'sunset',
+                          durationSec: trk.durationSec || 155,
+                          bpm: trk.bpm,
+                          mood: trk.mood,
+                        };
+                      });
+                      const res = await postSocialAction(
+                        {
+                          action: 'publish_project',
+                          userName: artistName,
+                          userBio: state.preferences.bio,
+                          project: {
+                            id: project.id,
+                            title: project.title,
+                            kind: project.kind,
+                            description: project.notes || '',
+                            coverUrl: project.coverDataUrl,
+                            coverGradient: project.coverGradient || 'sunset',
+                            releaseDate:
+                              project.targetReleaseDate || new Date().toISOString().slice(0, 10),
+                            tracks: tracksPayload,
+                          },
+                        },
+                        state.preferences.firebaseConfig
+                      );
+                      if (res.ok) {
+                        notify(`Projet « ${project.title} » publié sur Kora Social & ton Portfolio ✓`);
+                      } else {
+                        notify(res.error || 'Impossible de publier sur Kora Social');
+                      }
+                    } finally {
+                      setSharing(false);
+                    }
+                  }}
+                  title="Publier ce projet sur la communauté Kora Social et ton Portfolio Artiste"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[#FF5500]/12 hover:bg-[#FF5500]/20 text-[#FF5500] px-3 py-1.5 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                >
+                  <Globe size={13} />
+                  <span>Publier sur Social</span>
+                </button>
                 <button
                   type="button"
                   disabled={sharing}

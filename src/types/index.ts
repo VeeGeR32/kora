@@ -464,14 +464,101 @@ export interface DriveSource {
   folderId: string; // Google Drive folder ID, or 'root' for all shared folders
   name: string;
   url?: string;
+  enabled?: boolean; // default true when undefined; false temporarily disables/hides this Drive without uninstalling
   trackCount?: number;
   lastSyncedAt?: string;
   addedAt: string;
 }
 
+export interface SocialTrackItem {
+  id: string;
+  ownerUid: string;
+  ownerName: string;
+  ownerAvatarUrl?: string;
+  projectId?: string;
+  projectTitle?: string;
+  title: string;
+  artist: string;
+  versionLabel?: string;
+  coverUrl?: string;
+  coverGradient?: string;
+  audioUrl: string;
+  durationSec?: number;
+  bpm?: number;
+  mood?: TrackMood;
+  likesCount?: number;
+  likedByMe?: boolean;
+  ratingAvg?: number;
+  ratingCount?: number;
+  myRating?: number;
+  publishedAt: string;
+}
+
+export interface SocialProjectItem {
+  id: string;
+  sourceProjectId?: string;
+  ownerUid: string;
+  ownerName: string;
+  ownerAvatarUrl?: string;
+  title: string;
+  kind: ProjectKind;
+  description?: string;
+  coverUrl?: string;
+  coverGradient?: string;
+  releaseDate?: string;
+  tracks: SocialTrackItem[];
+  likesCount: number;
+  likedByMe?: boolean;
+  publishedAt: string;
+}
+
+export interface SocialArtistProfile {
+  uid: string;
+  name: string;
+  handle: string;
+  bio: string;
+  avatarUrl?: string;
+  coverGradient?: string;
+  location?: string;
+  genres?: string[];
+  followersCount: number;
+  followingCount: number;
+  isFollowedByMe?: boolean;
+  totalLikes: number;
+  averageRating: number;
+  ratingsCount: number;
+  projectsCount: number;
+  tracksCount: number;
+  updatedAt: string;
+}
+
+export interface SocialDirectMessage {
+  id: string;
+  fromUid: string;
+  fromName: string;
+  fromAvatarUrl?: string;
+  toUid: string;
+  toName: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface MusicPlaylist {
+  id: string;
+  title: string;
+  description?: string;
+  coverDataUrl?: string;
+  coverGradient?: string;
+  ownTrackIds: string[];
+  socialTrackIds: string[];
+  isPublic?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LastSessionState {
   activeTab: ActiveTab;
-  musicSubTab?: 'dashboard' | 'library' | 'projects' | 'lyrics';
+  musicSubTab?: 'dashboard' | 'library' | 'projects' | 'lyrics' | 'social' | 'profile';
   sportSubTab?: 'gym' | 'nutrition' | 'poids';
   studiesSubTab?: 'exams' | 'cursus' | 'docs' | 'pronote';
   openMusicProjectId?: string;
@@ -482,6 +569,8 @@ export interface LastSessionState {
   scrollY?: number;
   livePlayback?: LivePlaybackState | null;
   driveSources?: DriveSource[];
+  playlists?: MusicPlaylist[];
+  likedSocialTracks?: SocialTrackItem[];
   savedAt: number; // epoch ms
 }
 
