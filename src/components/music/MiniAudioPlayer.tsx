@@ -365,7 +365,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-slate-900 dark:bg-white" />
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
         </div>
       )),
     [bars]
@@ -379,7 +379,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-slate-900/20 dark:bg-white/25" />
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25" />
         </div>
       )),
     [bars]
@@ -393,7 +393,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${MINI_BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-slate-900 dark:bg-white/95" />
+          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
         </div>
       )),
     [miniBars]
@@ -407,7 +407,7 @@ export function MiniAudioPlayer() {
           style={{ width: `${MINI_BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-slate-900/20 dark:bg-white/25" />
+          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25" />
         </div>
       )),
     [miniBars]
@@ -572,7 +572,7 @@ export function MiniAudioPlayer() {
             className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-24 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-white/95 dark:bg-[#141010]/96 text-slate-900 dark:text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color,background-color] duration-300 ease-out overflow-hidden ${
               isRemotePlayback
                 ? 'border-emerald-500/45 dark:border-emerald-400/45 shadow-[0_14px_34px_-10px_rgba(16,185,129,0.22)] dark:shadow-[0_14px_38px_-8px_rgba(16,185,129,0.28)]'
-                : 'border-slate-200/90 dark:border-white/10 shadow-[0_14px_34px_-10px_rgba(15,23,42,0.18)] dark:shadow-[0_14px_38px_-8px_rgba(0,0,0,0.6)]'
+                : 'border-[#8C271E]/30 dark:border-[#8C271E]/45 shadow-[0_14px_34px_-10px_rgba(140,39,30,0.22)] dark:shadow-[0_14px_38px_-8px_rgba(140,39,30,0.32)]'
             }`}
           >
             <div className="flex items-center justify-between gap-2">
@@ -1240,7 +1240,7 @@ export function MiniAudioPlayer() {
                               }}
                               className={`w-full flex items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                                 active
-                                  ? 'bg-slate-900/8 dark:bg-white/14 text-slate-950 dark:text-white'
+                                  ? 'bg-[#8C271E]/12 dark:bg-[#8C271E]/28 text-[#8C271E] dark:text-[#F08B82] font-semibold'
                                   : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8 hover:text-slate-900 dark:hover:text-zinc-100'
                               }`}
                             >
@@ -1327,7 +1327,7 @@ export function MiniAudioPlayer() {
                           }}
                           className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                             active
-                              ? 'bg-slate-900/8 dark:bg-white/14 text-slate-950 dark:text-white'
+                              ? 'bg-[#8C271E]/12 dark:bg-[#8C271E]/28 text-[#8C271E] dark:text-[#F08B82] font-semibold'
                               : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8 hover:text-slate-900 dark:hover:text-zinc-200'
                           }`}
                         >

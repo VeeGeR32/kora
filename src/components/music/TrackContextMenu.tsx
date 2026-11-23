@@ -295,7 +295,7 @@ export function TrackContextMenu({
                 />
                 <button
                   type="submit"
-                  className="h-6 px-2 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 text-[10px] font-semibold cursor-pointer shrink-0"
+                  className="h-6 px-2 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 text-[10px] font-semibold cursor-pointer shrink-0"
                 >
                   OK
                 </button>
@@ -443,7 +443,7 @@ export function TrackContextMenu({
                         }}
                         className={`w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition cursor-pointer ${
                           selected
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 font-semibold'
                             : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-800'
                         }`}
                       >

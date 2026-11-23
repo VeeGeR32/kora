@@ -1235,7 +1235,7 @@ export function ProjectAlbumModal({
                           onClick={() => setAddTrackSort(id)}
                           className={`rounded-lg px-2 py-0.5 text-[10px] font-medium transition cursor-pointer ${
                             addTrackSort === id
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                               : 'text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200'
                           }`}
                         >
@@ -1312,7 +1312,7 @@ export function ProjectAlbumModal({
                               <button
                                 type="button"
                                 onClick={() => handleAddTrackToProject(g.latestTrack.id)}
-                                className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[10px] font-semibold hover:opacity-90 transition cursor-pointer"
+                                className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-2.5 py-1 text-[10px] font-semibold hover:opacity-90 transition cursor-pointer"
                               >
                                 {isLocked ? (
                                   <>
@@ -1650,7 +1650,7 @@ export function ProjectAlbumModal({
                                   }}
                                   className={`w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition cursor-pointer ${
                                     selected
-                                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 font-semibold'
                                       : 'bg-white dark:bg-zinc-950/70 border border-slate-200/70 dark:border-zinc-800/80 text-slate-700 dark:text-zinc-200 hover:border-slate-400 dark:hover:border-zinc-600'
                                   }`}
                                 >
@@ -1699,7 +1699,7 @@ export function ProjectAlbumModal({
                                   setOpenTrackMenuId(null);
                                   onOpenTrackDetails(trk.id);
                                 }}
-                                className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
+                                className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
                               >
                                 Page du son
                               </button>
@@ -1728,7 +1728,7 @@ export function ProjectAlbumModal({
                               }}
                               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium cursor-pointer transition ${
                                 renamingTrackId === trk.id
-                                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                                  ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                                   : 'bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-300'
                               }`}
                             >
@@ -1794,7 +1794,7 @@ export function ProjectAlbumModal({
                               />
                               <button
                                 type="submit"
-                                className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1.5 text-xs font-semibold cursor-pointer shrink-0"
+                                className="rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-3 py-1.5 text-xs font-semibold cursor-pointer shrink-0"
                               >
                                 OK
                               </button>
@@ -1895,7 +1895,7 @@ export function ProjectAlbumModal({
                                   type="button"
                                   onClick={() => handleRestoreFromBench(trk.id)}
                                   title="Remettre dans la tracklist"
-                                  className="inline-flex items-center gap-1 rounded-lg bg-slate-200/70 dark:bg-zinc-800 px-2 py-1 text-[10px] font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-950 transition cursor-pointer"
+                                  className="inline-flex items-center gap-1 rounded-lg bg-slate-200/70 dark:bg-zinc-800 px-2 py-1 text-[10px] font-semibold text-slate-700 dark:text-zinc-200 hover:bg-[#8C271E] hover:text-white transition cursor-pointer"
                                 >
                                   <ArrowUp size={10} /> Remettre
                                 </button>
@@ -1945,7 +1945,7 @@ export function ProjectAlbumModal({
 
               <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 overflow-hidden">
                 <div
-                  className="h-full bg-slate-900 dark:bg-zinc-100 rounded-full transition-all duration-300"
+                  className="h-full bg-[#8C271E] rounded-full transition-all duration-300"
                   style={{ width: `${todoPct}%` }}
                 />
               </div>
@@ -2030,7 +2030,7 @@ export function ProjectAlbumModal({
                 {todoInput.trim() && (
                   <button
                     type="submit"
-                    className="rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2.5 text-xs font-semibold cursor-pointer"
+                    className="rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2.5 text-xs font-semibold cursor-pointer"
                   >
                     Ajouter
                   </button>

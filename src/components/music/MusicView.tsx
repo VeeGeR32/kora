@@ -734,11 +734,17 @@ export function MusicView({
   return (
     <div className="space-y-5 pb-14">
       {/* Persistent Top Section Header + Compact Drive Sync (ALWAYS visible across every page & sub-page!) */}
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
-          {headerTitle}
-        </h1>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between gap-3 pb-1 border-b border-[#8C271E]/15 dark:border-[#8C271E]/25">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span
+            aria-hidden="true"
+            className="h-6 sm:h-7 w-1.5 rounded-full bg-[#8C271E] shrink-0 shadow-xs shadow-[#8C271E]/40"
+          />
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50 truncate">
+            {headerTitle}
+          </h1>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => setPermanentSetupOpen(true)}
@@ -746,10 +752,10 @@ export function MusicView({
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition cursor-pointer ${
               driveSources.length === 0
                 ? 'bg-[#8C271E] text-white font-semibold hover:bg-[#A32E24] shadow-xs shadow-[#8C271E]/25'
-                : 'border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50 hover:text-slate-900 dark:hover:text-zinc-100'
+                : 'border border-[#8C271E]/25 dark:border-[#8C271E]/40 bg-white dark:bg-[#191111] text-slate-700 dark:text-zinc-200 hover:bg-[#8C271E]/8 hover:border-[#8C271E]/55'
             }`}
           >
-            <HardDrive size={11} />
+            <HardDrive size={11} className={driveSources.length > 0 ? 'text-[#8C271E] dark:text-[#E56B5F]' : ''} />
             <span>
               {driveSources.length === 0
                 ? 'Connecter un Drive'
@@ -761,11 +767,15 @@ export function MusicView({
             disabled={syncingDrive || autoSyncingDrive}
             onClick={() => void handleSyncAllDrive(true)}
             title="Synchroniser tous les Google Drives connectés"
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/90 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-[#8C271E]/50 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 disabled:opacity-50 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#8C271E]/25 dark:border-[#8C271E]/40 bg-white dark:bg-[#191111] hover:bg-[#8C271E]/8 hover:border-[#8C271E]/55 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-zinc-200 disabled:opacity-50 transition cursor-pointer"
           >
             <RefreshCw
               size={11}
-              className={syncingDrive || autoSyncingDrive ? 'animate-spin text-[#8C271E]' : ''}
+              className={
+                syncingDrive || autoSyncingDrive
+                  ? 'animate-spin text-[#8C271E] dark:text-[#E56B5F]'
+                  : 'text-[#8C271E] dark:text-[#E56B5F]'
+              }
             />
             <span>{syncingDrive || autoSyncingDrive ? 'Sync…' : 'Sync'}</span>
             {driveSources.length > 0 && !syncingDrive && !autoSyncingDrive && (
@@ -1088,7 +1098,7 @@ export function MusicView({
                         ? setPermanentSetupOpen(true)
                         : void handleSyncAllDrive(true)
                     }
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2 text-xs font-semibold cursor-pointer"
                   >
                     <RefreshCw size={13} className={syncingDrive || autoSyncingDrive ? 'animate-spin' : ''} />
                     {driveSources.length === 0 ? 'Connecter un Google Drive' : 'Synchroniser Google Drive'}

@@ -85,7 +85,7 @@ export function DocumentationPage({
           <button
             type="button"
             onClick={onOpenDriveManager}
-            className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3.5 py-1.5 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-3.5 py-1.5 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
           >
             <HardDrive size={12} />
             <span>Drives ({driveSources.length})</span>
@@ -112,7 +112,7 @@ export function DocumentationPage({
               onClick={() => setActiveSection(sec.id)}
               className={`rounded-full px-3 py-1.5 text-xs font-semibold transition cursor-pointer shrink-0 ${
                 active
-                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 shadow-2xs'
+                  ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 shadow-2xs'
                   : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
               }`}
             >
@@ -127,7 +127,7 @@ export function DocumentationPage({
         <section className="tempo-card rounded-3xl p-5 sm:p-6 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+              <div className="h-9 w-9 rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
                 <HardDrive size={17} />
               </div>
               <div>
@@ -203,7 +203,7 @@ export function DocumentationPage({
                 type="button"
                 disabled={!serviceAccountEmail}
                 onClick={() => void handleCopyEmail()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-40 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-3 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-40 cursor-pointer"
               >
                 {copiedEmail ? <Check size={13} /> : <Copy size={13} />}
                 {copiedEmail ? 'Email copié ✓' : 'Copier l’email'}
@@ -224,7 +224,7 @@ export function DocumentationPage({
       {show('naming') && (
         <section className="tempo-card rounded-3xl p-5 sm:p-6 space-y-4">
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+            <div className="h-9 w-9 rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
               <GitBranch size={17} />
             </div>
             <div>
@@ -302,7 +302,7 @@ export function DocumentationPage({
       {show('workflow') && (
         <section className="tempo-card rounded-3xl p-5 sm:p-6 space-y-4">
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+            <div className="h-9 w-9 rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
               <TrendingUp size={17} />
             </div>
             <div>
@@ -386,7 +386,7 @@ export function DocumentationPage({
         <section className="tempo-card rounded-3xl p-5 sm:p-6 space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+              <div className="h-9 w-9 rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
                 <Disc3 size={17} />
               </div>
               <div>
@@ -456,7 +456,7 @@ export function DocumentationPage({
         <section className="tempo-card rounded-3xl p-5 sm:p-6 space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+              <div className="h-9 w-9 rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
                 <FileText size={17} />
               </div>
               <div>
@@ -492,7 +492,7 @@ export function DocumentationPage({
             </div>
 
             <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/35 p-3.5 space-y-1.5">
-              <span className="inline-flex items-center gap-1 rounded-md bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2 py-0.5 text-[10px] font-semibold">
+              <span className="inline-flex items-center gap-1 rounded-md bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-2 py-0.5 text-[10px] font-semibold">
                 <Music2 size={10} /> Instru
               </span>
               <p className="font-semibold text-slate-900 dark:text-zinc-100">
@@ -522,7 +522,7 @@ export function DocumentationPage({
       {show('player') && (
         <section className="tempo-card rounded-3xl p-5 sm:p-6 space-y-4">
           <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+            <div className="h-9 w-9 rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
               <Smartphone size={17} />
             </div>
             <div>

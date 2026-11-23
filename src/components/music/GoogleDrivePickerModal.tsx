@@ -289,7 +289,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
               <div className="flex items-center gap-2.5">
-                <div className="h-8 w-8 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center">
+                <div className="h-8 w-8 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center">
                   <HardDrive size={15} />
                 </div>
                 <div>
@@ -331,7 +331,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                     type="button"
                     disabled={loading}
                     onClick={() => void handleConnectDrive(false)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2.5 text-xs font-semibold hover:opacity-92 cursor-pointer disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2.5 text-xs font-semibold hover:opacity-92 cursor-pointer disabled:opacity-50"
                   >
                     {loading ? <Loader2 size={14} className="animate-spin" /> : <HardDrive size={14} />}
                     Autoriser Google Drive
@@ -385,7 +385,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                           onClick={() => handleSelectSort('date')}
                           className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
                             sortBy === 'date'
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                               : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200'
                           }`}
                         >
@@ -396,7 +396,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                           onClick={() => handleSelectSort('name')}
                           className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
                             sortBy === 'name'
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                               : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200'
                           }`}
                         >
@@ -412,7 +412,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                           onClick={() => handleSelectSort('size')}
                           className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
                             sortBy === 'size'
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                               : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:hover:text-zinc-200'
                           }`}
                         >
@@ -456,7 +456,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                               <div
                                 className={`h-5 w-5 rounded-md border flex items-center justify-center shrink-0 transition ${
                                   selected
-                                    ? 'bg-slate-900 dark:bg-zinc-100 border-slate-900 dark:border-zinc-100 text-white dark:text-zinc-950'
+                                    ? 'bg-[#8C271E] border-[#8C271E] text-white'
                                     : 'border-slate-300 dark:border-zinc-700'
                                 }`}
                               >
@@ -498,7 +498,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                       type="button"
                       disabled={importing || loading}
                       onClick={handleSyncAllInstant}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:opacity-90 px-3.5 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer transition"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 hover:opacity-90 px-3.5 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer transition"
                     >
                       <CloudDownload size={13} />
                       Tout charger ({sortedFiles.length})
@@ -517,7 +517,7 @@ export function GoogleDrivePickerModal({ open, onClose }: GoogleDrivePickerModal
                       type="button"
                       disabled={importing}
                       onClick={() => void handleImportSelected()}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
                     >
                       {importing ? <Loader2 size={13} className="animate-spin" /> : <CloudDownload size={13} />}
                       Importer ({selectedIds.size})

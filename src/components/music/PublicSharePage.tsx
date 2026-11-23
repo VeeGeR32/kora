@@ -102,7 +102,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
             ? `${payload.project.title} · ${payload.artist}`
             : payload.tracks[0]
             ? `${payload.tracks[0].title} · ${payload.artist}`
-            : 'Kora Music';
+            : 'Rowav Music Studio';
       })
       .catch((err) => {
         if (active) setError((err as Error).message || 'Lien invalide.');
@@ -138,7 +138,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
           style={{ width: `${BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-white" />
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#E04F42]" />
         </div>
       )),
     [bars]
@@ -152,7 +152,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
           style={{ width: `${BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-white/25" />
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#E04F42]/28" />
         </div>
       )),
     [bars]
@@ -462,7 +462,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
               </div>
             </div>
 
-            <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.85)] z-30" />
+            <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-[#E04F42] shadow-[0_0_10px_rgba(140,39,30,0.85)] z-30" />
           </div>
 
           <p
@@ -502,7 +502,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
               type="button"
               onClick={togglePlay}
               aria-label={isPlaying ? 'Pause' : 'Lecture'}
-              className="h-14 w-14 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg cursor-pointer"
+              className="h-14 w-14 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center hover:scale-105 active:scale-95 transition shadow-lg shadow-[#8C271E]/35 cursor-pointer"
             >
               {isBuffering ? (
                 <Loader2 size={22} className="animate-spin" />
@@ -538,7 +538,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
               onClick={() => setLoop((v) => !v)}
               className={`h-10 w-10 rounded-full flex items-center justify-center transition cursor-pointer ${
                 loop
-                  ? 'bg-white/16 text-amber-300'
+                  ? 'bg-[#8C271E]/25 text-[#F08B82]'
                   : 'text-zinc-400 hover:text-white hover:bg-white/10'
               }`}
               aria-label="Boucle"
@@ -558,9 +558,9 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
           <ChevronDown size={15} /> Retour à l’album
         </button>
       ) : (
-        <div className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500">
+        <div className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400">
           <KoraLogo size={16} />
-          <span>Partagé via Kora</span>
+          <span>Partagé via Rowav</span>
         </div>
       )}
     </div>
@@ -625,7 +625,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
               if (isPlaying) togglePlay();
               else void playAtIndex(activeIdx);
             }}
-            className="h-12 w-12 rounded-2xl bg-zinc-950 text-white flex items-center justify-center shrink-0 shadow-md hover:scale-105 active:scale-95 transition cursor-pointer"
+            className="h-12 w-12 rounded-2xl bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center shrink-0 shadow-md shadow-[#8C271E]/30 hover:scale-105 active:scale-95 transition cursor-pointer"
             aria-label={isPlaying ? 'Pause' : 'Lire'}
           >
             {isBuffering ? (
@@ -731,7 +731,7 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
           <button
             type="button"
             onClick={togglePlay}
-            className="h-9 w-9 rounded-full bg-white text-zinc-950 flex items-center justify-center shrink-0 cursor-pointer"
+            className="h-9 w-9 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center shrink-0 cursor-pointer shadow-xs shadow-[#8C271E]/30"
           >
             {isBuffering ? (
               <Loader2 size={14} className="animate-spin" />

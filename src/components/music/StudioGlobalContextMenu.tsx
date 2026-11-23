@@ -316,7 +316,7 @@ export function StudioGlobalContextMenu({
                           }}
                           className={`inline-flex items-center justify-center gap-1 rounded-lg py-1 text-[10px] font-semibold transition cursor-pointer ${
                             active
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                               : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                           }`}
                         >

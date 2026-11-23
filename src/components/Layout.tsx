@@ -102,12 +102,18 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
 
   return (
     <div className="min-h-[100dvh] flex flex-col md:flex-row bg-[var(--bg)] text-[var(--text)] transition-colors duration-200">
+      {/* Rowav Signature Top Crimson Accent Bar (visible across every page) */}
+      <div
+        aria-hidden="true"
+        className="fixed top-0 inset-x-0 h-[3px] z-[65] pointer-events-none bg-gradient-to-r from-[#6E1D16] via-[#8C271E] to-[#C23B2E]"
+      />
+
       {/* Desktop Fluid Collapsible Side Rail (smooth spring width 240px <-> 72px with side-edge handle) */}
       <motion.aside
         initial={false}
         animate={{ width: sidebarCollapsed ? 72 : 240 }}
         transition={{ type: 'spring', stiffness: 340, damping: 34, mass: 0.85 }}
-        className="hidden md:flex md:flex-col shrink-0 relative bg-white/85 dark:bg-[#110d0d]/94 backdrop-blur-xl sticky top-0 h-screen justify-between border-r border-slate-200/70 dark:border-zinc-800/80 z-30 py-5"
+        className="hidden md:flex md:flex-col shrink-0 relative bg-white/88 dark:bg-[#120c0c]/95 backdrop-blur-xl sticky top-0 h-screen justify-between border-r border-[#8C271E]/18 dark:border-[#8C271E]/30 z-30 py-5"
       >
         {/* Tactile Side-Edge Collapse/Expand Handle (always anchored cleanly on the right edge) */}
         <button
@@ -341,7 +347,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
       </motion.aside>
 
       {/* Mobile Fixed Safe-Area Top Bar (z-20 so Project/Track/Text full-screen pages cover it cleanly) */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-20 pt-[calc(env(safe-area-inset-top)+10px)] bg-white dark:bg-[#0e0e11] border-b border-slate-200/80 dark:border-zinc-800/90">
+      <header className="md:hidden fixed top-0 inset-x-0 z-20 pt-[calc(env(safe-area-inset-top)+10px)] bg-white/95 dark:bg-[#120c0c]/95 backdrop-blur-xl border-b border-[#8C271E]/18 dark:border-[#8C271E]/30">
         <div className="h-12 px-4 flex items-center justify-between">
           <button
             type="button"
@@ -362,7 +368,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               title="Guide & Documentation"
               className={`rounded-xl p-2 transition ${
                 activePage === 'docs'
-                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-white'
+                  ? 'bg-[#8C271E] text-white'
                   : 'text-slate-600 dark:text-zinc-300'
               }`}
             >
@@ -382,7 +388,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               aria-label="Paramètres"
               className={`rounded-xl p-1.5 flex items-center gap-1.5 transition ${
                 activePage === 'settings'
-                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-950 dark:text-white'
+                  ? 'bg-[#8C271E] text-white'
                   : 'text-slate-600 dark:text-zinc-300'
               }`}
             >
@@ -449,7 +455,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
             initial={{ opacity: 0, y: 18, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.96 }}
-            className="fixed bottom-24 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2.5 text-xs font-medium shadow-xl"
+            className="fixed bottom-24 md:bottom-6 right-4 md:right-6 z-50 flex items-center gap-3 rounded-2xl bg-[#8C271E] text-white px-4 py-2.5 text-xs font-medium shadow-xl shadow-[#8C271E]/30 border border-white/15"
           >
             <span>{toast.text}</span>
             {toast.undo && (

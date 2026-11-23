@@ -738,7 +738,7 @@ export function ProjectCreationModal({ open, onClose, onCreated }: ProjectCreati
                     <button
                       type="submit"
                       disabled={!newStepText.trim()}
-                      className="rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-2 text-xs font-semibold disabled:opacity-35 cursor-pointer inline-flex items-center gap-1"
+                      className="rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-3 py-2 text-xs font-semibold disabled:opacity-35 cursor-pointer inline-flex items-center gap-1"
                     >
                       <Plus size={12} /> Ajouter
                     </button>

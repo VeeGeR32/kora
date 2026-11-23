@@ -123,7 +123,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center">
+                <div className="h-9 w-9 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center">
                   <Database size={16} />
                 </div>
                 <div>
@@ -279,7 +279,7 @@ export function LexCoreImportModal({ open, onClose, onImported }: LexCoreImportM
                     (preview.parsed.docs.length === 0 && preview.parsed.folders.length === 0)
                   }
                   onClick={handleConfirmImport}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:opacity-90 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 hover:opacity-90 px-4 py-2 text-xs font-semibold disabled:opacity-40 cursor-pointer"
                 >
                   <Upload size={13} /> Importer dans Rowav
                 </button>

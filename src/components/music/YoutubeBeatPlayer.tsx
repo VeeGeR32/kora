@@ -220,7 +220,7 @@ export function YoutubeBeatPlayer({
             title="Boucle A-B / Totale"
             className={`h-9 w-9 rounded-xl flex items-center justify-center transition cursor-pointer ${
               loop
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                 : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
             }`}
           >
@@ -242,7 +242,7 @@ export function YoutubeBeatPlayer({
             title="Marqueur A (début) · Clic droit / appui long pour effacer"
             className={`h-9 px-2.5 rounded-xl flex items-center gap-1 text-[11px] font-mono transition cursor-pointer ${
               markers?.start !== null && markers?.start !== undefined
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                 : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
             }`}
           >
@@ -265,7 +265,7 @@ export function YoutubeBeatPlayer({
             title="Marqueur B (fin) · Clic droit / appui long pour effacer"
             className={`h-9 px-2.5 rounded-xl flex items-center gap-1 text-[11px] font-mono transition cursor-pointer ${
               markers?.end !== null && markers?.end !== undefined
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                 : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
             }`}
           >
@@ -279,7 +279,7 @@ export function YoutubeBeatPlayer({
           type="button"
           onClick={togglePlay}
           disabled={!videoId}
-          className="h-11 w-11 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shadow-sm hover:scale-105 disabled:opacity-30 transition cursor-pointer shrink-0"
+          className="h-11 w-11 rounded-full bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shadow-sm hover:scale-105 disabled:opacity-30 transition cursor-pointer shrink-0"
         >
           {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-0.5" />}
         </button>
@@ -336,7 +336,7 @@ export function YoutubeBeatPlayer({
               onUpdate({ mediaUrl: draftLink.trim() });
               setIsEditingLink(false);
             }}
-            className="h-7 w-7 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center cursor-pointer"
+            className="h-7 w-7 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center cursor-pointer"
           >
             <Check size={13} />
           </button>

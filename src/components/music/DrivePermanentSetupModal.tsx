@@ -165,7 +165,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                     setShowAddForm(true);
                     setErrorMsg(null);
                   }}
-                  className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer"
                 >
                   <Plus size={11} /> Ajouter un Drive
                 </button>
@@ -325,7 +325,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
                           type="button"
                           disabled={isBusyEdit}
                           onClick={() => void handleSaveEdit(src)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-1 text-[11px] font-semibold disabled:opacity-50 cursor-pointer"
+                          className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-3 py-1 text-[11px] font-semibold disabled:opacity-50 cursor-pointer"
                         >
                           {isBusyEdit && <Loader2 size={11} className="animate-spin" />}
                           Enregistrer & Resync
@@ -491,7 +491,7 @@ export function DriveSourcesManager({ onConnected, compact = false }: DriveSourc
             <button
               type="submit"
               disabled={busyAdd || autoSyncingDrive}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2.5 text-xs font-semibold hover:opacity-92 disabled:opacity-50 transition cursor-pointer"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2.5 text-xs font-semibold hover:opacity-92 disabled:opacity-50 transition cursor-pointer"
             >
               {busyAdd || autoSyncingDrive ? (
                 <Loader2 size={13} className="animate-spin" />
@@ -545,7 +545,7 @@ export function DrivePermanentSetupModal({ open, onClose }: DrivePermanentSetupM
           >
             <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800 bg-white/95 dark:bg-[#121215]/95 backdrop-blur-md">
               <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center">
+                <div className="h-9 w-9 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center">
                   <HardDrive size={16} />
                 </div>
                 <div>

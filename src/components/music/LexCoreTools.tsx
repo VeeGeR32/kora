@@ -250,7 +250,7 @@ export function LexCoreInspirationWidget({
               }}
               className={`rounded-lg px-2.5 py-1 text-[10px] font-semibold transition cursor-pointer ${
                 active
-                  ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 shadow-2xs'
+                  ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 shadow-2xs'
                   : 'bg-white dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 border border-slate-200/70 dark:border-zinc-800 hover:text-slate-900 dark:hover:text-zinc-200'
               }`}
             >
@@ -378,7 +378,7 @@ export function MetronomeWidget({ initialBpm = 120 }: { initialBpm?: number }) {
           onClick={toggle}
           className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 transition cursor-pointer ${
             isPlaying
-              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
               : 'bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-zinc-100'
           }`}
         >

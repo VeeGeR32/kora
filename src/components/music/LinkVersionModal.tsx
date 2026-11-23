@@ -100,7 +100,7 @@ export function LinkVersionModal({
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="h-8 w-8 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0">
+              <div className="h-8 w-8 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
                 <Link2 size={15} />
               </div>
               <div className="min-w-0">

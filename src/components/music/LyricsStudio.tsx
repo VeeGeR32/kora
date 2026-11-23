@@ -395,7 +395,7 @@ export function LyricsStudio({
         <button
           type="button"
           onClick={handleCreateDoc}
-          className="inline-flex items-center gap-1.5 rounded-2xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2.5 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+          className="inline-flex items-center gap-1.5 rounded-2xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2.5 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
         >
           <Plus size={14} />
           Nouveau texte
@@ -413,7 +413,7 @@ export function LyricsStudio({
             }}
             className={`rounded-full px-3 py-1 text-xs font-medium transition cursor-pointer shrink-0 ${
               viewMode === 'docs' && selectedFolderId === 'all'
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                 : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
             }`}
           >
@@ -428,7 +428,7 @@ export function LyricsStudio({
                 key={folder.id}
                 className={`inline-flex items-center gap-1 rounded-full pl-3 pr-2 py-1 text-xs font-medium transition shrink-0 ${
                   active
-                    ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                    ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                     : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
                 }`}
               >
@@ -603,7 +603,7 @@ export function LyricsStudio({
             <button
               type="button"
               onClick={handleCreateDoc}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2 text-xs font-semibold cursor-pointer"
             >
               <Plus size={13} /> Nouveau texte
             </button>
@@ -703,7 +703,7 @@ export function LyricsStudio({
                         }}
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition cursor-pointer truncate max-w-[115px] ${
                           isDocTrackPlaying
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                             : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                         }`}
                         title={`Écouter ${docTrack.title}`}
@@ -861,7 +861,7 @@ export function LyricsStudio({
                   onClick={() => setBeatBarOpen((v) => !v)}
                   className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium transition cursor-pointer ${
                     beatBarOpen
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                       : 'border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
                   }`}
                 >
@@ -936,7 +936,7 @@ export function LyricsStudio({
                           if (player.currentTrack?.id === linkedTrack.id) player.togglePlay();
                           else void player.playTrack(linkedTrack);
                         }}
-                        className="h-8 w-8 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 flex items-center justify-center shrink-0 hover:opacity-90 disabled:opacity-25 transition cursor-pointer"
+                        className="h-8 w-8 rounded-full bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0 hover:opacity-90 disabled:opacity-25 transition cursor-pointer"
                         title={linkedTrack ? `Lire ${linkedTrack.manualGroupTitle || linkedTrack.title}` : 'Associer un son'}
                       >
                         {isPlayingLinked ? (
@@ -1002,7 +1002,7 @@ export function LyricsStudio({
                           onClick={() => player.setLoop(!player.loop)}
                           className={`h-7 w-7 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 ${
                             player.loop
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                               : 'text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:bg-slate-200/60 dark:hover:bg-zinc-800'
                           }`}
                           title="Boucle"
@@ -1238,7 +1238,7 @@ export function LyricsStudio({
                           }}
                           className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                             isSelected
-                              ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                              ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                               : 'hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-800 dark:text-zinc-100'
                           }`}
                         >
@@ -1311,7 +1311,7 @@ export function LyricsStudio({
                     }}
                     className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
                       !activeDoc.folderId
-                        ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                        ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 font-semibold'
                         : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
                     }`}
                   >
@@ -1330,7 +1330,7 @@ export function LyricsStudio({
                         }}
                         className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
                           selected
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 font-semibold'
                             : 'text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
                         }`}
                       >

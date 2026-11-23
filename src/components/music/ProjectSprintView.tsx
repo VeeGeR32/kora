@@ -261,7 +261,7 @@ export function ProjectSprintView({
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2 py-0.5 text-[10px] font-semibold">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-2 py-0.5 text-[10px] font-semibold">
                     <Flame size={10} /> Sprint actif
                   </span>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-zinc-100">
@@ -312,7 +312,7 @@ export function ProjectSprintView({
             <div className="h-1.5 rounded-full bg-slate-200/80 dark:bg-zinc-800 overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-300 ${
-                  canValidateSprint ? 'bg-emerald-500' : 'bg-slate-900 dark:bg-zinc-100'
+                  canValidateSprint ? 'bg-emerald-500' : 'bg-[#8C271E]'
                 }`}
                 style={{
                   width: `${
@@ -454,7 +454,7 @@ export function ProjectSprintView({
                             title={`${meta.step}. ${meta.label}`}
                             className={`flex-1 rounded-lg py-1 text-[9px] font-medium text-center transition ${
                               active
-                                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                                ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 font-semibold'
                                 : done
                                 ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
                                 : 'bg-slate-100 dark:bg-zinc-900 text-slate-400'
@@ -483,7 +483,7 @@ export function ProjectSprintView({
             type="button"
             disabled={projectTracks.length === 0}
             onClick={openComposer}
-            className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-35 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 px-4 py-2 text-xs font-semibold hover:opacity-90 disabled:opacity-35 transition cursor-pointer"
           >
             <Plus size={13} /> Lancer un sprint (max 3 titres)
           </button>
@@ -528,7 +528,7 @@ export function ProjectSprintView({
                         type="button"
                         onClick={() => handlePromoteSprintToActive(spr.id)}
                         title="Passer en sprint actif"
-                        className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-800 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:text-zinc-300 hover:bg-slate-900 hover:text-white dark:hover:bg-zinc-100 dark:hover:text-zinc-950 transition cursor-pointer"
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-zinc-800 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:text-zinc-300 hover:bg-[#8C271E] hover:text-white transition cursor-pointer"
                       >
                         <ArrowUp size={10} /> Activer
                       </button>
@@ -676,7 +676,7 @@ export function ProjectSprintView({
                   onClick={() => toggleSelectForSprint(trk.id)}
                   className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left transition cursor-pointer ${
                     selected
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                       : existingSprintTitle
                       ? 'bg-white/60 dark:bg-zinc-900/50 border border-slate-200/50 dark:border-zinc-800/60 text-slate-500 dark:text-zinc-400 hover:border-slate-400'
                       : 'bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 text-slate-800 dark:text-zinc-100 hover:border-slate-400'
@@ -724,7 +724,7 @@ export function ProjectSprintView({
             type="button"
             disabled={selectedIds.length === 0}
             onClick={handleCreateSprint}
-            className="w-full rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-2.5 text-xs font-semibold hover:opacity-90 disabled:opacity-35 transition cursor-pointer"
+            className="w-full rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 py-2.5 text-xs font-semibold hover:opacity-90 disabled:opacity-35 transition cursor-pointer"
           >
             {activeSprint
               ? `Planifier ce sprint (${selectedIds.length} titre${selectedIds.length > 1 ? 's' : ''})`

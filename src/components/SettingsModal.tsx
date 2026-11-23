@@ -347,7 +347,7 @@ export function SettingsPage() {
           <button
             type="submit"
             disabled={cloudSyncing}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 py-2.5 text-xs font-semibold hover:opacity-92 transition cursor-pointer disabled:opacity-50"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#8C271E] hover:bg-[#A32E24] text-white py-2.5 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer disabled:opacity-50"
           >
             {cloudSyncing ? (
               <Loader2 size={13} className="animate-spin" />

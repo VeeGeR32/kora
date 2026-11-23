@@ -195,10 +195,10 @@ export function TrackCard({
 
           {/* Always-clear Play/Pause overlay (crisp pill on mobile, full overlay on hover/playing) */}
           <span
-            className={`absolute inset-0 bg-black/45 text-white flex items-center justify-center transition ${
+            className={`absolute inset-0 text-white flex items-center justify-center transition ${
               isCurrentTrack
-                ? 'opacity-100'
-                : 'opacity-0 group-hover/play:opacity-100 group-hover:opacity-90'
+                ? 'bg-[#8C271E]/75 opacity-100'
+                : 'bg-[#8C271E]/60 opacity-0 group-hover/play:opacity-100 group-hover:opacity-90'
             }`}
           >
             {isPlaying ? (
@@ -208,7 +208,7 @@ export function TrackCard({
             )}
           </span>
           {!isCurrentTrack && (
-            <span className="sm:hidden absolute bottom-1 right-1 h-5 w-5 rounded-full bg-black/70 text-white flex items-center justify-center backdrop-blur-xs">
+            <span className="sm:hidden absolute bottom-1 right-1 h-5 w-5 rounded-full bg-[#8C271E]/90 text-white flex items-center justify-center backdrop-blur-xs">
               <Play size={10} fill="currentColor" className="ml-0.5" />
             </span>
           )}
@@ -217,7 +217,13 @@ export function TrackCard({
         {/* Title + Meta */}
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-1">
-            <h3 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-zinc-100 truncate leading-snug">
+            <h3
+              className={`text-sm font-semibold tracking-tight truncate leading-snug ${
+                isCurrentTrack
+                  ? 'text-[#8C271E] dark:text-[#E56B5F]'
+                  : 'text-slate-900 dark:text-zinc-100'
+              }`}
+            >
               {group.baseTitle}
             </h3>
 

@@ -248,7 +248,7 @@ export function TrackDetailModal({
           style={{ width: `${BAR_STEP_PX}px` }}
           className="h-full flex items-center justify-center shrink-0"
         >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-slate-900 dark:bg-white" />
+          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
         </div>
       )),
     [waveformBars]
@@ -264,7 +264,7 @@ export function TrackDetailModal({
         >
           <div
             style={{ height: `${h}%` }}
-            className="w-[2px] rounded-full bg-slate-900/20 dark:bg-white/25"
+            className="w-[2px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
           />
         </div>
       )),
@@ -932,7 +932,7 @@ export function TrackDetailModal({
                         notify(`Étape : ${TRACK_STATUS_META[nextSt].label} ✓`);
                       }
                     }}
-                    className="rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 disabled:opacity-30 transition cursor-pointer"
+                    className="rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 disabled:opacity-30 transition cursor-pointer"
                   >
                     Suiv. →
                   </button>
@@ -967,7 +967,7 @@ export function TrackDetailModal({
                       }
                       className={`rounded-xl px-1.5 py-1.5 text-center transition ${
                         active
-                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                          ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 font-semibold'
                           : done
                           ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-medium'
                           : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400'
@@ -998,7 +998,7 @@ export function TrackDetailModal({
                         }
                         className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
                           active
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20'
                             : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:border-slate-400'
                         }`}
                       >
@@ -1037,9 +1037,9 @@ export function TrackDetailModal({
                         }
                         className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
                           active
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20'
                             : filled
-                            ? 'bg-slate-200/90 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200'
+                            ? 'bg-[#8C271E]/14 text-[#8C271E] dark:text-[#E56B5F]'
                             : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100'
                         }`}
                       >
@@ -1078,7 +1078,7 @@ export function TrackDetailModal({
                           active
                             ? 'bg-[#8C271E] text-white'
                             : filled
-                            ? 'bg-[#8C271E]/15 text-orange-700 dark:text-orange-300'
+                            ? 'bg-[#8C271E]/18 text-[#8C271E] dark:text-[#E56B5F]'
                             : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-[#8C271E]'
                         }`}
                       >
@@ -1100,7 +1100,7 @@ export function TrackDetailModal({
                   <button
                     type="button"
                     onClick={() => onRequestPullVersion(group, track.id)}
-                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 hover:opacity-90 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 hover:opacity-90 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
                   >
                     <Plus size={11} /> Ajouter une version
                   </button>
@@ -1151,7 +1151,7 @@ export function TrackDetailModal({
                             : `Version ${activeEntry.versionLabel} fixée pour « ${targetProject.title} » ✓`
                         );
                       }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer shrink-0"
+                      className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer shrink-0"
                     >
                       <Check size={11} />
                       Utiliser {activeEntry.versionLabel} dans le projet
@@ -1192,7 +1192,7 @@ export function TrackDetailModal({
                       key={v.track.id}
                       className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
                         selected
-                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-slate-900 dark:border-zinc-100 shadow-xs'
+                          ? 'bg-[#8C271E] text-white border-[#8C271E] shadow-xs shadow-[#8C271E]/25'
                           : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600'
                       }`}
                     >
@@ -1303,7 +1303,7 @@ export function TrackDetailModal({
                 <div className="h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-zinc-800 overflow-hidden">
                   <div
                     style={{ width: `${todoPct}%` }}
-                    className="h-full rounded-full bg-slate-900 dark:bg-zinc-100 transition-all duration-300"
+                    className="h-full rounded-full bg-[#8C271E] transition-all duration-300"
                   />
                 </div>
               )}
@@ -1367,7 +1367,7 @@ export function TrackDetailModal({
                 />
                 <button
                   type="submit"
-                  className="h-8 px-3 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                  className="h-8 px-3 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
                 >
                   <Plus size={13} /> Ajouter
                 </button>
@@ -1530,7 +1530,7 @@ export function TrackDetailModal({
                       onOpenLyrics(track);
                       onClose();
                     }}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-3 py-2 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 px-3 py-2 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
                   >
                     <Plus size={13} />
                     {linkedLyrics ? 'Ouvrir le texte lié' : 'Créer un nouveau texte'}
@@ -1610,7 +1610,7 @@ export function TrackDetailModal({
                         }}
                         className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                           isSelected
-                            ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20'
                             : 'hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-800 dark:text-zinc-100'
                         }`}
                       >
@@ -1680,7 +1680,7 @@ export function TrackDetailModal({
                   }}
                   className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
                     !linkedProject
-                      ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 font-semibold'
                       : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
                   }`}
                 >
@@ -1700,7 +1700,7 @@ export function TrackDetailModal({
                       }}
                       className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition cursor-pointer ${
                         selected
-                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 font-semibold'
+                          ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 font-semibold'
                           : 'text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
                       }`}
                     >
