@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+﻿import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useMotionValue, animate } from 'framer-motion';
 import {
   ChevronDown,
   Disc3,
@@ -32,6 +32,8 @@ import {
   findLinkedProjectForTrack,
   resolveEffectiveTrackCover,
 } from '../../lib/trackCover';
+import { parseLyricLines } from './LyricLinesEditor';
+import type { MusicTrack } from '../../types';
 
 export const PROJECT_GRADIENTS: { id: string; label: string; css: string }[] = [
   { id: 'pink', label: 'Rowav Crimson', css: 'from-[#B83529] via-[#8C271E] to-[#4A120D]' },
@@ -47,14 +49,11 @@ export function getGradientClass(id?: string): string {
 }
 
 function fmt(sec: number) {
-  if (!sec || !isFinite(sec)) return '0:00';
+  if (!sec || !isFinite(sec) || sec < 0) return '0:00';
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
-
-const BAR_COUNT = 84;
-const MINI_BAR_COUNT = 28;
 
 export function MiniAudioPlayer() {
   const { state, setTrackGroupFavorite, notify } = useApp();
@@ -92,24 +91,27 @@ export function MiniAudioPlayer() {
   const [desktopSideTab, setDesktopSideTab] = useState<'queue' | 'lyrics'>('queue');
   const [scrubbing, setScrubbing] = useState(false);
 
-  // Direct GPU DOM refs updated via 60/120fps requestAnimationFrame (ZERO React re-renders per frame!)
-  const miniDiscRef = useRef<HTMLDivElement>(null);
-  const tapePlayedRef = useRef<HTMLDivElement>(null);
-  const playheadRef = useRef<HTMLDivElement>(null);
-  const miniTapePlayedRef = useRef<HTMLDivElement>(null);
-  const miniPlayheadRef = useRef<HTMLDivElement>(null);
+  // Direction of track switch for Spotify-style horizontal slide transition (+1 = Next, -1 = Prev)
+  const [slideDir, setSlideDir] = useState<1 | -1>(1);
+  const prevTrackIdRef = useRef<string | null>(null);
+  const pendingDirRef = useRef<1 | -1 | null>(null);
+
+  // Direct GPU DOM refs updated at 60/120fps (ZERO React re-renders during playback or scrubbing!)
+  const progressFillRef = useRef<HTMLDivElement>(null);
+  const progressThumbRef = useRef<HTMLDivElement>(null);
+  const miniProgressFillRef = useRef<HTMLDivElement>(null);
   const timeCurrentRef = useRef<HTMLSpanElement>(null);
   const timeTotalRef = useRef<HTMLSpanElement>(null);
-  const scrubPillTextRef = useRef<HTMLSpanElement>(null);
   const miniSwipeContentRef = useRef<HTMLDivElement>(null);
-  const sheetRef = useRef<HTMLDivElement>(null);
+  const expandedCoverDragRef = useRef<HTMLDivElement>(null);
+
+  // Single continuous Framer Motion value for sheet vertical drag-to-minimize (eliminates cover flicker/jump!)
+  const sheetY = useMotionValue(0);
 
   const scrubTimeRef = useRef(0);
   const scrubbingRef = useRef(false);
-  const dragRef = useRef<{
-    pointerId: number;
-    lastTickBar: number;
-  } | null>(null);
+  const scrubDragRef = useRef<{ pointerId: number } | null>(null);
+
   const miniSwipeRef = useRef<{
     pointerId: number;
     startX: number;
@@ -118,27 +120,78 @@ export function MiniAudioPlayer() {
     swiping: boolean;
   } | null>(null);
   const miniWheelCooldownRef = useRef(0);
-  const sheetDragRef = useRef<{
+
+  // Unified expanded-player gesture state (locks cleanly to EITHER vertical minimize OR horizontal track switch!)
+  const sheetGestureRef = useRef<{
     pointerId: number;
     startX: number;
     startY: number;
     startTs: number;
+    axis: 'none' | 'x' | 'y';
+    dx: number;
     dy: number;
-    dragging: boolean;
+    allowHorizontal: boolean;
   } | null>(null);
   const sheetWheelCooldownRef = useRef(0);
-  const justDraggedSheetRef = useRef(false);
+  const justDraggedRef = useRef(false);
+
+  const allGroups = useMemo(() => groupMusicTracks(state.musicTracks), [state.musicTracks]);
 
   const currentGroup = useMemo(() => {
     if (!currentTrack) return null;
-    const allGroups = groupMusicTracks(state.musicTracks);
     return allGroups.find((g) => g.allTrackIds.includes(currentTrack.id)) || null;
-  }, [currentTrack?.id, state.musicTracks]);
+  }, [currentTrack?.id, allGroups]);
 
   const siblingTracks = useMemo(
     () => (currentGroup ? currentGroup.versions.map((v) => v.track) : undefined),
     [currentGroup]
   );
+
+  // Determine adjacent prev/next tracks in queue for Spotify peeking covers during horizontal drag
+  const { prevQueueTrack, nextQueueTrack } = useMemo(() => {
+    if (!currentTrack || queue.length <= 1) {
+      return { prevQueueTrack: null as MusicTrack | null, nextQueueTrack: null as MusicTrack | null };
+    }
+    const idx = queue.findIndex((t) => t.id === currentTrack.id);
+    if (idx < 0) return { prevQueueTrack: null, nextQueueTrack: null };
+    const prevT = idx > 0 ? queue[idx - 1] : queue[queue.length - 1];
+    const nextT = idx < queue.length - 1 ? queue[idx + 1] : repeatMode === 'all' ? queue[0] : null;
+    return {
+      prevQueueTrack: prevT && prevT.id !== currentTrack.id ? prevT : null,
+      nextQueueTrack: nextT && nextT.id !== currentTrack.id ? nextT : null,
+    };
+  }, [currentTrack?.id, queue, repeatMode]);
+
+  // Infer slide direction cleanly whenever currentTrack.id changes
+  useEffect(() => {
+    const curId = currentTrack?.id || null;
+    if (!curId) {
+      prevTrackIdRef.current = null;
+      return;
+    }
+    if (prevTrackIdRef.current && prevTrackIdRef.current !== curId) {
+      if (pendingDirRef.current) {
+        setSlideDir(pendingDirRef.current);
+        pendingDirRef.current = null;
+      } else {
+        const prevIdx = queue.findIndex((t) => t.id === prevTrackIdRef.current);
+        const curIdx = queue.findIndex((t) => t.id === curId);
+        if (prevIdx >= 0 && curIdx >= 0) {
+          setSlideDir(curIdx >= prevIdx ? 1 : -1);
+        } else {
+          setSlideDir(1);
+        }
+      }
+    }
+    prevTrackIdRef.current = curId;
+  }, [currentTrack?.id, queue]);
+
+  // Reset sheetY cleanly whenever expanded toggles on
+  useLayoutEffect(() => {
+    if (expanded) {
+      sheetY.set(0);
+    }
+  }, [expanded, sheetY]);
 
   const linkedProject = useMemo(
     () =>
@@ -161,6 +214,11 @@ export function MiniAudioPlayer() {
     [currentTrack, state.lyricsDocs, currentGroup?.allTrackIds, siblingTracks]
   );
 
+  const desktopLyricsLines = useMemo(
+    () => (linkedLyrics?.content ? parseLyricLines(linkedLyrics.content) : []),
+    [linkedLyrics?.content]
+  );
+
   const effectiveCover = useMemo(
     () =>
       currentTrack
@@ -173,6 +231,27 @@ export function MiniAudioPlayer() {
         : null,
     [currentTrack, state.musicProjects, currentGroup?.groupKey, siblingTracks]
   );
+
+  const resolveSimpleCover = useCallback(
+    (trk: MusicTrack | null) => {
+      if (!trk) return null;
+      const grp = allGroups.find((g) => g.allTrackIds.includes(trk.id));
+      const eff = resolveEffectiveTrackCover(
+        trk,
+        state.musicProjects,
+        grp?.groupKey,
+        grp?.versions.map((v) => v.track)
+      );
+      return {
+        url: eff.coverDataUrl || eff.cloudCoverUrl || null,
+        grad: getGradientClass(eff.gradientId),
+      };
+    },
+    [allGroups, state.musicProjects]
+  );
+
+  const prevPeekCover = useMemo(() => resolveSimpleCover(prevQueueTrack), [prevQueueTrack, resolveSimpleCover]);
+  const nextPeekCover = useMemo(() => resolveSimpleCover(nextQueueTrack), [nextQueueTrack, resolveSimpleCover]);
 
   useEffect(() => {
     let active = true;
@@ -191,44 +270,17 @@ export function MiniAudioPlayer() {
   const coverUrl =
     effectiveCover?.coverDataUrl || blobCoverUrl || effectiveCover?.cloudCoverUrl || null;
 
-  // Deterministic waveform bars (memoized once per track)
-  const bars = useMemo(() => {
-    if (!currentTrack) return [];
-    let seed = currentTrack.id.split('').reduce((a, c) => a + c.charCodeAt(0), 31);
-    return Array.from({ length: BAR_COUNT }, (_, idx) => {
-      seed = (seed * 9301 + 49297) % 233280;
-      const base = 18 + Math.round((seed / 233280) * 82);
-      const edge = Math.min(1, Math.min(idx + 3, BAR_COUNT - idx + 2) / 7);
-      return Math.max(14, Math.round(base * (0.5 + 0.5 * edge)));
-    });
-  }, [currentTrack?.id]);
-
-  const miniBars = useMemo(() => {
-    if (bars.length === 0) return [];
-    return Array.from({ length: MINI_BAR_COUNT }, (_, i) => {
-      const srcIdx = Math.min(bars.length - 1, Math.floor((i / MINI_BAR_COUNT) * bars.length));
-      return bars[srcIdx];
-    });
-  }, [bars]);
-
   const effectiveDuration = duration || currentTrack?.durationSec || 0;
 
-  // Helper that paints exact GPU clip-path & clock text directly to the DOM at 60/120fps (0:00 glued left -> 100% right)
-  const applyVisualFrame = (t: number, dur: number) => {
+  // Lightweight 60/120fps Spotify progress bar updater (pure GPU scaleX + left%, ZERO clip-path / ZERO waveform DOM!)
+  const applyVisualFrame = useCallback((t: number, dur: number) => {
     const r = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
-    const pct = r * 100;
-    const clip = `inset(0 ${(100 - pct).toFixed(3)}% 0 0)`;
-    const leftPct = `${pct.toFixed(3)}%`;
-    const rot = t * 24; // smooth 24 deg/s vinyl spin synced directly to audio time
+    const scaleX = `scaleX(${r.toFixed(4)})`;
+    const leftPct = `${(r * 100).toFixed(3)}%`;
 
-    if (tapePlayedRef.current) tapePlayedRef.current.style.clipPath = clip;
-    if (playheadRef.current) playheadRef.current.style.left = leftPct;
-
-    if (miniTapePlayedRef.current) miniTapePlayedRef.current.style.clipPath = clip;
-    if (miniPlayheadRef.current) miniPlayheadRef.current.style.left = leftPct;
-
-    const discTransform = `rotate3d(0, 0, 1, ${rot.toFixed(2)}deg)`;
-    if (miniDiscRef.current) miniDiscRef.current.style.transform = discTransform;
+    if (progressFillRef.current) progressFillRef.current.style.transform = scaleX;
+    if (progressThumbRef.current) progressThumbRef.current.style.left = leftPct;
+    if (miniProgressFillRef.current) miniProgressFillRef.current.style.transform = scaleX;
 
     const curLabel = fmt(t);
     const totalLabel = dur > 0 ? fmt(dur) : '—';
@@ -238,19 +290,13 @@ export function MiniAudioPlayer() {
     if (timeTotalRef.current && timeTotalRef.current.textContent !== totalLabel) {
       timeTotalRef.current.textContent = totalLabel;
     }
-    const pillLabel = `${curLabel} / ${totalLabel}`;
-    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== pillLabel) {
-      scrubPillTextRef.current.textContent = pillLabel;
-    }
-  };
+  }, []);
 
-  // Sync visual frame synchronously before paint on mount / track change / expand / pause (never fights rAF!)
   useLayoutEffect(() => {
     if (!currentTrack) return;
     applyVisualFrame(scrubbingRef.current ? scrubTimeRef.current : getLiveTime(), effectiveDuration);
-  }, [currentTrack?.id, expanded, effectiveDuration, isPlaying, getLiveTime]);
+  }, [currentTrack?.id, expanded, effectiveDuration, isPlaying, getLiveTime, applyVisualFrame]);
 
-  // Smooth 60/120fps requestAnimationFrame loop while playing!
   useEffect(() => {
     if (!currentTrack || !isPlaying) return;
     let rafId = 0;
@@ -262,26 +308,25 @@ export function MiniAudioPlayer() {
     };
     rafId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(rafId);
-  }, [currentTrack?.id, isPlaying, expanded, effectiveDuration, getLiveTime]);
+  }, [currentTrack?.id, isPlaying, expanded, effectiveDuration, getLiveTime, applyVisualFrame]);
 
-  const gradCls = getGradientClass(currentTrack?.coverGradient || linkedProject?.coverGradient);
+  const gradCls = getGradientClass(
+    effectiveCover?.gradientId || currentTrack?.coverGradient || linkedProject?.coverGradient
+  );
   const parsedCurrent = useMemo(
     () => (currentTrack ? parseTrackVersion(currentTrack) : null),
     [currentTrack]
   );
 
-  // Find sibling Prod / Song track so user can switch Son <-> Prod in 1 tap right inside the player!
   const alternateProdOrSong = useMemo(() => {
-    if (!currentTrack || !parsedCurrent) return null;
-    const allGroups = groupMusicTracks(state.musicTracks);
-    const grp = allGroups.find((g) => g.allTrackIds.includes(currentTrack.id));
-    if (!grp || !grp.prodTrack) return null;
+    if (!currentTrack || !parsedCurrent || !currentGroup?.prodTrack) return null;
     if (parsedCurrent.isProd) {
-      if (grp.latestTrack.id === currentTrack.id) return null;
-      return { target: grp.latestTrack, label: 'Son', isCurrentlyProd: true };
+      if (currentGroup.latestTrack.id === currentTrack.id) return null;
+      return { target: currentGroup.latestTrack, label: 'Son', isCurrentlyProd: true };
     }
-    return { target: grp.prodTrack, label: 'Prod', isCurrentlyProd: false };
-  }, [currentTrack, parsedCurrent, state.musicTracks]);
+    return { target: currentGroup.prodTrack, label: 'Prod', isCurrentlyProd: false };
+  }, [currentTrack, parsedCurrent, currentGroup]);
+
   const displayTrackTitle =
     currentGroup?.baseTitle ||
     currentTrack?.manualGroupTitle ||
@@ -297,6 +342,7 @@ export function MiniAudioPlayer() {
   ]
     .filter(Boolean)
     .join(' · ');
+
   const canPlay = Boolean(
     isRemotePlayback ||
       currentTrack?.mediaId ||
@@ -304,48 +350,55 @@ export function MiniAudioPlayer() {
       currentTrack?.googleDriveFileId
   );
 
-  // Zero-lag direct click-or-drag SoundCloud scrubbing (0:00 at left edge -> 100% at right edge)
-  const computeScrubTimeFromPointer = (el: HTMLDivElement, clientX: number, dur: number) => {
+  const triggerNext = useCallback(() => {
+    if (!hasNext) return;
+    pendingDirRef.current = 1;
+    setSlideDir(1);
+    playNext();
+    triggerHapticTick(10);
+  }, [hasNext, playNext]);
+
+  const triggerPrev = useCallback(() => {
+    if (!hasPrev && getLiveTime() <= 3) return;
+    pendingDirRef.current = -1;
+    setSlideDir(-1);
+    playPrev();
+    triggerHapticTick(10);
+  }, [hasPrev, getLiveTime, playPrev]);
+
+  // Spotify-style linear progress bar scrubbing (click or drag anywhere)
+  const computeScrubTime = (el: HTMLDivElement, clientX: number, dur: number) => {
     const rect = el.getBoundingClientRect();
     if (!rect.width) return 0;
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
     return ratio * dur;
   };
 
-  const handleTapePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleBarPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!effectiveDuration) return;
+    e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    const nextSec = computeScrubTimeFromPointer(e.currentTarget, e.clientX, effectiveDuration);
-    const startBar = Math.floor((nextSec / effectiveDuration) * BAR_COUNT);
-    dragRef.current = {
-      pointerId: e.pointerId,
-      lastTickBar: startBar,
-    };
+    const nextSec = computeScrubTime(e.currentTarget, e.clientX, effectiveDuration);
+    scrubDragRef.current = { pointerId: e.pointerId };
     scrubTimeRef.current = nextSec;
     scrubbingRef.current = true;
     setScrubbing(true);
     applyVisualFrame(nextSec, effectiveDuration);
-    triggerHapticTick(10);
+    triggerHapticTick(8);
   };
 
-  const handleTapePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
+  const handleBarPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = scrubDragRef.current;
     if (!drag || drag.pointerId !== e.pointerId || !effectiveDuration) return;
-    const nextSec = computeScrubTimeFromPointer(e.currentTarget, e.clientX, effectiveDuration);
+    const nextSec = computeScrubTime(e.currentTarget, e.clientX, effectiveDuration);
     scrubTimeRef.current = nextSec;
     applyVisualFrame(nextSec, effectiveDuration);
-
-    const barIndex = Math.floor((nextSec / effectiveDuration) * BAR_COUNT);
-    if (barIndex !== drag.lastTickBar) {
-      drag.lastTickBar = barIndex;
-      triggerHapticTick(24);
-    }
   };
 
-  const finishTapeDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
+  const finishBarDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = scrubDragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
-    dragRef.current = null;
+    scrubDragRef.current = null;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -354,59 +407,9 @@ export function MiniAudioPlayer() {
     setScrubbing(false);
     seek(targetSec);
     applyVisualFrame(targetSec, effectiveDuration);
-    triggerHapticTick(10);
   };
 
-  // Pre-rendered full-width bar rows (0:00 glued to left edge -> 100% right edge)
-  const playedBarsEl = useMemo(
-    () =>
-      bars.map((h, i) => (
-        <div
-          key={i}
-          style={{ height: `${h}%` }}
-          className="flex-1 min-w-[1.5px] max-w-[3.5px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
-        />
-      )),
-    [bars]
-  );
-
-  const unplayedBarsEl = useMemo(
-    () =>
-      bars.map((h, i) => (
-        <div
-          key={i}
-          style={{ height: `${h}%` }}
-          className="flex-1 min-w-[1.5px] max-w-[3.5px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
-        />
-      )),
-    [bars]
-  );
-
-  const miniPlayedBarsEl = useMemo(
-    () =>
-      miniBars.map((h, i) => (
-        <div
-          key={i}
-          style={{ height: `${h}%` }}
-          className="flex-1 min-w-[1.5px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
-        />
-      )),
-    [miniBars]
-  );
-
-  const miniUnplayedBarsEl = useMemo(
-    () =>
-      miniBars.map((h, i) => (
-        <div
-          key={i}
-          style={{ height: `${h}%` }}
-          className="flex-1 min-w-[1.5px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
-        />
-      )),
-    [miniBars]
-  );
-
-  // Mini-player horizontal swipe (left = Next, right = Prev, tap = Expand!)
+  // ================= MINI-PLAYER SWIPE (LEFT = NEXT · RIGHT = PREV · TAP = EXPAND) =================
   const handleMiniPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest('button[data-mini-ctrl]')) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -424,15 +427,17 @@ export function MiniAudioPlayer() {
     if (!s || s.pointerId !== e.pointerId) return;
     const dx = e.clientX - s.startX;
     const dy = e.clientY - s.startY;
-    if (!s.swiping && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+    if (!s.swiping && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
       s.swiping = true;
     }
     if (s.swiping) {
       s.dx = dx;
-      const clamped = Math.max(-52, Math.min(52, dx * 0.65));
+      const clamped = Math.max(-72, Math.min(72, dx * 0.72));
+      const opacity = Math.max(0.45, 1 - Math.abs(clamped) / 150);
       if (miniSwipeContentRef.current) {
         miniSwipeContentRef.current.style.transition = 'none';
         miniSwipeContentRef.current.style.transform = `translate3d(${clamped.toFixed(1)}px, 0, 0)`;
+        miniSwipeContentRef.current.style.opacity = opacity.toFixed(2);
       }
     }
   };
@@ -445,16 +450,16 @@ export function MiniAudioPlayer() {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     if (miniSwipeContentRef.current) {
-      miniSwipeContentRef.current.style.transition = 'transform 180ms ease-out';
+      miniSwipeContentRef.current.style.transition =
+        'transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease-out';
       miniSwipeContentRef.current.style.transform = 'translate3d(0, 0, 0)';
+      miniSwipeContentRef.current.style.opacity = '1';
     }
     if (s.swiping) {
-      if (s.dx < -40 && hasNext) {
-        playNext();
-        triggerHapticTick(12);
-      } else if (s.dx > 40 && (hasPrev || getLiveTime() > 3)) {
-        playPrev();
-        triggerHapticTick(12);
+      if (s.dx < -38 && hasNext) {
+        triggerNext();
+      } else if (s.dx > 38 && (hasPrev || getLiveTime() > 3)) {
+        triggerPrev();
       }
     } else {
       setShowQueue(false);
@@ -463,209 +468,249 @@ export function MiniAudioPlayer() {
   };
 
   const handleMiniWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || Math.abs(e.deltaX) < 24) return;
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) || Math.abs(e.deltaX) < 22) return;
     const now = Date.now();
-    if (now - miniWheelCooldownRef.current < 450) return;
+    if (now - miniWheelCooldownRef.current < 420) return;
     miniWheelCooldownRef.current = now;
-    if (e.deltaX > 0 && hasNext) {
-      playNext();
-    } else if (e.deltaX < 0 && (hasPrev || getLiveTime() > 3)) {
-      playPrev();
-    }
+    if (e.deltaX > 0 && hasNext) triggerNext();
+    else if (e.deltaX < 0 && (hasPrev || getLiveTime() > 3)) triggerPrev();
   };
 
-  // Full-screen Spotify-style player: drag/scroll down anywhere to collapse to mini-player
+  // ================= MAXIMIZED PLAYER GESTURES (HORIZONTAL = SPOTIFY SWITCH · VERTICAL DOWN = MINIMIZE) =================
   const handleSheetPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest('[data-no-sheet-drag]')) return;
     const queueScrollEl = target.closest('[data-queue-scroll]') as HTMLElement | null;
     if (queueScrollEl && queueScrollEl.scrollTop > 0) return;
-    sheetDragRef.current = {
+
+    const allowHorizontal = Boolean(target.closest('[data-cover-swipe]')) && !showQueue;
+    sheetGestureRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
       startTs: performance.now(),
+      axis: 'none',
+      dx: 0,
       dy: 0,
-      dragging: false,
+      allowHorizontal,
     };
   };
 
   const handleSheetPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = sheetDragRef.current;
-    if (!d || d.pointerId !== e.pointerId) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (!d.dragging && dy > 10 && dy > Math.abs(dx) * 1.2) {
-      d.dragging = true;
-    }
-    if (d.dragging) {
-      d.dy = Math.max(0, dy);
-      if (sheetRef.current) {
-        sheetRef.current.style.transition = 'none';
-        sheetRef.current.style.transform = `translate3d(0, ${d.dy.toFixed(1)}px, 0)`;
+    const g = sheetGestureRef.current;
+    if (!g || g.pointerId !== e.pointerId) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+
+    if (g.axis === 'none') {
+      if (g.allowHorizontal && Math.abs(dx) > 9 && Math.abs(dx) > Math.abs(dy) * 1.15) {
+        g.axis = 'x';
+      } else if (dy > 10 && dy > Math.abs(dx) * 1.15) {
+        g.axis = 'y';
       }
+    }
+
+    if (g.axis === 'x') {
+      g.dx = dx;
+      const damp = dx > 0 && !hasPrev && getLiveTime() <= 3 ? 0.25 : dx < 0 && !hasNext ? 0.25 : 0.88;
+      const offset = Math.max(-240, Math.min(240, dx * damp));
+      if (expandedCoverDragRef.current) {
+        expandedCoverDragRef.current.style.transition = 'none';
+        expandedCoverDragRef.current.style.transform = `translate3d(${offset.toFixed(1)}px, 0, 0)`;
+      }
+    } else if (g.axis === 'y') {
+      g.dy = Math.max(0, dy);
+      sheetY.set(g.dy);
     }
   };
 
-  const finishSheetDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    const d = sheetDragRef.current;
-    if (!d || d.pointerId !== e.pointerId) return;
-    sheetDragRef.current = null;
-    if (!d.dragging) return;
-    justDraggedSheetRef.current = true;
+  const finishSheetGesture = (e: React.PointerEvent<HTMLDivElement>) => {
+    const g = sheetGestureRef.current;
+    if (!g || g.pointerId !== e.pointerId) return;
+    sheetGestureRef.current = null;
+    if (g.axis === 'none') return;
+
+    justDraggedRef.current = true;
     window.setTimeout(() => {
-      justDraggedSheetRef.current = false;
-    }, 120);
-    const elapsed = Math.max(1, performance.now() - d.startTs);
-    const velocity = d.dy / elapsed; // px per ms
-    if (d.dy > 95 || (d.dy > 36 && velocity > 0.45)) {
-      if (sheetRef.current) {
-        sheetRef.current.style.transition = 'transform 180ms ease-out';
-        sheetRef.current.style.transform = 'translate3d(0, 100%, 0)';
+      justDraggedRef.current = false;
+    }, 140);
+
+    const elapsed = Math.max(1, performance.now() - g.startTs);
+
+    if (g.axis === 'x') {
+      const velocityX = Math.abs(g.dx) / elapsed;
+      const shouldNext = (g.dx < -55 || (g.dx < -28 && velocityX > 0.45)) && hasNext;
+      const shouldPrev = (g.dx > 55 || (g.dx > 28 && velocityX > 0.45)) && (hasPrev || getLiveTime() > 3);
+
+      if (expandedCoverDragRef.current) {
+        expandedCoverDragRef.current.style.transition =
+          'transform 200ms cubic-bezier(0.22, 1, 0.36, 1)';
+        expandedCoverDragRef.current.style.transform = 'translate3d(0, 0, 0)';
       }
-      triggerHapticTick(10);
-      setExpanded(false);
-    } else if (sheetRef.current) {
-      sheetRef.current.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
-      sheetRef.current.style.transform = 'translate3d(0, 0, 0)';
+
+      if (shouldNext) triggerNext();
+      else if (shouldPrev) triggerPrev();
+      return;
+    }
+
+    if (g.axis === 'y') {
+      const velocityY = g.dy / elapsed;
+      if (g.dy > 95 || (g.dy > 36 && velocityY > 0.45)) {
+        triggerHapticTick(8);
+        setExpanded(false);
+      } else {
+        void animate(sheetY, 0, { duration: 0.2, ease: [0.22, 1, 0.36, 1] });
+      }
     }
   };
 
   const handleSheetWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest('[data-queue-scroll]')) return;
-    if (e.deltaY > 42 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      const now = Date.now();
-      if (now - sheetWheelCooldownRef.current < 400) return;
+    const now = Date.now();
+    if (now - sheetWheelCooldownRef.current < 400) return;
+
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 26) {
+      sheetWheelCooldownRef.current = now;
+      if (e.deltaX > 0 && hasNext) triggerNext();
+      else if (e.deltaX < 0 && (hasPrev || getLiveTime() > 3)) triggerPrev();
+    } else if (e.deltaY > 42 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
       sheetWheelCooldownRef.current = now;
       setExpanded(false);
     }
   };
 
   const handleOpenTrackPageFromCover = () => {
-    if (!currentTrack || justDraggedSheetRef.current) return;
-    triggerHapticTick(10);
+    if (!currentTrack || justDraggedRef.current) return;
+    triggerHapticTick(8);
     setExpanded(false);
     requestOpenTrackPage(currentTrack.id);
   };
 
+  const isFavorite = currentTrack
+    ? currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite)
+    : false;
+
+  const handleToggleFav = () => {
+    if (!currentTrack) return;
+    const ids =
+      currentGroup && currentGroup.allTrackIds.length > 0
+        ? currentGroup.allTrackIds
+        : [currentTrack.id];
+    const nextFav = !isFavorite;
+    setTrackGroupFavorite(ids, nextFav);
+    triggerHapticTick(8);
+    notify(nextFav ? 'Ajouté aux favoris ★' : 'Retiré des favoris');
+  };
+
   return (
     <>
-      {/* ================= FLOATING MINI PLAYER (SWIPE LEFT/RIGHT FOR NEXT/PREV!) ================= */}
+      {/* ================= FLOATING SPOTIFY-STYLE MINI PLAYER ================= */}
       <AnimatePresence>
         {currentTrack && !expanded && (
           <motion.div
             key="rowav-mini-player"
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
+            exit={{ opacity: 0, y: 14 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
             onWheel={handleMiniWheel}
-            className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-24 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-white/95 dark:bg-[#141010]/96 text-slate-900 dark:text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color,background-color] duration-300 ease-out overflow-hidden ${
+            className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-24 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-2xl bg-white/95 dark:bg-[#171313]/96 text-slate-900 dark:text-white border backdrop-blur-md transition-[bottom,left,border-color] duration-200 overflow-hidden ${
               isRemotePlayback
-                ? 'border-emerald-500/45 dark:border-emerald-400/45 shadow-[0_14px_34px_-10px_rgba(16,185,129,0.22)] dark:shadow-[0_14px_38px_-8px_rgba(16,185,129,0.28)]'
-                : 'border-[#8C271E]/30 dark:border-[#8C271E]/45 shadow-[0_14px_34px_-10px_rgba(140,39,30,0.22)] dark:shadow-[0_14px_38px_-8px_rgba(140,39,30,0.32)]'
+                ? 'border-emerald-500/40 dark:border-emerald-400/40 shadow-lg shadow-emerald-500/10'
+                : 'border-slate-200/90 dark:border-white/10 shadow-lg shadow-black/10 dark:shadow-black/45'
             }`}
           >
-            <div className="flex items-center justify-between gap-2">
-              {/* Swipeable Cover Art + Title (Swipe Left = Next · Swipe Right = Prev · Tap = Fullscreen) */}
+            <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+              {/* Swipeable Cover + Title (Spotify Horizontal Slide on Switch) */}
               <div
                 onPointerDown={handleMiniPointerDown}
                 onPointerMove={handleMiniPointerMove}
                 onPointerUp={finishMiniSwipe}
                 onPointerCancel={finishMiniSwipe}
                 style={{ touchAction: 'pan-y' }}
-                className="flex items-center gap-2.5 min-w-0 flex-1 text-left group cursor-pointer select-none overflow-hidden"
+                className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer select-none overflow-hidden"
                 title="Glisser gauche/droite pour changer de son · Cliquer pour agrandir"
               >
                 <div
                   ref={miniSwipeContentRef}
-                  className="flex items-center gap-2.5 min-w-0 flex-1 will-change-transform"
+                  className="min-w-0 flex-1 will-change-transform overflow-hidden"
                 >
-                  <div
-                    ref={miniDiscRef}
-                    className={`relative h-10 w-10 rounded-full overflow-hidden border border-slate-200/80 dark:border-white/15 shrink-0 will-change-transform ${
-                      isLoadingTrack ? 'animate-pulse opacity-75' : ''
-                    }`}
-                  >
-                    {coverUrl ? (
-                      <img
-                        src={coverUrl}
-                        alt={currentTrack.title}
-                        draggable={false}
-                        className="h-full w-full object-cover pointer-events-none"
-                      />
-                    ) : (
+                  <AnimatePresence mode="popLayout" initial={false} custom={slideDir}>
+                    <motion.div
+                      key={currentTrack.id}
+                      custom={slideDir}
+                      initial={{ x: slideDir * 28, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: slideDir * -28, opacity: 0 }}
+                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      className="flex items-center gap-2.5 min-w-0"
+                    >
+                      {/* Static crisp square cover (ZERO rotation jump or crop glitch on minimize!) */}
                       <div
-                        className={`h-full w-full bg-gradient-to-br ${gradCls} flex items-center justify-center`}
+                        className={`relative h-10 w-10 rounded-lg overflow-hidden border border-slate-200/70 dark:border-white/10 shrink-0 ${
+                          isLoadingTrack ? 'animate-pulse opacity-75' : ''
+                        }`}
                       >
-                        <Disc3 size={15} className="text-white/90" />
+                        {coverUrl ? (
+                          <img
+                            src={coverUrl}
+                            alt={displayTrackTitle}
+                            draggable={false}
+                            className="h-full w-full object-cover pointer-events-none block"
+                          />
+                        ) : (
+                          <div
+                            className={`h-full w-full bg-gradient-to-br ${gradCls} flex items-center justify-center`}
+                          >
+                            <Disc3 size={16} className="text-white/85" />
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-semibold text-slate-900 dark:text-white truncate leading-tight">
-                      {displayTrackTitle}
-                    </p>
-                    {isLoadingTrack ? (
-                      <div className="mt-1.5 h-2 w-24 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
-                    ) : isRemotePlayback && remoteDevice ? (
-                      <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 truncate mt-0.5 flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse shrink-0" />
-                        <span className="truncate">Lecture sur {remoteDevice.name}</span>
-                      </p>
-                    ) : (
-                      <p className="text-[10px] text-slate-500 dark:text-zinc-400 truncate mt-0.5">{subtitle}</p>
-                    )}
-                  </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-semibold text-slate-900 dark:text-white truncate leading-tight">
+                          {displayTrackTitle}
+                        </p>
+                        {isLoadingTrack ? (
+                          <div className="mt-1.5 h-2 w-20 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
+                        ) : isRemotePlayback && remoteDevice ? (
+                          <p className="text-[10.5px] font-medium text-emerald-600 dark:text-emerald-400 truncate mt-0.5 flex items-center gap-1">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                            <span className="truncate">{remoteDevice.name}</span>
+                          </p>
+                        ) : (
+                          <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate mt-0.5">
+                            {subtitle}
+                          </p>
+                        )}
+                      </div>
+                    </motion.div>
+                  </AnimatePresence>
                 </div>
               </div>
 
-              {/* Left-to-Right Mini Waveform Preview (0:00 at left edge -> 100% right) */}
-              <div
-                onClick={() => setExpanded(true)}
-                className={`hidden sm:block relative w-24 h-7 overflow-hidden cursor-pointer shrink-0 transition-opacity ${
-                  isLoadingTrack ? 'animate-pulse opacity-35' : ''
-                }`}
-              >
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[1.5px]">
-                  {miniUnplayedBarsEl}
-                </div>
-                <div
-                  ref={miniTapePlayedRef}
-                  style={{ clipPath: 'inset(0 100% 0 0)' }}
-                  className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[1.5px] will-change-[clip-path]"
-                >
-                  {miniPlayedBarsEl}
-                </div>
-                <div
-                  ref={miniPlayheadRef}
-                  style={{ left: '0%' }}
-                  className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
-                />
-              </div>
-
-              {/* Compact Transport Controls (Connect Transfer / Prev / Play-Pause / Next / Close) */}
-              <div className="flex items-center gap-0.5 shrink-0 pr-0.5">
+              {/* Compact Spotify Transport Controls */}
+              <div className="flex items-center gap-0.5 shrink-0">
                 {isRemotePlayback && remoteDevice && (
                   <button
                     type="button"
                     data-mini-ctrl="true"
                     onClick={() => void transferToThisDevice()}
                     title={`Transférer la lecture depuis ${remoteDevice.name} vers ${localDevice.name}`}
-                    className="h-7 px-2.5 mr-0.5 rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 hover:bg-emerald-500/25 dark:hover:bg-emerald-500/30 border border-emerald-500/35 dark:border-emerald-400/35 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold transition cursor-pointer shrink-0"
+                    className="h-7 px-2.5 mr-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold transition cursor-pointer shrink-0"
                   >
                     Ici
                   </button>
                 )}
+
                 <button
                   type="button"
                   data-mini-ctrl="true"
-                  onClick={playPrev}
+                  onClick={triggerPrev}
                   disabled={!hasPrev && currentTime <= 3}
                   aria-label="Précédent"
-                  className="h-8 w-8 rounded-full flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
+                  className="hidden sm:flex h-8 w-8 rounded-full items-center justify-center text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
                 >
                   <SkipBack size={14} fill="currentColor" />
                 </button>
@@ -676,7 +721,7 @@ export function MiniAudioPlayer() {
                   onClick={togglePlay}
                   disabled={!canPlay || isLoadingTrack}
                   aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
-                  className="h-9 w-9 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-70 transition cursor-pointer shadow-xs shadow-[#8C271E]/25"
+                  className="h-9 w-9 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center active:scale-95 disabled:opacity-70 transition cursor-pointer"
                 >
                   {isLoadingTrack ? (
                     <Loader2 size={15} className="animate-spin" />
@@ -690,7 +735,7 @@ export function MiniAudioPlayer() {
                 <button
                   type="button"
                   data-mini-ctrl="true"
-                  onClick={playNext}
+                  onClick={triggerNext}
                   disabled={!hasNext}
                   aria-label="Suivant"
                   className="h-8 w-8 rounded-full flex items-center justify-center text-slate-600 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
@@ -703,55 +748,57 @@ export function MiniAudioPlayer() {
                   data-mini-ctrl="true"
                   onClick={closePlayer}
                   aria-label="Fermer le lecteur"
-                  className="h-7 w-7 rounded-full flex items-center justify-center text-slate-400 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
+                  className="h-7 w-7 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                 >
                   <X size={13} />
                 </button>
               </div>
             </div>
+
+            {/* Ultra-Thin Spotify Hairline Progress Bar along the bottom edge */}
+            <div className="h-[2.5px] w-full bg-slate-200/80 dark:bg-white/10 overflow-hidden">
+              <div
+                ref={miniProgressFillRef}
+                style={{ transform: 'scaleX(0)' }}
+                className={`h-full w-full origin-left will-change-transform ${
+                  isRemotePlayback ? 'bg-emerald-500' : 'bg-[#8C271E] dark:bg-[#E04F42]'
+                }`}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ================= FULL-SCREEN CRISP SLIDE-UP PLAYER (SWIPE DOWN TO MINIMIZE) ================= */}
+      {/* ================= ULTRA-LIGHT SPOTIFY-STYLE FULL-SCREEN PLAYER ================= */}
       <AnimatePresence>
         {currentTrack && expanded && (
           <motion.div
             key="rowav-expanded-player"
-            ref={sheetRef}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            onPointerDown={handleSheetPointerDown}
-            onPointerMove={handleSheetPointerMove}
-            onPointerUp={finishSheetDrag}
-            onPointerCancel={finishSheetDrag}
-            onWheel={handleSheetWheel}
-            style={{ touchAction: 'none' }}
-            className="fixed inset-0 z-[60] bg-[#f8f5f4] dark:bg-[#0b0909] text-slate-950 dark:text-white flex flex-col overflow-hidden select-none will-change-transform"
+            style={{ y: sheetY }}
+            className="fixed inset-0 z-[60] will-change-transform"
           >
-            {/* Subtle Atmospheric Cover Backdrop */}
-            <div className="pointer-events-none absolute inset-0 overflow-hidden">
-              {coverUrl ? (
-                <img
-                  src={coverUrl}
-                  alt=""
-                  aria-hidden="true"
-                  className="w-full h-full object-cover scale-125 blur-3xl opacity-16 dark:opacity-22"
-                />
-              ) : (
-                <div className={`w-full h-full bg-gradient-to-b ${gradCls} opacity-14 dark:opacity-18`} />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-b from-[#f8f8fa]/70 via-[#f8f8fa]/88 to-[#f8f8fa] dark:from-[#0b0b0e]/55 dark:via-[#0b0b0e]/85 dark:to-[#0b0b0e]" />
-            </div>
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              style={{ touchAction: 'none' }}
+              onPointerDown={handleSheetPointerDown}
+              onPointerMove={handleSheetPointerMove}
+              onPointerUp={finishSheetGesture}
+              onPointerCancel={finishSheetGesture}
+              onWheel={handleSheetWheel}
+              className="w-full h-full bg-[#faf7f6] dark:bg-[#0d0a0a] text-slate-950 dark:text-white flex flex-col overflow-hidden select-none will-change-transform"
+            >
+            {/* Ultra-lightweight ambient crimson tint (zero heavy blur-3xl GPU lag!) */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#8C271E]/[0.08] via-transparent to-transparent dark:from-[#8C271E]/[0.18] dark:via-[#0d0a0a]/60 dark:to-[#0d0a0a]" />
 
-            {/* Full-Screen Responsive Wrapper: Centered Column on Mobile, Studio 2-Column Widescreen on Desktop */}
-            <div className="relative z-10 w-full max-w-md lg:max-w-6xl mx-auto flex-1 min-h-0 flex flex-col px-6 lg:px-10 pt-[max(0.75rem,env(safe-area-inset-top))] lg:pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:pb-8">
-              {/* Top Drag Handle (mobile) + Header Bar */}
-              <div className="space-y-2 shrink-0">
+            {/* Responsive Wrapper */}
+            <div className="relative z-10 w-full max-w-md lg:max-w-6xl mx-auto flex-1 min-h-0 flex flex-col px-6 lg:px-10 pt-[max(0.75rem,env(safe-area-inset-top))] lg:pt-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] lg:pb-8">
+              {/* Top Handle & Header */}
+              <div className="space-y-1.5 shrink-0">
                 <div className="flex justify-center pt-1 lg:hidden">
-                  <div className="h-1 w-10 rounded-full bg-slate-900/15 dark:bg-white/20" />
+                  <div className="h-1 w-9 rounded-full bg-slate-900/15 dark:bg-white/20" />
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
@@ -759,51 +806,18 @@ export function MiniAudioPlayer() {
                     type="button"
                     onClick={() => setExpanded(false)}
                     aria-label="Réduire le lecteur"
-                    className="h-10 w-10 rounded-full flex items-center justify-center text-slate-700 dark:text-white/80 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
+                    className="h-10 w-10 rounded-full flex items-center justify-center text-slate-700 dark:text-white/80 hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                   >
                     <ChevronDown size={22} />
                   </button>
 
                   <div className="min-w-0 flex-1 text-center">
-                    <p className="text-[10px] lg:text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-zinc-400">
+                    <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400 truncate">
                       {linkedProject?.title || 'En lecture'}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const ids =
-                          currentGroup && currentGroup.allTrackIds.length > 0
-                            ? currentGroup.allTrackIds
-                            : [currentTrack.id];
-                        const nextFav = !(currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite));
-                        setTrackGroupFavorite(ids, nextFav);
-                        triggerHapticTick(10);
-                        notify(nextFav ? 'Ajouté aux favoris ★' : 'Retiré des favoris');
-                      }}
-                      title={
-                        (currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite))
-                          ? 'Retirer des favoris'
-                          : 'Ajouter aux favoris'
-                      }
-                      aria-label="Favori"
-                      className={`h-10 w-10 rounded-full inline-flex items-center justify-center transition cursor-pointer ${
-                        (currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite))
-                          ? 'text-amber-500 dark:text-amber-400'
-                          : 'text-slate-600 dark:text-white/75 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
-                      }`}
-                    >
-                      <Star
-                        size={18}
-                        fill={
-                          (currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite))
-                            ? 'currentColor'
-                            : 'none'
-                        }
-                      />
-                    </button>
                     <button
                       type="button"
                       onClick={async () => {
@@ -827,9 +841,9 @@ export function MiniAudioPlayer() {
                           notify(`Partage : ${(err as Error).message}`);
                         }
                       }}
-                      title="Partager ce son (lien public sans compte)"
+                      title="Partager ce son"
                       aria-label="Partager"
-                      className="h-10 w-10 rounded-full inline-flex items-center justify-center text-slate-600 dark:text-white/75 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
+                      className="h-10 w-10 rounded-full inline-flex items-center justify-center text-slate-600 dark:text-white/75 hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                     >
                       <Share2 size={17} />
                     </button>
@@ -838,7 +852,7 @@ export function MiniAudioPlayer() {
                       onClick={closePlayer}
                       title="Arrêter et fermer"
                       aria-label="Arrêter"
-                      className="hidden lg:inline-flex h-10 w-10 rounded-full items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
+                      className="hidden lg:inline-flex h-10 w-10 rounded-full items-center justify-center text-slate-500 dark:text-zinc-400 hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
                     >
                       <X size={18} />
                     </button>
@@ -846,323 +860,374 @@ export function MiniAudioPlayer() {
                 </div>
               </div>
 
-              {/* Main Body: Single Column on Mobile · Widescreen 2-Column Studio on Desktop */}
+              {/* Main Body */}
               <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] lg:gap-12 xl:gap-16 lg:items-center lg:py-4">
-                {/* LEFT COLUMN: Cover Art + Title + Waveform + Transport */}
+                {/* LEFT COLUMN: Swipeable Cover Art + Title + Simple Spotify Progress Bar + Transport */}
                 <div className="flex-1 min-h-0 flex flex-col justify-between lg:justify-center lg:gap-6 lg:max-w-lg lg:mx-auto lg:w-full">
-                  {/* Large Spotify-Style Square Cover Art (Static, Zero Circular Crop · Tap -> Song Page!) */}
-                  <div className="flex-1 lg:flex-none flex flex-col items-center justify-center py-3 lg:py-0 min-h-0 w-full">
-                    <button
-                      type="button"
-                      onClick={handleOpenTrackPageFromCover}
-                      title="Cliquer pour ouvrir la page du morceau"
-                      className="group relative w-full max-w-[340px] sm:max-w-[360px] lg:max-w-[370px] xl:max-w-[400px] aspect-square rounded-2xl lg:rounded-3xl active:scale-[0.985] transition-transform cursor-pointer focus:outline-none"
+                  {/* SPOTIFY-STYLE HORIZONTALLY SWIPEABLE COVER CAROUSEL */}
+                  <div
+                    data-cover-swipe="true"
+                    className="flex-1 lg:flex-none flex items-center justify-center py-3 lg:py-0 min-h-0 w-full overflow-hidden"
+                  >
+                    <div
+                      ref={expandedCoverDragRef}
+                      className="relative w-full max-w-[330px] sm:max-w-[355px] lg:max-w-[375px] aspect-square will-change-transform"
                     >
+                      {/* Peeking Previous Cover (visible only while swiping right!) */}
+                      {prevPeekCover && (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute top-3 bottom-3 -left-[92%] w-[88%] rounded-2xl overflow-hidden opacity-45 scale-95 border border-slate-200/60 dark:border-white/10"
+                        >
+                          {prevPeekCover.url ? (
+                            <img src={prevPeekCover.url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className={`h-full w-full bg-gradient-to-br ${prevPeekCover.grad} flex items-center justify-center`}>
+                              <Disc3 size={44} className="text-white/40" />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Active Track Cover with Crisp Spotify Horizontal Slide Transition */}
+                      <AnimatePresence mode="popLayout" initial={false} custom={slideDir}>
+                        <motion.button
+                          key={currentTrack.id}
+                          type="button"
+                          custom={slideDir}
+                          initial={{ x: slideDir * 90, opacity: 0, scale: 0.96 }}
+                          animate={{ x: 0, opacity: 1, scale: 1 }}
+                          exit={{ x: slideDir * -90, opacity: 0, scale: 0.96 }}
+                          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                          onClick={handleOpenTrackPageFromCover}
+                          title="Glisser gauche/droite pour changer de son · Cliquer pour la page morceau"
+                          className={`absolute inset-0 w-full h-full rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200/80 dark:border-white/10 shadow-xl shadow-black/15 dark:shadow-black/60 active:scale-[0.985] cursor-pointer focus:outline-none ${
+                            coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
+                          } ${isLoadingTrack ? 'animate-pulse opacity-80' : ''}`}
+                        >
+                          {coverUrl ? (
+                            <img
+                              src={coverUrl}
+                              alt={displayTrackTitle}
+                              draggable={false}
+                              className="h-full w-full object-cover select-none pointer-events-none block"
+                            />
+                          ) : (
+                            <div className="h-full w-full flex items-center justify-center">
+                              <Disc3 size={64} className="text-white/40" strokeWidth={1.3} />
+                            </div>
+                          )}
+                        </motion.button>
+                      </AnimatePresence>
+
+                      {/* Peeking Next Cover (visible only while swiping left!) */}
+                      {nextPeekCover && (
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute top-3 bottom-3 -right-[92%] w-[88%] rounded-2xl overflow-hidden opacity-45 scale-95 border border-slate-200/60 dark:border-white/10"
+                        >
+                          {nextPeekCover.url ? (
+                            <img src={nextPeekCover.url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className={`h-full w-full bg-gradient-to-br ${nextPeekCover.grad} flex items-center justify-center`}>
+                              <Disc3 size={44} className="text-white/40" />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom Controls Stack */}
+                  <div className="space-y-4">
+                    {/* Title, Subtitle, Son/Prod Pill & Favorite Star (Spotify Layout!) */}
+                    <div data-cover-swipe="true" className="flex items-center justify-between gap-2.5">
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <AnimatePresence mode="popLayout" initial={false} custom={slideDir}>
+                          <motion.button
+                            key={currentTrack.id}
+                            type="button"
+                            custom={slideDir}
+                            initial={{ x: slideDir * 24, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: slideDir * -24, opacity: 0 }}
+                            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                            onClick={handleOpenTrackPageFromCover}
+                            className="w-full text-left cursor-pointer group block"
+                            title="Ouvrir la page du morceau"
+                          >
+                            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white truncate group-hover:underline">
+                              {displayTrackTitle}
+                            </h2>
+                            <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 truncate mt-0.5">
+                              {subtitle}
+                            </p>
+                          </motion.button>
+                        </AnimatePresence>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {alternateProdOrSong && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void playTrack(alternateProdOrSong.target, 0, queue);
+                              triggerHapticTick(8);
+                            }}
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
+                              alternateProdOrSong.isCurrentlyProd
+                                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+                                : 'bg-slate-900/8 dark:bg-white/10 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-white/15'
+                            }`}
+                          >
+                            <Music2 size={11} />
+                            {alternateProdOrSong.isCurrentlyProd ? 'Son' : 'Prod'}
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleToggleFav}
+                          aria-label="Favori"
+                          className={`h-9 w-9 rounded-full inline-flex items-center justify-center transition cursor-pointer ${
+                            isFavorite
+                              ? 'text-amber-500 dark:text-amber-400'
+                              : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          <Star size={19} fill={isFavorite ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* SIMPLE SPOTIFY PROGRESS BAR (Zero waveform bars, ultra-responsive 60fps scrub!) */}
+                    <div data-no-sheet-drag="true" className="w-full space-y-1">
                       <div
-                        className={`w-full h-full rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200/80 dark:border-white/10 shadow-[0_24px_60px_-16px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
-                          coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
-                        } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
+                        onPointerDown={handleBarPointerDown}
+                        onPointerMove={handleBarPointerMove}
+                        onPointerUp={finishBarDrag}
+                        onPointerCancel={finishBarDrag}
+                        style={{ touchAction: 'none' }}
+                        className={`group/bar relative w-full h-8 flex items-center cursor-pointer select-none ${
+                          isLoadingTrack ? 'opacity-40 pointer-events-none' : ''
+                        }`}
+                        title="Cliquer ou glisser pour naviguer"
                       >
-                        {coverUrl ? (
-                          <img
-                            src={coverUrl}
-                            alt={currentTrack.title}
-                            draggable={false}
-                            className="h-full w-full object-cover select-none pointer-events-none"
+                        {/* Track Rail */}
+                        <div
+                          className={`relative w-full rounded-full bg-slate-900/14 dark:bg-white/18 transition-[height] duration-100 overflow-hidden ${
+                            scrubbing ? 'h-1.5' : 'h-1 group-hover/bar:h-1.5'
+                          }`}
+                        >
+                          <div
+                            ref={progressFillRef}
+                            style={{ transform: 'scaleX(0)' }}
+                            className="h-full w-full origin-left bg-[#8C271E] dark:bg-[#E04F42] will-change-transform"
                           />
+                        </div>
+
+                        {/* Circular Spotify Thumb */}
+                        <div
+                          ref={progressThumbRef}
+                          style={{ left: '0%' }}
+                          className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#8C271E] dark:bg-white shadow-sm transition-transform duration-100 will-change-[left] ${
+                            scrubbing
+                              ? 'h-4 w-4 scale-100'
+                              : 'h-3 w-3 scale-90 group-hover/bar:scale-110'
+                          }`}
+                        />
+                      </div>
+
+                      {isLoadingTrack ? (
+                        <div className="h-4 flex items-center justify-between">
+                          <span className="h-2.5 w-9 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
+                          <span className="h-2.5 w-9 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
+                          <span ref={timeCurrentRef}>0:00</span>
+                          <span ref={timeTotalRef}>
+                            {effectiveDuration > 0 ? fmt(effectiveDuration) : '—'}
+                          </span>
+                        </div>
+                      )}
+
+                      {currentTrack.markers.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          {currentTrack.markers.map((mk) => (
+                            <button
+                              key={mk.id}
+                              type="button"
+                              onClick={() => {
+                                seek(mk.timeSec);
+                                applyVisualFrame(mk.timeSec, effectiveDuration);
+                                triggerHapticTick(8);
+                              }}
+                              className="rounded-full bg-slate-900/8 dark:bg-white/10 hover:bg-slate-900/14 dark:hover:bg-white/18 px-2.5 py-0.5 font-mono text-[10px] text-slate-700 dark:text-zinc-200 transition cursor-pointer"
+                            >
+                              {fmt(mk.timeSec)} · {mk.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Transport Row (Shuffle · Prev · Play/Pause · Next · Repeat) */}
+                    <div className="w-full flex items-center justify-between pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          toggleShuffle();
+                          triggerHapticTick(8);
+                        }}
+                        aria-label="Aléatoire"
+                        className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
+                          shuffle
+                            ? 'text-[#8C271E] dark:text-[#E04F42]'
+                            : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
+                        }`}
+                      >
+                        <Shuffle size={18} />
+                        {shuffle && (
+                          <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={triggerPrev}
+                        disabled={!hasPrev && currentTime <= 3}
+                        aria-label="Précédent"
+                        className="h-12 w-12 rounded-full flex items-center justify-center text-slate-900 dark:text-white active:scale-90 disabled:opacity-30 transition cursor-pointer"
+                      >
+                        <SkipBack size={25} fill="currentColor" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          togglePlay();
+                          triggerHapticTick(8);
+                        }}
+                        disabled={!canPlay || isLoadingTrack}
+                        aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
+                        className="h-16 w-16 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center active:scale-95 disabled:opacity-75 transition shadow-md shadow-[#8C271E]/25 cursor-pointer"
+                      >
+                        {isLoadingTrack ? (
+                          <Loader2 size={24} className="animate-spin" />
+                        ) : isPlaying ? (
+                          <Pause size={26} fill="currentColor" />
                         ) : (
-                          <div className="h-full w-full flex items-center justify-center">
-                            <Disc3 size={64} className="text-white/40" strokeWidth={1.3} />
-                          </div>
+                          <Play size={26} fill="currentColor" className="ml-1" />
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={triggerNext}
+                        disabled={!hasNext}
+                        aria-label="Suivant"
+                        className="h-12 w-12 rounded-full flex items-center justify-center text-slate-900 dark:text-white active:scale-90 disabled:opacity-30 transition cursor-pointer"
+                      >
+                        <SkipForward size={25} fill="currentColor" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          cycleRepeatMode();
+                          triggerHapticTick(8);
+                        }}
+                        aria-label="Mode boucle"
+                        className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
+                          repeatMode !== 'off'
+                            ? 'text-[#8C271E] dark:text-[#E04F42]'
+                            : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
+                        }`}
+                      >
+                        {repeatMode === 'one' ? <Repeat1 size={18} /> : <Repeat size={18} />}
+                        {repeatMode !== 'off' && (
+                          <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Slim Connect Device Pill + Mobile Queue/Close Row */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 min-w-0 ${
+                          isRemotePlayback && remoteDevice
+                            ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                            : 'border-slate-200/80 dark:border-white/10 bg-white/70 dark:bg-white/[0.04] text-slate-500 dark:text-zinc-400'
+                        }`}
+                      >
+                        {isRemotePlayback && remoteDevice ? (
+                          <>
+                            {remoteDevice.type === 'mobile' ? (
+                              <Smartphone size={13} className="shrink-0" />
+                            ) : remoteDevice.type === 'tablet' ? (
+                              <Tablet size={13} className="shrink-0" />
+                            ) : (
+                              <Monitor size={13} className="shrink-0" />
+                            )}
+                            <span className="text-[11px] font-semibold truncate">
+                              {remoteDevice.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void transferToThisDevice()}
+                              className="ml-1 rounded-full bg-emerald-600 text-white px-2 py-0.5 text-[10px] font-bold cursor-pointer shrink-0"
+                            >
+                              Ici
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {localDevice.type === 'mobile' ? (
+                              <Smartphone size={12} className="shrink-0" />
+                            ) : localDevice.type === 'tablet' ? (
+                              <Tablet size={12} className="shrink-0" />
+                            ) : (
+                              <Monitor size={12} className="shrink-0" />
+                            )}
+                            <span className="text-[11px] font-medium truncate">
+                              {localDevice.name}
+                            </span>
+                          </>
                         )}
                       </div>
-                    </button>
-                  </div>
 
-                  {/* Bottom Controls Stack (Title + Waveform + Transport + Mobile Queue) */}
-                  <div className="space-y-5 lg:space-y-4">
-                {/* Title, Subtitle & Optional Son/Prod Switch */}
-                <div className="flex items-start justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={handleOpenTrackPageFromCover}
-                    className="min-w-0 flex-1 text-left cursor-pointer group"
-                    title="Ouvrir la page du morceau"
-                  >
-                    <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white truncate group-hover:underline">
-                      {displayTrackTitle}
-                    </h2>
-                    <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 truncate mt-0.5">{subtitle}</p>
-                  </button>
-
-                  {alternateProdOrSong && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void playTrack(alternateProdOrSong.target, 0, queue);
-                        triggerHapticTick(10);
-                      }}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition cursor-pointer shrink-0 ${
-                        alternateProdOrSong.isCurrentlyProd
-                          ? 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 dark:border-emerald-400/30 hover:bg-emerald-500/25 dark:hover:bg-emerald-500/30'
-                          : 'bg-slate-900/8 dark:bg-white/10 text-slate-700 dark:text-zinc-200 border border-slate-200 dark:border-white/15 hover:bg-slate-900/14 dark:hover:bg-white/20'
-                      }`}
-                    >
-                      <Music2 size={11} />
-                      {alternateProdOrSong.isCurrentlyProd ? 'Son' : 'Prod'}
-                    </button>
-                  )}
-                </div>
-
-                {/* Full-Width Left-to-Right SoundCloud Waveform (0:00 glued left -> 100% right) */}
-                <div data-no-sheet-drag="true" className="w-full space-y-2">
-                  <div className="h-5 flex items-center justify-center">
-                    <span
-                      ref={scrubPillTextRef}
-                      className={`rounded-full bg-[#8C271E] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
-                        scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                      }`}
-                    />
-                  </div>
-
-                  <div
-                    onPointerDown={handleTapePointerDown}
-                    onPointerMove={handleTapePointerMove}
-                    onPointerUp={finishTapeDrag}
-                    onPointerCancel={finishTapeDrag}
-                    style={{ touchAction: 'none' }}
-                    className={`relative w-full h-12 cursor-pointer select-none transition-opacity ${
-                      isLoadingTrack ? 'animate-pulse opacity-35 pointer-events-none' : ''
-                    }`}
-                    title="Cliquer ou glisser pour naviguer dans le son"
-                  >
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px]">
-                      {unplayedBarsEl}
-                    </div>
-
-                    <div
-                      ref={tapePlayedRef}
-                      style={{ clipPath: 'inset(0 100% 0 0)' }}
-                      className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px] will-change-[clip-path]"
-                    >
-                      {playedBarsEl}
-                    </div>
-
-                    <div
-                      ref={playheadRef}
-                      style={{ left: '0%' }}
-                      className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-[#8C271E] dark:bg-[#E04F42] shadow-xs z-20"
-                    />
-                  </div>
-
-                  {isLoadingTrack ? (
-                    <div className="h-4 flex items-center justify-between">
-                      <span className="h-2.5 w-10 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
-                      <span className="h-2.5 w-10 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]">
-                      <span ref={timeCurrentRef}>0:00</span>
-                      <span ref={timeTotalRef}>{effectiveDuration > 0 ? fmt(effectiveDuration) : '—'}</span>
-                    </div>
-                  )}
-
-                  {currentTrack.markers.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-center gap-1.5 pt-0.5">
-                      {currentTrack.markers.map((mk) => (
+                      <div className="flex lg:hidden items-center gap-1 shrink-0">
                         <button
-                          key={mk.id}
                           type="button"
-                          onClick={() => {
-                            seek(mk.timeSec);
-                            applyVisualFrame(mk.timeSec, effectiveDuration);
-                            triggerHapticTick(10);
-                          }}
-                          className="rounded-full bg-slate-900/8 dark:bg-white/10 hover:bg-slate-900/14 dark:hover:bg-white/20 px-2.5 py-0.5 font-mono text-[10px] text-slate-700 dark:text-zinc-200 transition cursor-pointer"
+                          onClick={() => setShowQueue((v) => !v)}
+                          aria-label="File d’attente"
+                          className={`h-8 px-3 rounded-full inline-flex items-center gap-1.5 text-[11px] font-medium transition cursor-pointer ${
+                            showQueue
+                              ? 'bg-[#8C271E] text-white'
+                              : 'bg-slate-900/6 dark:bg-white/8 text-slate-700 dark:text-zinc-300'
+                          }`}
                         >
-                          {fmt(mk.timeSec)} · {mk.label}
+                          <ListMusic size={14} />
+                          <span>{queue.length}</span>
                         </button>
-                      ))}
+                        <button
+                          type="button"
+                          onClick={closePlayer}
+                          aria-label="Arrêter"
+                          className="h-8 w-8 rounded-full inline-flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </div>
-
-                {/* Transport Row (Shuffle · Prev · Play/Pause · Next · Repeat Off/All/1) */}
-                <div className="w-full flex items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      toggleShuffle();
-                      triggerHapticTick(10);
-                    }}
-                    title={shuffle ? 'Aléatoire activé' : 'Activer la lecture aléatoire'}
-                    aria-label="Aléatoire"
-                    className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
-                      shuffle
-                        ? 'text-[#8C271E] bg-[#8C271E]/12 dark:bg-white/10'
-                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
-                    }`}
-                  >
-                    <Shuffle size={18} />
-                    {shuffle && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#8C271E]" />
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playPrev();
-                      triggerHapticTick(10);
-                    }}
-                    disabled={!hasPrev && currentTime <= 3}
-                    aria-label="Précédent"
-                    className="h-12 w-12 rounded-full flex items-center justify-center text-slate-900 dark:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
-                  >
-                    <SkipBack size={24} fill="currentColor" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      togglePlay();
-                      triggerHapticTick(10);
-                    }}
-                    disabled={!canPlay || isLoadingTrack}
-                    aria-label={isLoadingTrack ? 'Chargement' : isPlaying ? 'Pause' : 'Lecture'}
-                    className="h-16 w-16 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center hover:scale-105 active:scale-95 disabled:opacity-75 transition shadow-lg shadow-[#8C271E]/30 cursor-pointer"
-                  >
-                    {isLoadingTrack ? (
-                      <Loader2 size={24} className="animate-spin" />
-                    ) : isPlaying ? (
-                      <Pause size={26} fill="currentColor" />
-                    ) : (
-                      <Play size={26} fill="currentColor" className="ml-1" />
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      playNext();
-                      triggerHapticTick(10);
-                    }}
-                    disabled={!hasNext}
-                    aria-label="Suivant"
-                    className="h-12 w-12 rounded-full flex items-center justify-center text-slate-900 dark:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 disabled:opacity-30 transition cursor-pointer"
-                  >
-                    <SkipForward size={24} fill="currentColor" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      cycleRepeatMode();
-                      triggerHapticTick(10);
-                    }}
-                    title={
-                      repeatMode === 'off'
-                        ? 'Pas de boucle (cliquer pour boucler la file / le projet)'
-                        : repeatMode === 'all'
-                        ? 'Boucle file / projet (cliquer pour boucler 1 morceau)'
-                        : 'Boucle 1 morceau (cliquer pour désactiver)'
-                    }
-                    aria-label="Mode boucle"
-                    className={`relative h-11 w-11 rounded-full flex items-center justify-center transition cursor-pointer ${
-                      repeatMode !== 'off'
-                        ? 'text-[#8C271E] bg-[#8C271E]/12 dark:bg-white/10'
-                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10'
-                    }`}
-                  >
-                    {repeatMode === 'one' ? <Repeat1 size={18} /> : <Repeat size={18} />}
-                    {repeatMode !== 'off' && (
-                      <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-[#8C271E]" />
-                    )}
-                  </button>
-                </div>
-
-                {/* Rowav Connect Device Bar (Spotify Connect style: Live device status + 1-tap transfer!) */}
-                <div
-                  className={`rounded-2xl border px-3.5 py-2.5 flex items-center justify-between gap-2.5 transition ${
-                    isRemotePlayback && remoteDevice
-                      ? 'border-emerald-500/35 dark:border-emerald-400/35 bg-emerald-500/10 dark:bg-emerald-500/12'
-                      : 'border-slate-200/80 dark:border-white/10 bg-white/75 dark:bg-white/[0.04]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isRemotePlayback && remoteDevice ? (
-                      <>
-                        {remoteDevice.type === 'mobile' ? (
-                          <Smartphone size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        ) : remoteDevice.type === 'tablet' ? (
-                          <Tablet size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        ) : (
-                          <Monitor size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        )}
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse shrink-0" />
-                        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 truncate">
-                          Lecture sur {remoteDevice.name}
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        {localDevice.type === 'mobile' ? (
-                          <Smartphone size={13} className="text-slate-500 dark:text-zinc-400 shrink-0" />
-                        ) : localDevice.type === 'tablet' ? (
-                          <Tablet size={13} className="text-slate-500 dark:text-zinc-400 shrink-0" />
-                        ) : (
-                          <Monitor size={13} className="text-slate-500 dark:text-zinc-400 shrink-0" />
-                        )}
-                        <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400 truncate">
-                          Cet appareil · {localDevice.name}
-                        </span>
-                      </>
-                    )}
                   </div>
-
-                  {isRemotePlayback && remoteDevice && (
-                    <button
-                      type="button"
-                      onClick={() => void transferToThisDevice()}
-                      className="rounded-full bg-emerald-600 dark:bg-emerald-500 hover:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 px-3 py-1 text-[11px] font-bold transition cursor-pointer shrink-0"
-                    >
-                      Jouer ici
-                    </button>
-                  )}
                 </div>
 
-                {/* Bottom Utility Row (Mobile only — Desktop has persistent Queue & Lyrics right panel!) */}
-                <div className="flex lg:hidden items-center justify-between pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowQueue((v) => !v)}
-                    className={`h-9 px-3.5 rounded-full inline-flex items-center gap-2 text-xs font-medium transition cursor-pointer ${
-                      showQueue
-                        ? 'bg-slate-950 dark:bg-white text-white dark:text-zinc-950'
-                        : 'bg-slate-900/8 dark:bg-white/8 text-slate-700 dark:text-zinc-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/14 dark:hover:bg-white/14'
-                    }`}
-                  >
-                    <ListMusic size={15} />
-                    <span>File d’attente ({queue.length})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={closePlayer}
-                    title="Arrêter et fermer"
-                    className="h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 transition cursor-pointer"
-                  >
-                    <X size={14} />
-                    <span>Arrêter</span>
-                  </button>
-                </div>
-              </div>
-                </div>
-
-                {/* RIGHT COLUMN (DESKTOP ONLY): Persistent Glass Panel — File d'attente & Paroles */}
+                {/* RIGHT COLUMN (DESKTOP ONLY): File d'attente & Paroles */}
                 <div
                   data-queue-scroll="true"
-                  className="hidden lg:flex flex-col h-[min(620px,calc(100vh-140px))] rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/75 dark:bg-white/[0.045] backdrop-blur-xl overflow-hidden shadow-xs dark:shadow-none"
+                  className="hidden lg:flex flex-col h-[min(600px,calc(100vh-140px))] rounded-3xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-white/[0.04] overflow-hidden"
                 >
                   <div className="px-4 py-3 border-b border-slate-200/80 dark:border-white/10 flex items-center gap-1.5 shrink-0">
                     <button
@@ -1170,8 +1235,8 @@ export function MiniAudioPlayer() {
                       onClick={() => setDesktopSideTab('queue')}
                       className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
                         desktopSideTab === 'queue'
-                          ? 'bg-slate-950 dark:bg-white text-white dark:text-zinc-950'
-                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/8'
+                          ? 'bg-[#8C271E] text-white'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
                       }`}
                     >
                       <ListMusic size={14} />
@@ -1182,8 +1247,8 @@ export function MiniAudioPlayer() {
                       onClick={() => setDesktopSideTab('lyrics')}
                       className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-semibold transition cursor-pointer ${
                         desktopSideTab === 'lyrics'
-                          ? 'bg-slate-950 dark:bg-white text-white dark:text-zinc-950'
-                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/6 dark:hover:bg-white/8'
+                          ? 'bg-[#8C271E] text-white'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white'
                       }`}
                     >
                       <FileText size={14} />
@@ -1209,7 +1274,7 @@ export function MiniAudioPlayer() {
                               type="button"
                               onClick={() => {
                                 void playTrack(t, 0, queue);
-                                triggerHapticTick(10);
+                                triggerHapticTick(8);
                               }}
                               className={`w-full flex items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                                 active
@@ -1240,14 +1305,32 @@ export function MiniAudioPlayer() {
                       data-queue-scroll="true"
                       className="flex-1 overflow-y-auto overscroll-contain px-6 py-5 select-text"
                     >
-                      {linkedLyrics && linkedLyrics.content.trim() ? (
-                        <div className="space-y-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500">
+                      {linkedLyrics && desktopLyricsLines.some((l) => l.text.trim()) ? (
+                        <div className="space-y-1">
+                          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-3">
                             {linkedLyrics.title}
                           </p>
-                          <p className="text-[15px] leading-[1.9] text-slate-800 dark:text-zinc-200 whitespace-pre-wrap font-normal">
-                            {linkedLyrics.content}
-                          </p>
+                          {desktopLyricsLines.map((ln, idx) =>
+                            !ln.text.trim() && !ln.fix ? (
+                              <div key={idx} className="h-3" />
+                            ) : (
+                              <div
+                                key={idx}
+                                className={`flex items-start gap-2 rounded-lg px-2 -mx-2 py-0.5 text-[15px] leading-[1.85] ${
+                                  ln.fix
+                                    ? 'bg-rose-500/10 text-slate-950 dark:text-white font-medium'
+                                    : 'text-slate-800 dark:text-zinc-200'
+                                }`}
+                              >
+                                {ln.fix && (
+                                  <span className="mt-1.5 rounded bg-[#8C271E] text-white px-1.5 py-0.5 text-[9px] font-bold shrink-0">
+                                    FIX
+                                  </span>
+                                )}
+                                <span className="whitespace-pre-wrap break-words">{ln.text}</span>
+                              </div>
+                            )
+                          )}
                         </div>
                       ) : (
                         <div className="h-full flex flex-col items-center justify-center text-center gap-2 text-slate-400 dark:text-zinc-500">
@@ -1261,15 +1344,15 @@ export function MiniAudioPlayer() {
               </div>
             </div>
 
-            {/* Slide-Up Queue Overlay Inside Full-Screen Player */}
+            {/* Slide-Up Queue Overlay (Mobile) */}
             <AnimatePresence>
               {showQueue && queue.length > 0 && (
                 <motion.div
                   initial={{ y: '100%' }}
                   animate={{ y: 0 }}
                   exit={{ y: '100%' }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 38 }}
-                  className="absolute inset-x-0 bottom-0 top-24 z-20 rounded-t-3xl bg-white/98 dark:bg-[#111115]/98 backdrop-blur-xl border-t border-slate-200/80 dark:border-white/10 flex flex-col"
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                  className="absolute inset-x-0 bottom-0 top-24 z-20 rounded-t-3xl bg-white dark:bg-[#131010] border-t border-slate-200/80 dark:border-white/10 flex flex-col"
                 >
                   <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-white/10 flex items-center justify-between">
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
@@ -1278,7 +1361,7 @@ export function MiniAudioPlayer() {
                     <button
                       type="button"
                       onClick={() => setShowQueue(false)}
-                      className="h-8 w-8 rounded-full flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:text-slate-950 dark:hover:text-white hover:bg-slate-900/8 dark:hover:bg-white/10 cursor-pointer"
+                      className="h-8 w-8 rounded-full flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:bg-slate-900/8 dark:hover:bg-white/10 cursor-pointer"
                     >
                       <X size={16} />
                     </button>
@@ -1296,12 +1379,12 @@ export function MiniAudioPlayer() {
                           type="button"
                           onClick={() => {
                             void playTrack(t, 0, queue);
-                            triggerHapticTick(10);
+                            triggerHapticTick(8);
                           }}
                           className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
                             active
                               ? 'bg-[#8C271E]/12 dark:bg-[#8C271E]/28 text-[#8C271E] dark:text-[#F08B82] font-semibold'
-                              : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8 hover:text-slate-900 dark:hover:text-zinc-200'
+                              : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8'
                           }`}
                         >
                           <span className="flex items-center gap-3 min-w-0">
@@ -1324,6 +1407,7 @@ export function MiniAudioPlayer() {
                 </motion.div>
               )}
             </AnimatePresence>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
