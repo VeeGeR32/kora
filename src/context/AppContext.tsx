@@ -416,6 +416,68 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [liveCommand, setLiveCommand] = useState<LivePlaybackCommand | null>(null);
   const lastLiveSigRef = useRef<string>('');
   const lastCmdIdRef = useRef<string>('');
+  const connectChannelRef = useRef<BroadcastChannel | null>(null);
+  const isLocalActiveConnectRef = useRef<boolean>(false);
+
+  const buildLiveSig = (rLive: LivePlaybackState | null) =>
+    rLive
+      ? `${rLive.activeDeviceId}:${rLive.claimSeq ?? 0}:${rLive.updatedAt}:${rLive.trackId}:${rLive.isPlaying}:${Math.round(rLive.positionSec)}:${rLive.repeatMode || ''}:${String(rLive.shuffle)}:${rLive.ackCommandId || ''}`
+      : 'null';
+
+  // Instant (<1ms) same-browser multi-tab Connect bridge via BroadcastChannel
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') return;
+    const ch = new BroadcastChannel('rowav_connect_v1');
+    connectChannelRef.current = ch;
+    ch.onmessage = (ev: MessageEvent) => {
+      const msg = ev.data as
+        | { kind: 'livePlayback'; payload: LivePlaybackState | null }
+        | { kind: 'liveCommand'; payload: LivePlaybackCommand | null }
+        | { kind: 'hello' }
+        | null;
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.kind === 'hello') {
+        // A newly opened tab is asking if any tab in this browser is currently active!
+        if (isLocalActiveConnectRef.current) {
+          const activeLive = latestStateRef.current.preferences?.lastSession?.livePlayback ?? null;
+          if (activeLive) {
+            try {
+              ch.postMessage({ kind: 'livePlayback', payload: activeLive });
+            } catch {
+              // ignore
+            }
+          }
+        }
+        return;
+      }
+      if (msg.kind === 'livePlayback') {
+        const rLive = msg.payload ?? null;
+        isLocalActiveConnectRef.current = false;
+        const sig = buildLiveSig(rLive);
+        if (sig !== lastLiveSigRef.current) {
+          lastLiveSigRef.current = sig;
+          setLivePlayback(rLive);
+        }
+      } else if (msg.kind === 'liveCommand') {
+        const rCmd = msg.payload ?? null;
+        const cid = rCmd?.id || '';
+        if (cid && cid !== lastCmdIdRef.current) {
+          lastCmdIdRef.current = cid;
+          setLiveCommand(rCmd);
+        }
+      }
+    };
+    // Ask already-open tabs in this browser for any active playback right away (<2ms sync!)
+    try {
+      ch.postMessage({ kind: 'hello' });
+    } catch {
+      // ignore
+    }
+    return () => {
+      ch.close();
+      if (connectChannelRef.current === ch) connectChannelRef.current = null;
+    };
+  }, []);
 
   const lastDriveAutoSyncAtRef = useRef<number>(0);
   const driveSyncInFlightRef = useRef<boolean>(false);
@@ -504,18 +566,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
 
         if (remote) {
-          // Always trust existing cloud data when signing in on a device!
+          // Always trust existing cloud studio data on sign-in, while preserving THIS device's own local UI navigation!
           ignoreNextPushRef.current = true;
           lastPushedUpdatedAtRef.current = remote.updatedAt || 0;
-          setState(mergeWithSeed(remote));
+          const localLs = latestStateRef.current.preferences?.lastSession;
+          const merged = mergeWithSeed(remote);
+          if (localLs) {
+            merged.preferences = {
+              ...merged.preferences,
+              lastSession: {
+                ...(merged.preferences.lastSession || { activeTab: 'music', savedAt: Date.now() }),
+                activeTab: localLs.activeTab,
+                musicSubTab: localLs.musicSubTab,
+                sportSubTab: localLs.sportSubTab,
+                studiesSubTab: localLs.studiesSubTab,
+                openMusicProjectId: localLs.openMusicProjectId,
+                selectedLyricsId: localLs.selectedLyricsId,
+                audioTrackId: localLs.audioTrackId,
+                audioTimeSec: localLs.audioTimeSec,
+                audioExpanded: localLs.audioExpanded,
+                scrollY: localLs.scrollY,
+              },
+            };
+          }
+          setState(merged);
           const initLive = remote.preferences?.lastSession?.livePlayback ?? null;
           const initCmd = remote.preferences?.lastSession?.liveCommand ?? null;
-          lastLiveSigRef.current = initLive
-            ? `${initLive.activeDeviceId}:${initLive.claimSeq ?? 0}:${initLive.updatedAt}:${initLive.trackId}:${initLive.isPlaying}:${Math.round(initLive.positionSec)}`
-            : 'null';
-          lastCmdIdRef.current = initCmd?.id || '';
-          setLivePlayback(initLive);
-          setLiveCommand(initCmd);
+          // Only adopt Firestore's initial livePlayback if a same-browser tab didn't already give us a fresher one via BroadcastChannel!
+          if (!lastLiveSigRef.current) {
+            lastLiveSigRef.current = buildLiveSig(initLive);
+            setLivePlayback(initLive);
+          }
+          if (!lastCmdIdRef.current) {
+            lastCmdIdRef.current = initCmd?.id || '';
+            setLiveCommand(initCmd);
+          }
           setLastCloudSyncAt(Date.now());
           setCloudError(null);
         } else {
@@ -554,32 +639,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             cloudUser.uid,
             (remote, meta) => {
               // 1. ALWAYS propagate Connect livePlayback & liveCommand immediately from server snapshots
-              // (immune to clock skew or same-ms updatedAt collisions!)
+              const rLive = remote.preferences?.lastSession?.livePlayback ?? null;
+              const rCmd = remote.preferences?.lastSession?.liveCommand ?? null;
               if (!meta.fromCache) {
-                const rLive = remote.preferences?.lastSession?.livePlayback ?? null;
-                const rCmd = remote.preferences?.lastSession?.liveCommand ?? null;
-                const nextLiveSig = rLive
-                  ? `${rLive.activeDeviceId}:${rLive.claimSeq ?? 0}:${rLive.updatedAt}:${rLive.trackId}:${rLive.isPlaying}:${Math.round(rLive.positionSec)}:${rLive.repeatMode || ''}:${String(rLive.shuffle)}`
-                  : 'null';
+                const nextLiveSig = buildLiveSig(rLive);
                 if (nextLiveSig !== lastLiveSigRef.current) {
                   lastLiveSigRef.current = nextLiveSig;
                   setLivePlayback(rLive);
                 }
                 const nextCmdId = rCmd?.id || '';
-                if (nextCmdId !== lastCmdIdRef.current) {
+                if (nextCmdId && nextCmdId !== lastCmdIdRef.current) {
                   lastCmdIdRef.current = nextCmdId;
                   setLiveCommand(rCmd);
                 }
               }
 
-              // 2. Ignore local cache echoes of our own writes; accept any server snapshot that differs
+              // 2. Merge ONLY real studio data updates (Connect deltas do NOT change `updatedAt`, so they never re-render the app!)
               const remoteTs = remote.updatedAt || 0;
               const localTs = latestStateRef.current.updatedAt || 0;
               if (remoteTs === lastPushedUpdatedAtRef.current || remoteTs === localTs) return;
               if (!meta.fromCache || remoteTs > localTs) {
                 ignoreNextPushRef.current = true;
                 lastPushedUpdatedAtRef.current = remoteTs;
-                setState(mergeWithSeed(remote));
+                const localLs = latestStateRef.current.preferences?.lastSession;
+                const merged = mergeWithSeed(remote);
+                if (localLs) {
+                  merged.preferences = {
+                    ...merged.preferences,
+                    lastSession: {
+                      ...(merged.preferences.lastSession || { activeTab: 'music', savedAt: Date.now() }),
+                      activeTab: localLs.activeTab,
+                      musicSubTab: localLs.musicSubTab,
+                      sportSubTab: localLs.sportSubTab,
+                      studiesSubTab: localLs.studiesSubTab,
+                      openMusicProjectId: localLs.openMusicProjectId,
+                      selectedLyricsId: localLs.selectedLyricsId,
+                      audioTrackId: localLs.audioTrackId,
+                      audioTimeSec: localLs.audioTimeSec,
+                      audioExpanded: localLs.audioExpanded,
+                      scrollY: localLs.scrollY,
+                    },
+                  };
+                }
+                setState(merged);
                 setLastCloudSyncAt(Date.now());
                 setCloudError(null);
               }
@@ -2845,6 +2947,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateLastSession = useCallback((patch: Partial<Omit<LastSessionState, 'savedAt'>>) => {
+    const keys = Object.keys(patch) as (keyof Omit<LastSessionState, 'savedAt'>)[];
+    const hasSharedStudioChange = keys.some(
+      (k) => k === 'driveSources' || k === 'playlists' || k === 'likedSocialTracks'
+    );
+
     setState((prev) => {
       const cur: LastSessionState = prev.preferences.lastSession || {
         activeTab: 'today',
@@ -2855,24 +2962,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...patch,
         savedAt: Date.now(),
       };
-      // Skip write if nothing meaningful changed
-      const keys = Object.keys(patch) as (keyof Omit<LastSessionState, 'savedAt'>)[];
       const changed = keys.some((k) => cur[k] !== next[k]);
       if (!changed) return prev;
+      // Local-only UI navigation changes (tab, scroll, audioExpanded, audioTimeSec…) stay in localStorage
+      // and NEVER trigger a heavy Firestore push to other devices!
+      if (!hasSharedStudioChange) {
+        ignoreNextPushRef.current = true;
+      }
       return {
         ...prev,
         preferences: {
           ...prev.preferences,
           lastSession: next,
         },
-        updatedAt: Date.now(),
+        ...(hasSharedStudioChange ? { updatedAt: Date.now() } : {}),
       };
     });
   }, []);
 
   const publishLivePlayback = useCallback(
     async (live: LivePlaybackState | null) => {
-      if (!cloudUser) return;
       const cur = latestStateRef.current;
       const prevSession: LastSessionState = cur.preferences.lastSession || {
         activeTab: 'music',
@@ -2888,15 +2997,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           },
         },
       };
-      lastLiveSigRef.current = live
-        ? `${live.activeDeviceId}:${live.claimSeq ?? 0}:${live.updatedAt}:${live.trackId}:${live.isPlaying}:${Math.round(live.positionSec)}:${live.repeatMode || ''}:${String(live.shuffle)}`
-        : 'null';
+      lastLiveSigRef.current = buildLiveSig(live);
+      isLocalActiveConnectRef.current = Boolean(live);
       setLivePlayback(live);
+      // 1. Instant (<1ms) broadcast to all other tabs in this browser!
       try {
-        const ts = await pushLivePlaybackDelta(resolvedFbConfig, cloudUser.uid, live);
-        lastPushedUpdatedAtRef.current = ts;
+        connectChannelRef.current?.postMessage({ kind: 'livePlayback', payload: live });
       } catch {
-        // Fallback silently if document isn't initialized yet
+        // ignore channel closed
+      }
+      // 2. Cloud delta to Firestore for cross-device control (PC <-> iPhone)
+      if (!cloudUser) return;
+      try {
+        await pushLivePlaybackDelta(resolvedFbConfig, cloudUser.uid, live);
+      } catch (err) {
+        console.warn('[Rowav Connect] publishLivePlayback error:', err);
       }
     },
     [cloudUser, resolvedFbConfig]
@@ -2904,7 +3019,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const publishLiveCommand = useCallback(
     async (cmd: LivePlaybackCommand | null) => {
-      if (!cloudUser) return;
       const cur = latestStateRef.current;
       const prevSession: LastSessionState = cur.preferences.lastSession || {
         activeTab: 'music',
@@ -2921,11 +3035,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         },
       };
       lastCmdIdRef.current = cmd?.id || '';
+      // 1. Instant (<1ms) command delivery to any other tab in this browser!
       try {
-        const ts = await pushLiveCommandDelta(resolvedFbConfig, cloudUser.uid, cmd);
-        lastPushedUpdatedAtRef.current = ts;
+        connectChannelRef.current?.postMessage({ kind: 'liveCommand', payload: cmd });
       } catch {
-        // Fallback silently if document isn't initialized yet
+        // ignore channel closed
+      }
+      // 2. Cloud delta to Firestore for cross-device control (PC <-> iPhone)
+      if (!cloudUser) return;
+      try {
+        await pushLiveCommandDelta(resolvedFbConfig, cloudUser.uid, cmd);
+      } catch (err) {
+        console.warn('[Rowav Connect] publishLiveCommand error:', err);
       }
     },
     [cloudUser, resolvedFbConfig]

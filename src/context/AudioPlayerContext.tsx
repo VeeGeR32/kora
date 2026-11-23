@@ -155,6 +155,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const claimSeqRef = useRef<number>(0);
   const handledCommandIdsRef = useRef<Set<string>>(new Set());
   const suppressLocalPublishRef = useRef<boolean>(false);
+  const pendingRemoteCmdRef = useRef<{
+    id: string;
+    type: LivePlaybackCommand['type'];
+    sentAt: number;
+  } | null>(null);
+  const pendingAckCommandIdRef = useRef<string | undefined>(undefined);
+  const lastAcceptedRemoteAtRef = useRef<number>(0);
 
   // Rolling history of recently played song groupKeys (prevents random repeats!)
   const recentGroupKeysRef = useRef<string[]>([]);
@@ -525,7 +532,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const publishLocalLive = useCallback(
     (
       overrides?: Partial<
-        Pick<LivePlaybackState, 'isPlaying' | 'positionSec' | 'durationSec' | 'trackId' | 'repeatMode' | 'shuffle'>
+        Pick<
+          LivePlaybackState,
+          'isPlaying' | 'positionSec' | 'durationSec' | 'trackId' | 'repeatMode' | 'shuffle' | 'ackCommandId'
+        >
       >,
       bumpClaimSeq = false
     ) => {
@@ -559,6 +569,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         claimSeqRef.current += 1;
       }
 
+      const ackId = overrides?.ackCommandId ?? pendingAckCommandIdRef.current;
+      if (ackId && pendingAckCommandIdRef.current === ackId) {
+        pendingAckCommandIdRef.current = undefined;
+      }
+
       const payload: LivePlaybackState = {
         activeDeviceId: localDevice.id,
         activeDeviceName: localDevice.name,
@@ -572,6 +587,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         positionUpdatedAt: now,
         repeatMode: overrides?.repeatMode ?? repeatModeRef.current,
         shuffle: typeof overrides?.shuffle === 'boolean' ? overrides.shuffle : shuffleRef.current,
+        ...(ackId ? { ackCommandId: ackId } : {}),
         updatedAt: now,
       };
       void publishLivePlayback(payload);
@@ -607,6 +623,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         issuedAt: now,
       };
 
+      // Guard optimistic UI against stale pre-command heartbeats until active device ACKs `cmd.id`!
+      pendingRemoteCmdRef.current = { id: cmd.id, type, sentAt: now };
+
       // Optimistic local mirror update so controls feel 0ms snappy while waiting for active device confirmation
       const elapsed = remote.isPlaying ? Math.max(0, (now - remote.positionUpdatedAt) / 1000) : 0;
       const curPos = Math.min(remote.durationSec || Infinity, remote.positionSec + elapsed);
@@ -628,6 +647,16 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       } else if (type === 'seek' && typeof extra?.timeSec === 'number') {
         nextRemote = { ...nextRemote, positionSec: extra.timeSec, positionUpdatedAt: now };
         setCurrentTime(extra.timeSec);
+      } else if (type === 'playTrack' && extra?.trackId) {
+        nextRemote = {
+          ...nextRemote,
+          trackId: extra.trackId,
+          queueIds: extra.queueIds || nextRemote.queueIds,
+          isPlaying: true,
+          positionSec: extra.timeSec ?? 0,
+          positionUpdatedAt: now,
+        };
+        setIsPlaying(true);
       } else if (type === 'setRepeat' && extra?.repeatMode) {
         nextRemote = { ...nextRemote, repeatMode: extra.repeatMode };
         repeatModeRef.current = extra.repeatMode;
@@ -932,6 +961,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         if (reqId === playRequestIdRef.current) {
           setIsPlaying(false);
           setIsLoadingTrack(false);
+          publishLocalLive({
+            trackId: track.id,
+            isPlaying: false,
+            positionSec: typeof startAtSec === 'number' ? startAtSec : audio.currentTime || 0,
+          });
         }
       }
     },
@@ -1077,7 +1111,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   const togglePlay = useCallback(() => {
     if (remoteSessionRef.current) {
-      sendRemoteCommand('toggle');
+      // Idempotent remote command: explicitly send 'pause' or 'play' instead of ambiguous 'toggle'!
+      sendRemoteCommand(remoteSessionRef.current.isPlaying ? 'pause' : 'play');
       return;
     }
     const audio = audioRef.current;
@@ -1458,6 +1493,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   // =========================================================================
   useEffect(() => {
     if (!livePlayback) {
+      pendingRemoteCmdRef.current = null;
+      lastAcceptedRemoteAtRef.current = 0;
       if (remoteSessionRef.current) {
         remoteSessionRef.current = null;
         setRemoteSession(null);
@@ -1473,6 +1510,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
     // CASE 1: WE are the active playback device!
     if (livePlayback.activeDeviceId === localDevice.id) {
+      pendingRemoteCmdRef.current = null;
+      lastAcceptedRemoteAtRef.current = 0;
       if (incomingSeq > claimSeqRef.current) {
         claimSeqRef.current = incomingSeq;
       }
@@ -1501,6 +1540,26 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     if (!alreadyMirroringThisDevice && localAudioActive && incomingSeq <= claimSeqRef.current) {
       return;
     }
+
+    // Monotonic freshness guard for updates from the same remote device (blocks out-of-order Firestore vs BroadcastChannel echoes!)
+    if (alreadyMirroringThisDevice && livePlayback.updatedAt < lastAcceptedRemoteAtRef.current) {
+      return;
+    }
+
+    // Optimistic command ACK guard: while waiting (< 2.2s) for the active device to acknowledge our command,
+    // ignore stale pre-command heartbeats so Play/Pause/Seek controls NEVER flicker back!
+    const pending = pendingRemoteCmdRef.current;
+    if (pending) {
+      if (livePlayback.ackCommandId === pending.id || !alreadyMirroringThisDevice) {
+        pendingRemoteCmdRef.current = null;
+      } else if (Date.now() - pending.sentAt < 2200) {
+        return;
+      } else {
+        pendingRemoteCmdRef.current = null;
+      }
+    }
+
+    lastAcceptedRemoteAtRef.current = livePlayback.updatedAt;
 
     // Valid remote takeover or update -> adopt remote claimSeq and pause local audio silently
     if (incomingSeq > claimSeqRef.current) {
@@ -1552,7 +1611,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   // =========================================================================
   // ROWAV CONNECT LISTENER 2: Dedicated command channel (`liveCommand`)
-  // Executed ONLY by the target active device — zero races with heartbeats!
+  // Executed ONLY by the target active device.
+  // Strict single-writer isolation: active device NEVER writes `liveCommand`
+  // (eliminates rapid-click race conditions); instead it stamps `ackCommandId` on `livePlayback`!
   // =========================================================================
   useEffect(() => {
     const cmd = liveCommand || livePlayback?.command || null;
@@ -1569,8 +1630,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       if (oldest) handledCommandIdsRef.current.delete(oldest);
     }
 
-    // Clear the command slot cleanly in Firestore once accepted
-    void publishLiveCommand(null);
+    // Attach ACK ID so the remote controller knows immediately when this exact command completes
+    pendingAckCommandIdRef.current = cmd.id;
 
     const audio = audioRef.current;
     if (cmd.type === 'toggle') {
@@ -1578,29 +1639,37 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         if (audio.paused) {
           void audio
             .play()
-            .then(() => publishLocalLive({ isPlaying: true }))
-            .catch(() => {});
+            .then(() => publishLocalLive({ isPlaying: true, ackCommandId: cmd.id }))
+            .catch(() => publishLocalLive({ isPlaying: false, ackCommandId: cmd.id }));
         } else {
           audio.pause();
-          publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0 });
+          publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0, ackCommandId: cmd.id });
         }
       } else if (currentTrackRef.current) {
         void playTrack(currentTrackRef.current, pendingResumeSecRef.current ?? 0, undefined, false, true);
+      } else {
+        pendingAckCommandIdRef.current = undefined;
       }
     } else if (cmd.type === 'play') {
       if (audio && audio.src) {
         void audio
           .play()
-          .then(() => publishLocalLive({ isPlaying: true }))
-          .catch(() => {});
+          .then(() => publishLocalLive({ isPlaying: true, ackCommandId: cmd.id }))
+          .catch(() => publishLocalLive({ isPlaying: false, ackCommandId: cmd.id }));
       } else if (currentTrackRef.current) {
         void playTrack(currentTrackRef.current, pendingResumeSecRef.current ?? 0, undefined, false, true);
+      } else {
+        pendingAckCommandIdRef.current = undefined;
       }
     } else if (cmd.type === 'pause') {
       if (audio) {
         audio.pause();
-        publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0 });
       }
+      publishLocalLive({
+        isPlaying: false,
+        positionSec: audio && audio.src ? audio.currentTime || 0 : pendingResumeSecRef.current ?? 0,
+        ackCommandId: cmd.id,
+      });
     } else if (cmd.type === 'seek' && typeof cmd.timeSec === 'number') {
       if (audio && audio.src) {
         audio.currentTime = cmd.timeSec;
@@ -1608,7 +1677,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         pendingResumeSecRef.current = cmd.timeSec;
       }
       setCurrentTime(cmd.timeSec);
-      publishLocalLive({ positionSec: cmd.timeSec });
+      publishLocalLive({ positionSec: cmd.timeSec, ackCommandId: cmd.id });
     } else if (cmd.type === 'next') {
       playNextRef.current();
     } else if (cmd.type === 'prev') {
@@ -1616,10 +1685,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     } else if (cmd.type === 'setRepeat' && cmd.repeatMode) {
       repeatModeRef.current = cmd.repeatMode;
       setRepeatModeState(cmd.repeatMode);
-      publishLocalLive({ repeatMode: cmd.repeatMode });
+      publishLocalLive({ repeatMode: cmd.repeatMode, ackCommandId: cmd.id });
     } else if (cmd.type === 'setShuffle' && typeof cmd.shuffle === 'boolean') {
       applyLocalShuffle(cmd.shuffle);
-      publishLocalLive({ shuffle: cmd.shuffle });
+      publishLocalLive({ shuffle: cmd.shuffle, ackCommandId: cmd.id });
     } else if (cmd.type === 'playTrack' && cmd.trackId) {
       const targetTrack = state.musicTracks.find((t) => t.id === cmd.trackId);
       if (targetTrack) {
@@ -1634,8 +1703,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           true,
           true
         );
+      } else {
+        publishLocalLive({ ackCommandId: cmd.id });
       }
     } else if (cmd.type === 'stop') {
+      pendingAckCommandIdRef.current = undefined;
       closePlayer();
     }
   }, [
@@ -1645,7 +1717,6 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     state.musicTracks,
     playTrack,
     publishLocalLive,
-    publishLiveCommand,
     applyLocalShuffle,
     closePlayer,
   ]);
@@ -1680,10 +1751,20 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         audioTimeSec: t,
       });
     };
+    const pauseConnectOnTabClose = () => {
+      if (remoteSessionRef.current) return;
+      const cur = currentTrackRef.current;
+      const audio = audioRef.current;
+      if (cur && audio && audio.src && !audio.paused) {
+        publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0 });
+      }
+    };
     window.addEventListener('pagehide', saveOnLeave);
+    window.addEventListener('beforeunload', pauseConnectOnTabClose);
     const timer = isPlaying && !remoteSession ? window.setInterval(heartbeat, 20_000) : null;
     return () => {
       window.removeEventListener('pagehide', saveOnLeave);
+      window.removeEventListener('beforeunload', pauseConnectOnTabClose);
       if (timer !== null) window.clearInterval(timer);
     };
   }, [isPlaying, remoteSession, getLiveTime, updateLastSession, publishLocalLive]);

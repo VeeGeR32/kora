@@ -13,7 +13,6 @@ function KoraMusicApp() {
     cloudConfigured,
     cloudUser,
     authReady,
-    lastCloudSyncAt,
     updateLastSession,
   } = useApp();
   const player = useAudioPlayer();
@@ -23,9 +22,7 @@ function KoraMusicApp() {
   );
   const [navResetNonce, setNavResetNonce] = useState(0);
 
-  const bootTimestampRef = useRef<number>(Date.now());
   const localRestoredRef = useRef(false);
-  const cloudRestoredRef = useRef(false);
 
   const setActivePage = useCallback(
     (next: AppPage) => {
@@ -46,21 +43,12 @@ function KoraMusicApp() {
     [setActivePage]
   );
 
-  // Restore exact last session (music tab, scroll position & audio track/timestamp) on app launch & cloud hydration
+  // Restore THIS device's own local last session (tab, scroll, paused track) ONCE on launch — never jump to another device's screen!
   useEffect(() => {
     const ls = state.preferences.lastSession;
     if (!ls) return;
-
-    const shouldApplyLocal = !localRestoredRef.current;
-    const shouldApplyCloud =
-      Boolean(lastCloudSyncAt) &&
-      !cloudRestoredRef.current &&
-      ls.savedAt > 0 &&
-      ls.savedAt <= bootTimestampRef.current + 15_000;
-
-    if (!shouldApplyLocal && !shouldApplyCloud) return;
-    if (shouldApplyLocal) localRestoredRef.current = true;
-    if (lastCloudSyncAt) cloudRestoredRef.current = true;
+    if (localRestoredRef.current) return;
+    localRestoredRef.current = true;
 
     if (ls.musicSubTab) {
       setActivePageState(ls.musicSubTab);
@@ -79,11 +67,7 @@ function KoraMusicApp() {
         window.scrollTo({ top: targetY, behavior: 'auto' });
       }, 120);
     }
-  }, [
-    lastCloudSyncAt,
-    state.preferences.lastSession?.savedAt,
-    state.musicTracks.length,
-  ]);
+  }, [state.preferences.lastSession?.savedAt, state.musicTracks.length]);
 
   // If user taps cover art or "Éditer les paroles" inside the player while on Settings or Docs, switch back to MusicView!
   useEffect(() => {

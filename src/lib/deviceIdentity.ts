@@ -6,11 +6,11 @@ export interface LocalDeviceInfo {
   type: DeviceKind;
 }
 
-const DEVICE_ID_KEY = 'kora_connect_device_id';
+const TAB_DEVICE_ID_KEY = 'rowav_connect_tab_device_id_v1';
 
 function detectDeviceMeta(): { name: string; type: DeviceKind } {
   if (typeof navigator === 'undefined') {
-    return { name: 'Appareil Kora', type: 'desktop' };
+    return { name: 'Appareil Rowav', type: 'desktop' };
   }
   const ua = navigator.userAgent || '';
   const platform =
@@ -34,21 +34,26 @@ function detectDeviceMeta(): { name: string; type: DeviceKind } {
 
 let cachedDevice: LocalDeviceInfo | null = null;
 
+/**
+ * Uses `sessionStorage` so each browser tab has its own unique Connect identity
+ * (while surviving page refreshes on the same tab). Prevents two tabs on the same PC
+ * from sharing an identical `deviceId` and failing to control each other!
+ */
 export function getLocalDeviceInfo(): LocalDeviceInfo {
   if (cachedDevice) return cachedDevice;
   let id = '';
   if (typeof window !== 'undefined') {
     try {
-      id = window.localStorage.getItem(DEVICE_ID_KEY) || '';
+      id = window.sessionStorage.getItem(TAB_DEVICE_ID_KEY) || '';
       if (!id) {
-        id = `dev_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
-        window.localStorage.setItem(DEVICE_ID_KEY, id);
+        id = `tab_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+        window.sessionStorage.setItem(TAB_DEVICE_ID_KEY, id);
       }
     } catch {
-      id = `dev_${Math.random().toString(36).slice(2, 10)}`;
+      id = `tab_${Math.random().toString(36).slice(2, 10)}`;
     }
   } else {
-    id = 'dev_ssr';
+    id = 'tab_ssr';
   }
   const { name, type } = detectDeviceMeta();
   cachedDevice = { id, name, type };

@@ -489,6 +489,7 @@ export interface LivePlaybackState {
   positionUpdatedAt: number;
   repeatMode?: 'off' | 'all' | 'one';
   shuffle?: boolean;
+  ackCommandId?: string; // ID of the last remote LivePlaybackCommand processed by active device
   command?: LivePlaybackCommand; // Legacy compatibility
   updatedAt: number;
 }

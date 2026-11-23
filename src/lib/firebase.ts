@@ -677,21 +677,14 @@ export async function pushStateToCloud(
   }
   if (cleanPrefs.lastSession && typeof cleanPrefs.lastSession === 'object') {
     const lsObj = cleanPrefs.lastSession as Record<string, unknown>;
-    const optionalLsKeys = [
-      'openMusicProjectId',
-      'selectedLyricsId',
-      'audioTrackId',
-      'audioTimeSec',
-      'audioExpanded',
-    ];
-    for (const [k, v] of Object.entries(lsObj)) {
-      // STRICT ISOLATION: Connect fields are owned exclusively by pushLivePlaybackDelta / pushLiveCommandDelta
-      if (k === 'livePlayback' || k === 'liveCommand') continue;
-      updateMap[`preferences.lastSession.${k}`] = v;
-    }
-    for (const k of optionalLsKeys) {
-      if (!(k in lsObj)) {
-        updateMap[`preferences.lastSession.${k}`] = deleteField();
+    // ONLY sync shared studio data inside `lastSession` (driveSources, playlists, likedSocialTracks).
+    // Per-device UI navigation state (activeTab, musicSubTab, scrollY, audioExpanded, openMusicProjectId,
+    // selectedLyricsId, audioTrackId, audioTimeSec) stays 100% LOCAL to each device so PC never jumps iPhone!
+    // And Connect fields (livePlayback, liveCommand) are owned exclusively by pushLivePlaybackDelta / pushLiveCommandDelta.
+    const SHARED_SESSION_KEYS = ['driveSources', 'playlists', 'likedSocialTracks'] as const;
+    for (const k of SHARED_SESSION_KEYS) {
+      if (k in lsObj) {
+        updateMap[`preferences.lastSession.${k}`] = lsObj[k];
       }
     }
   }
@@ -709,7 +702,8 @@ export async function pushStateToCloud(
   return cleanPayload.updatedAt as number;
 }
 
-/** Ultra-lightweight Firestore delta write (~350 bytes) for real-time Rowav Connect active playback state */
+/** Ultra-lightweight Firestore delta write (~350 bytes) for real-time Rowav Connect active playback state.
+ *  Does NOT touch top-level `updatedAt` so Connect heartbeats NEVER trigger full appState merges on other devices! */
 export async function pushLivePlaybackDelta(
   config: FirebaseUserConfig | null | undefined,
   uid: string,
@@ -722,7 +716,6 @@ export async function pushLivePlaybackDelta(
   const sanitized = livePlayback ? JSON.parse(JSON.stringify(livePlayback)) : null;
   await updateDoc(refDoc, {
     'preferences.lastSession.livePlayback': sanitized,
-    updatedAt: ts,
   });
   return ts;
 }
@@ -730,7 +723,7 @@ export async function pushLivePlaybackDelta(
 /**
  * Dedicated Firestore delta write for Rowav Connect remote commands.
  * Written to `preferences.lastSession.liveCommand` (completely separate from `livePlayback`),
- * so active device heartbeats can NEVER race with or overwrite incoming remote commands!
+ * without touching `updatedAt`, so active device heartbeats can NEVER race with or overwrite commands!
  */
 export async function pushLiveCommandDelta(
   config: FirebaseUserConfig | null | undefined,
@@ -744,7 +737,6 @@ export async function pushLiveCommandDelta(
   const sanitized = liveCommand ? JSON.parse(JSON.stringify(liveCommand)) : null;
   await updateDoc(refDoc, {
     'preferences.lastSession.liveCommand': sanitized,
-    updatedAt: ts,
   });
   return ts;
 }
