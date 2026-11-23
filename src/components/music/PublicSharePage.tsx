@@ -27,9 +27,7 @@ interface PublicSharePageProps {
   token: string;
 }
 
-const BAR_COUNT = 110;
-const BAR_STEP_PX = 4.5;
-const TOTAL_TAPE_PX = BAR_COUNT * BAR_STEP_PX;
+const BAR_COUNT = 72;
 
 function fmt(sec: number): string {
   if (!sec || !isFinite(sec)) return '0:00';
@@ -70,16 +68,15 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
   const discRef = useRef<HTMLDivElement>(null);
   const miniDiscRef = useRef<HTMLDivElement>(null);
   const tapePlayedRef = useRef<HTMLDivElement>(null);
-  const tapeUnplayedRef = useRef<HTMLDivElement>(null);
-  const timeTextRef = useRef<HTMLParagraphElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const timeCurrentRef = useRef<HTMLSpanElement>(null);
+  const timeTotalRef = useRef<HTMLSpanElement>(null);
   const scrubPillRef = useRef<HTMLSpanElement>(null);
 
   const scrubbingRef = useRef(false);
   const scrubTimeRef = useRef(0);
   const dragRef = useRef<{
     pointerId: number;
-    startX: number;
-    startTime: number;
     lastTickBar: number;
   } | null>(null);
 
@@ -135,11 +132,9 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
       bars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#E04F42]" />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] max-w-[3.5px] rounded-full bg-[#E04F42]"
+        />
       )),
     [bars]
   );
@@ -149,11 +144,9 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
       bars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#E04F42]/28" />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] max-w-[3.5px] rounded-full bg-[#E04F42]/28"
+        />
       )),
     [bars]
   );
@@ -165,18 +158,23 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
 
   const applyVisualFrame = useCallback((t: number, dur: number) => {
     const r = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
-    const tx = -r * TOTAL_TAPE_PX;
-    const tapeTransform = `translate3d(${tx}px, 0, 0)`;
-    if (tapePlayedRef.current) tapePlayedRef.current.style.transform = tapeTransform;
-    if (tapeUnplayedRef.current) tapeUnplayedRef.current.style.transform = tapeTransform;
+    const pct = r * 100;
+    if (tapePlayedRef.current) {
+      tapePlayedRef.current.style.clipPath = `inset(0 ${(100 - pct).toFixed(3)}% 0 0)`;
+    }
+    if (playheadRef.current) {
+      playheadRef.current.style.left = `${pct.toFixed(3)}%`;
+    }
 
     const rot = `rotate(${t * 24}deg)`;
     if (discRef.current) discRef.current.style.transform = rot;
     if (miniDiscRef.current) miniDiscRef.current.style.transform = rot;
 
-    const label = `${fmt(t)} / ${fmt(dur)}`;
-    if (timeTextRef.current) timeTextRef.current.textContent = label;
-    if (scrubPillRef.current) scrubPillRef.current.textContent = label;
+    const curLabel = fmt(t);
+    const totalLabel = dur > 0 ? fmt(dur) : '—';
+    if (timeCurrentRef.current) timeCurrentRef.current.textContent = curLabel;
+    if (timeTotalRef.current) timeTotalRef.current.textContent = totalLabel;
+    if (scrubPillRef.current) scrubPillRef.current.textContent = `${curLabel} / ${totalLabel}`;
   }, []);
 
   const playAtIndex = useCallback(
@@ -307,35 +305,33 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
     return () => window.cancelAnimationFrame(rafId);
   }, [isPlaying, effectiveDuration, applyVisualFrame, getLiveTime]);
 
-  // Drag-to-scrub on tape reel
+  // Direct click/drag scrubbing (0:00 at left edge -> 100% right edge)
   const handleTapeDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!effectiveDuration) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const liveT = getLiveTime();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = rect.width ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
+    const nextSec = ratio * effectiveDuration;
     dragRef.current = {
       pointerId: e.pointerId,
-      startX: e.clientX,
-      startTime: liveT,
-      lastTickBar: Math.floor((liveT / effectiveDuration) * BAR_COUNT),
+      lastTickBar: Math.floor(ratio * BAR_COUNT),
     };
-    scrubTimeRef.current = liveT;
+    scrubTimeRef.current = nextSec;
     scrubbingRef.current = true;
     setScrubbing(true);
-    applyVisualFrame(liveT, effectiveDuration);
+    applyVisualFrame(nextSec, effectiveDuration);
     triggerHapticTick(10);
   };
 
   const handleTapeMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId || !effectiveDuration) return;
-    const dx = drag.startX - e.clientX;
-    const nextSec = Math.max(
-      0,
-      Math.min(effectiveDuration, drag.startTime + (dx / TOTAL_TAPE_PX) * effectiveDuration)
-    );
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = rect.width ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
+    const nextSec = ratio * effectiveDuration;
     scrubTimeRef.current = nextSec;
     applyVisualFrame(nextSec, effectiveDuration);
-    const barIdx = Math.floor((nextSec / effectiveDuration) * BAR_COUNT);
+    const barIdx = Math.floor(ratio * BAR_COUNT);
     if (barIdx !== drag.lastTickBar) {
       drag.lastTickBar = barIdx;
       triggerHapticTick(24);
@@ -421,12 +417,12 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
           </div>
         </div>
 
-        {/* 60/120fps Tape-Reel Waveform */}
+        {/* Full-Width Left-to-Right SoundCloud Waveform (0:00 glued left -> 100% right) */}
         <div className="w-full space-y-2.5">
           <div className="h-6 flex items-center justify-center">
             <span
               ref={scrubPillRef}
-              className={`rounded-full bg-amber-300 text-zinc-950 px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums shadow-md transition-all duration-150 ${
+              className={`rounded-full bg-[#8C271E] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums shadow-md transition-all duration-150 ${
                 scrubbing ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'
               }`}
             />
@@ -438,37 +434,30 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
             onPointerUp={handleTapeUp}
             onPointerCancel={handleTapeUp}
             style={{ touchAction: 'none' }}
-            className="relative w-full h-12 overflow-hidden cursor-grab active:cursor-grabbing select-none"
+            className="relative w-full h-12 cursor-pointer select-none"
           >
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[#0b0b0d] to-transparent z-20" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-7 bg-gradient-to-l from-[#0b0b0d] to-transparent z-20" />
-
-            <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
-              <div
-                ref={tapePlayedRef}
-                style={{ width: `${TOTAL_TAPE_PX}px` }}
-                className="absolute inset-y-0 left-full flex items-center will-change-transform"
-              >
-                {playedBarsEl}
-              </div>
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px]">
+              {unplayedBarsEl}
             </div>
-            <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 overflow-hidden">
-              <div
-                ref={tapeUnplayedRef}
-                style={{ width: `${TOTAL_TAPE_PX}px` }}
-                className="absolute inset-y-0 left-0 flex items-center will-change-transform"
-              >
-                {unplayedBarsEl}
-              </div>
+            <div
+              ref={tapePlayedRef}
+              style={{ clipPath: 'inset(0 100% 0 0)' }}
+              className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px] will-change-[clip-path]"
+            >
+              {playedBarsEl}
             </div>
 
-            <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-[#E04F42] shadow-[0_0_10px_rgba(140,39,30,0.85)] z-30" />
+            <div
+              ref={playheadRef}
+              style={{ left: '0%' }}
+              className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-[#E04F42] shadow-[0_0_10px_rgba(140,39,30,0.85)] z-30"
+            />
           </div>
 
-          <p
-            ref={timeTextRef}
-            className="text-center font-mono text-xs text-zinc-400 tabular-nums min-h-[1rem]"
-          />
+          <div className="flex items-center justify-between font-mono text-[11px] text-zinc-400 tabular-nums min-h-[1rem]">
+            <span ref={timeCurrentRef}>0:00</span>
+            <span ref={timeTotalRef}>{effectiveDuration > 0 ? fmt(effectiveDuration) : '—'}</span>
+          </div>
         </div>
 
         {/* Transport Controls */}

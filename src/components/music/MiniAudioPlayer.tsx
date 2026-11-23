@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronDown,
   Disc3,
@@ -53,13 +53,8 @@ function fmt(sec: number) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-const BAR_COUNT = 110;
-const BAR_STEP_PX = 4.5; // crisp dense [untitled] tape bars
-const TOTAL_TAPE_PX = BAR_COUNT * BAR_STEP_PX;
-
-const MINI_BAR_COUNT = 44;
-const MINI_BAR_STEP_PX = 3.5;
-const MINI_TAPE_PX = MINI_BAR_COUNT * MINI_BAR_STEP_PX;
+const BAR_COUNT = 84;
+const MINI_BAR_COUNT = 28;
 
 export function MiniAudioPlayer() {
   const { state, setTrackGroupFavorite, notify } = useApp();
@@ -100,10 +95,11 @@ export function MiniAudioPlayer() {
   // Direct GPU DOM refs updated via 60/120fps requestAnimationFrame (ZERO React re-renders per frame!)
   const miniDiscRef = useRef<HTMLDivElement>(null);
   const tapePlayedRef = useRef<HTMLDivElement>(null);
-  const tapeUnplayedRef = useRef<HTMLDivElement>(null);
+  const playheadRef = useRef<HTMLDivElement>(null);
   const miniTapePlayedRef = useRef<HTMLDivElement>(null);
-  const miniTapeUnplayedRef = useRef<HTMLDivElement>(null);
-  const timeTextRef = useRef<HTMLParagraphElement>(null);
+  const miniPlayheadRef = useRef<HTMLDivElement>(null);
+  const timeCurrentRef = useRef<HTMLSpanElement>(null);
+  const timeTotalRef = useRef<HTMLSpanElement>(null);
   const scrubPillTextRef = useRef<HTMLSpanElement>(null);
   const miniSwipeContentRef = useRef<HTMLDivElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -112,8 +108,6 @@ export function MiniAudioPlayer() {
   const scrubbingRef = useRef(false);
   const dragRef = useRef<{
     pointerId: number;
-    startX: number;
-    startTime: number;
     lastTickBar: number;
   } | null>(null);
   const miniSwipeRef = useRef<{
@@ -219,30 +213,34 @@ export function MiniAudioPlayer() {
 
   const effectiveDuration = duration || currentTrack?.durationSec || 0;
 
-  // Helper that paints exact GPU transforms & clock text directly to the DOM at 60/120fps
+  // Helper that paints exact GPU clip-path & clock text directly to the DOM at 60/120fps (0:00 glued left -> 100% right)
   const applyVisualFrame = (t: number, dur: number) => {
     const r = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
-    const tx = -r * TOTAL_TAPE_PX;
-    const miniTx = -r * MINI_TAPE_PX;
+    const pct = r * 100;
+    const clip = `inset(0 ${(100 - pct).toFixed(3)}% 0 0)`;
+    const leftPct = `${pct.toFixed(3)}%`;
     const rot = t * 24; // smooth 24 deg/s vinyl spin synced directly to audio time
 
-    const tapeTransform = `translate3d(${tx.toFixed(2)}px, 0, 0)`;
-    if (tapePlayedRef.current) tapePlayedRef.current.style.transform = tapeTransform;
-    if (tapeUnplayedRef.current) tapeUnplayedRef.current.style.transform = tapeTransform;
+    if (tapePlayedRef.current) tapePlayedRef.current.style.clipPath = clip;
+    if (playheadRef.current) playheadRef.current.style.left = leftPct;
 
-    const miniTransform = `translate3d(${miniTx.toFixed(2)}px, 0, 0)`;
-    if (miniTapePlayedRef.current) miniTapePlayedRef.current.style.transform = miniTransform;
-    if (miniTapeUnplayedRef.current) miniTapeUnplayedRef.current.style.transform = miniTransform;
+    if (miniTapePlayedRef.current) miniTapePlayedRef.current.style.clipPath = clip;
+    if (miniPlayheadRef.current) miniPlayheadRef.current.style.left = leftPct;
 
     const discTransform = `rotate3d(0, 0, 1, ${rot.toFixed(2)}deg)`;
     if (miniDiscRef.current) miniDiscRef.current.style.transform = discTransform;
 
-    const label = `${fmt(t)} / ${fmt(dur)}`;
-    if (timeTextRef.current && timeTextRef.current.textContent !== label) {
-      timeTextRef.current.textContent = label;
+    const curLabel = fmt(t);
+    const totalLabel = dur > 0 ? fmt(dur) : '—';
+    if (timeCurrentRef.current && timeCurrentRef.current.textContent !== curLabel) {
+      timeCurrentRef.current.textContent = curLabel;
     }
-    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== label) {
-      scrubPillTextRef.current.textContent = label;
+    if (timeTotalRef.current && timeTotalRef.current.textContent !== totalLabel) {
+      timeTotalRef.current.textContent = totalLabel;
+    }
+    const pillLabel = `${curLabel} / ${totalLabel}`;
+    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== pillLabel) {
+      scrubPillTextRef.current.textContent = pillLabel;
     }
   };
 
@@ -306,31 +304,34 @@ export function MiniAudioPlayer() {
       currentTrack?.googleDriveFileId
   );
 
-  // Zero-lag GPU drag scrubbing with haptic ticks!
+  // Zero-lag direct click-or-drag SoundCloud scrubbing (0:00 at left edge -> 100% at right edge)
+  const computeScrubTimeFromPointer = (el: HTMLDivElement, clientX: number, dur: number) => {
+    const rect = el.getBoundingClientRect();
+    if (!rect.width) return 0;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return ratio * dur;
+  };
+
   const handleTapePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!effectiveDuration) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    const liveT = getLiveTime();
-    const startBar = Math.floor((liveT / effectiveDuration) * BAR_COUNT);
+    const nextSec = computeScrubTimeFromPointer(e.currentTarget, e.clientX, effectiveDuration);
+    const startBar = Math.floor((nextSec / effectiveDuration) * BAR_COUNT);
     dragRef.current = {
       pointerId: e.pointerId,
-      startX: e.clientX,
-      startTime: liveT,
       lastTickBar: startBar,
     };
-    scrubTimeRef.current = liveT;
+    scrubTimeRef.current = nextSec;
     scrubbingRef.current = true;
     setScrubbing(true);
-    applyVisualFrame(liveT, effectiveDuration);
+    applyVisualFrame(nextSec, effectiveDuration);
     triggerHapticTick(10);
   };
 
   const handleTapePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId || !effectiveDuration) return;
-    const dx = drag.startX - e.clientX;
-    const deltaSec = (dx / TOTAL_TAPE_PX) * effectiveDuration;
-    const nextSec = Math.max(0, Math.min(effectiveDuration, drag.startTime + deltaSec));
+    const nextSec = computeScrubTimeFromPointer(e.currentTarget, e.clientX, effectiveDuration);
     scrubTimeRef.current = nextSec;
     applyVisualFrame(nextSec, effectiveDuration);
 
@@ -356,17 +357,15 @@ export function MiniAudioPlayer() {
     triggerHapticTick(10);
   };
 
-  // Pre-rendered static bar rows (never re-rendered on playback frames!)
+  // Pre-rendered full-width bar rows (0:00 glued to left edge -> 100% right edge)
   const playedBarsEl = useMemo(
     () =>
       bars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] max-w-[3.5px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
+        />
       )),
     [bars]
   );
@@ -376,11 +375,9 @@ export function MiniAudioPlayer() {
       bars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25" />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] max-w-[3.5px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
+        />
       )),
     [bars]
   );
@@ -390,11 +387,9 @@ export function MiniAudioPlayer() {
       miniBars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${MINI_BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
+        />
       )),
     [miniBars]
   );
@@ -404,11 +399,9 @@ export function MiniAudioPlayer() {
       miniBars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${MINI_BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div style={{ height: `${h}%` }} className="w-[1.8px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25" />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
+        />
       )),
     [miniBars]
   );
@@ -557,17 +550,16 @@ export function MiniAudioPlayer() {
   };
 
   return (
-    <LayoutGroup id="rowav-audio-player">
+    <>
       {/* ================= FLOATING MINI PLAYER (SWIPE LEFT/RIGHT FOR NEXT/PREV!) ================= */}
-      <AnimatePresence mode="popLayout">
+      <AnimatePresence>
         {currentTrack && !expanded && (
           <motion.div
             key="rowav-mini-player"
-            layoutId="rowavPlayerSurface"
-            initial={{ opacity: 0, y: 24, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 360, damping: 34, mass: 0.85 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
             onWheel={handleMiniWheel}
             className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-4 left-2.5 right-2.5 md:left-64 [[data-sidebar-collapsed=true]_&]:md:left-24 md:right-6 z-[48] max-w-2xl md:mx-auto rounded-full bg-white/95 dark:bg-[#141010]/96 text-slate-900 dark:text-white border backdrop-blur-xl px-2 py-1.5 transition-[bottom,left,border-color,background-color] duration-300 ease-out overflow-hidden ${
               isRemotePlayback
@@ -590,9 +582,7 @@ export function MiniAudioPlayer() {
                   ref={miniSwipeContentRef}
                   className="flex items-center gap-2.5 min-w-0 flex-1 will-change-transform"
                 >
-                  <motion.div
-                    layoutId="rowavPlayerCover"
-                    transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+                  <div
                     ref={miniDiscRef}
                     className={`relative h-10 w-10 rounded-full overflow-hidden border border-slate-200/80 dark:border-white/15 shrink-0 will-change-transform ${
                       isLoadingTrack ? 'animate-pulse opacity-75' : ''
@@ -612,7 +602,7 @@ export function MiniAudioPlayer() {
                         <Disc3 size={15} className="text-white/90" />
                       </div>
                     )}
-                  </motion.div>
+                  </div>
 
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-semibold text-slate-900 dark:text-white truncate leading-tight">
@@ -632,32 +622,28 @@ export function MiniAudioPlayer() {
                 </div>
               </div>
 
-              {/* Smooth 60fps Mini Tape Preview (center-right on sm+) */}
+              {/* Left-to-Right Mini Waveform Preview (0:00 at left edge -> 100% right) */}
               <div
                 onClick={() => setExpanded(true)}
                 className={`hidden sm:block relative w-24 h-7 overflow-hidden cursor-pointer shrink-0 transition-opacity ${
                   isLoadingTrack ? 'animate-pulse opacity-35' : ''
                 }`}
               >
-                <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
-                  <div
-                    ref={miniTapePlayedRef}
-                    style={{ width: `${MINI_TAPE_PX}px` }}
-                    className="absolute inset-y-0 left-full flex items-center will-change-transform"
-                  >
-                    {miniPlayedBarsEl}
-                  </div>
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[1.5px]">
+                  {miniUnplayedBarsEl}
                 </div>
-                <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 overflow-hidden">
-                  <div
-                    ref={miniTapeUnplayedRef}
-                    style={{ width: `${MINI_TAPE_PX}px` }}
-                    className="absolute inset-y-0 left-0 flex items-center will-change-transform"
-                  >
-                    {miniUnplayedBarsEl}
-                  </div>
+                <div
+                  ref={miniTapePlayedRef}
+                  style={{ clipPath: 'inset(0 100% 0 0)' }}
+                  className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[1.5px] will-change-[clip-path]"
+                >
+                  {miniPlayedBarsEl}
                 </div>
-                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E]" />
+                <div
+                  ref={miniPlayheadRef}
+                  style={{ left: '0%' }}
+                  className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
+                />
               </div>
 
               {/* Compact Transport Controls (Connect Transfer / Prev / Play-Pause / Next / Close) */}
@@ -684,9 +670,7 @@ export function MiniAudioPlayer() {
                   <SkipBack size={14} fill="currentColor" />
                 </button>
 
-                <motion.button
-                  layoutId="rowavPlayerPlayBtn"
-                  transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+                <button
                   type="button"
                   data-mini-ctrl="true"
                   onClick={togglePlay}
@@ -701,7 +685,7 @@ export function MiniAudioPlayer() {
                   ) : (
                     <Play size={15} fill="currentColor" className="ml-0.5" />
                   )}
-                </motion.button>
+                </button>
 
                 <button
                   type="button"
@@ -729,17 +713,16 @@ export function MiniAudioPlayer() {
         )}
       </AnimatePresence>
 
-      {/* ================= FULL-SCREEN FLUID EXPANDING PLAYER (SWIPE DOWN TO MINIMIZE) ================= */}
-      <AnimatePresence mode="popLayout">
+      {/* ================= FULL-SCREEN CRISP SLIDE-UP PLAYER (SWIPE DOWN TO MINIMIZE) ================= */}
+      <AnimatePresence>
         {currentTrack && expanded && (
           <motion.div
             key="rowav-expanded-player"
-            layoutId="rowavPlayerSurface"
             ref={sheetRef}
-            initial={{ opacity: 0.65, scale: 0.96, borderRadius: 32 }}
-            animate={{ opacity: 1, scale: 1, borderRadius: 0 }}
-            exit={{ opacity: 0, scale: 0.94, y: 28, borderRadius: 32 }}
-            transition={{ type: 'spring', stiffness: 340, damping: 34, mass: 0.85 }}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             onPointerDown={handleSheetPointerDown}
             onPointerMove={handleSheetPointerMove}
             onPointerUp={finishSheetDrag}
@@ -875,9 +858,7 @@ export function MiniAudioPlayer() {
                       title="Cliquer pour ouvrir la page du morceau"
                       className="group relative w-full max-w-[340px] sm:max-w-[360px] lg:max-w-[370px] xl:max-w-[400px] aspect-square rounded-2xl lg:rounded-3xl active:scale-[0.985] transition-transform cursor-pointer focus:outline-none"
                     >
-                      <motion.div
-                        layoutId="rowavPlayerCover"
-                        transition={{ type: 'spring', stiffness: 340, damping: 34 }}
+                      <div
                         className={`w-full h-full rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200/80 dark:border-white/10 shadow-[0_24px_60px_-16px_rgba(15,23,42,0.28)] dark:shadow-[0_24px_70px_-14px_rgba(0,0,0,0.85)] transition-opacity ${
                           coverUrl ? '' : `bg-gradient-to-br ${gradCls}`
                         } ${isLoadingTrack ? 'animate-pulse opacity-75' : ''}`}
@@ -894,7 +875,7 @@ export function MiniAudioPlayer() {
                             <Disc3 size={64} className="text-white/40" strokeWidth={1.3} />
                           </div>
                         )}
-                      </motion.div>
+                      </div>
                     </button>
                   </div>
 
@@ -933,7 +914,7 @@ export function MiniAudioPlayer() {
                   )}
                 </div>
 
-                {/* 60/120fps Scrolling Tape Waveform (horizontal scrub isolated from sheet drag!) */}
+                {/* Full-Width Left-to-Right SoundCloud Waveform (0:00 glued left -> 100% right) */}
                 <div data-no-sheet-drag="true" className="w-full space-y-2">
                   <div className="h-5 flex items-center justify-center">
                     <span
@@ -950,46 +931,40 @@ export function MiniAudioPlayer() {
                     onPointerUp={finishTapeDrag}
                     onPointerCancel={finishTapeDrag}
                     style={{ touchAction: 'none' }}
-                    className={`relative w-full h-12 overflow-hidden cursor-grab active:cursor-grabbing select-none transition-opacity ${
+                    className={`relative w-full h-12 cursor-pointer select-none transition-opacity ${
                       isLoadingTrack ? 'animate-pulse opacity-35 pointer-events-none' : ''
                     }`}
-                    title="Glisser horizontalement pour naviguer dans le son"
+                    title="Cliquer ou glisser pour naviguer dans le son"
                   >
-                    <div className="pointer-events-none absolute inset-y-0 left-0 w-7 bg-gradient-to-r from-[#f8f8fa] dark:from-[#0b0b0e] to-transparent z-20" />
-                    <div className="pointer-events-none absolute inset-y-0 right-0 w-7 bg-gradient-to-l from-[#f8f8fa] dark:from-[#0b0b0e] to-transparent z-20" />
-
-                    <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
-                      <div
-                        ref={tapePlayedRef}
-                        style={{ width: `${TOTAL_TAPE_PX}px` }}
-                        className="absolute inset-y-0 left-full flex items-center will-change-transform"
-                      >
-                        {playedBarsEl}
-                      </div>
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px]">
+                      {unplayedBarsEl}
                     </div>
 
-                    <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 overflow-hidden">
-                      <div
-                        ref={tapeUnplayedRef}
-                        style={{ width: `${TOTAL_TAPE_PX}px` }}
-                        className="absolute inset-y-0 left-0 flex items-center will-change-transform"
-                      >
-                        {unplayedBarsEl}
-                      </div>
+                    <div
+                      ref={tapePlayedRef}
+                      style={{ clipPath: 'inset(0 100% 0 0)' }}
+                      className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px] will-change-[clip-path]"
+                    >
+                      {playedBarsEl}
                     </div>
 
-                    <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E] z-30" />
+                    <div
+                      ref={playheadRef}
+                      style={{ left: '0%' }}
+                      className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-[#8C271E] dark:bg-[#E04F42] shadow-xs z-20"
+                    />
                   </div>
 
                   {isLoadingTrack ? (
-                    <div className="h-4 flex items-center justify-center">
-                      <span className="h-2.5 w-20 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
+                    <div className="h-4 flex items-center justify-between">
+                      <span className="h-2.5 w-10 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
+                      <span className="h-2.5 w-10 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
                     </div>
                   ) : (
-                    <p
-                      ref={timeTextRef}
-                      className="text-center font-mono text-xs text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]"
-                    />
+                    <div className="flex items-center justify-between font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]">
+                      <span ref={timeCurrentRef}>0:00</span>
+                      <span ref={timeTotalRef}>{effectiveDuration > 0 ? fmt(effectiveDuration) : '—'}</span>
+                    </div>
                   )}
 
                   {currentTrack.markers.length > 0 && (
@@ -1047,9 +1022,7 @@ export function MiniAudioPlayer() {
                     <SkipBack size={24} fill="currentColor" />
                   </button>
 
-                  <motion.button
-                    layoutId="rowavPlayerPlayBtn"
-                    transition={{ type: 'spring', stiffness: 340, damping: 34 }}
+                  <button
                     type="button"
                     onClick={() => {
                       togglePlay();
@@ -1066,7 +1039,7 @@ export function MiniAudioPlayer() {
                     ) : (
                       <Play size={26} fill="currentColor" className="ml-1" />
                     )}
-                  </motion.button>
+                  </button>
 
                   <button
                     type="button"
@@ -1354,6 +1327,6 @@ export function MiniAudioPlayer() {
           </motion.div>
         )}
       </AnimatePresence>
-    </LayoutGroup>
+    </>
   );
 }

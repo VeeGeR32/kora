@@ -83,9 +83,7 @@ function fmtDate(iso?: string): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-const BAR_COUNT = 110;
-const BAR_STEP_PX = 4.5;
-const TOTAL_TAPE_PX = BAR_COUNT * BAR_STEP_PX;
+const BAR_COUNT = 96;
 
 export function TrackDetailModal({
   group,
@@ -184,20 +182,18 @@ export function TrackDetailModal({
     });
   }, [track?.id]);
 
-  // 60fps Scrolling Tape Waveform refs & state (identical to MiniAudioPlayer!)
+  // 60fps Left-to-Right SoundCloud Waveform refs & state (0:00 glued left -> 100% right)
   const tapePlayedRef = useRef<HTMLDivElement | null>(null);
-  const tapeUnplayedRef = useRef<HTMLDivElement | null>(null);
-  const timeTextRef = useRef<HTMLParagraphElement | null>(null);
+  const playheadRef = useRef<HTMLDivElement | null>(null);
+  const timeCurrentRef = useRef<HTMLSpanElement | null>(null);
+  const timeTotalRef = useRef<HTMLSpanElement | null>(null);
   const scrubPillTextRef = useRef<HTMLSpanElement | null>(null);
   const scrubbingRef = useRef(false);
   const scrubTimeRef = useRef(0);
   const [scrubbing, setScrubbing] = useState(false);
   const dragRef = useRef<{
     pointerId: number;
-    startX: number;
-    startTime: number;
     lastTickBar: number;
-    moved: boolean;
   } | null>(null);
 
   const isCurrentTrack = Boolean(track && player.currentTrack?.id === track.id);
@@ -207,17 +203,22 @@ export function TrackDetailModal({
 
   const applyVisualFrame = (t: number, dur: number) => {
     const r = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
-    const tx = -r * TOTAL_TAPE_PX;
-    const tapeTransform = `translate3d(${tx.toFixed(2)}px, 0, 0)`;
-    if (tapePlayedRef.current) tapePlayedRef.current.style.transform = tapeTransform;
-    if (tapeUnplayedRef.current) tapeUnplayedRef.current.style.transform = tapeTransform;
+    const pct = r * 100;
+    const clip = `inset(0 ${(100 - pct).toFixed(3)}% 0 0)`;
+    if (tapePlayedRef.current) tapePlayedRef.current.style.clipPath = clip;
+    if (playheadRef.current) playheadRef.current.style.left = `${pct.toFixed(3)}%`;
 
-    const label = dur > 0 ? `${fmt(t)} / ${fmt(dur)}` : `${fmt(t)} / —`;
-    if (timeTextRef.current && timeTextRef.current.textContent !== label) {
-      timeTextRef.current.textContent = label;
+    const curLabel = fmt(t);
+    const totalLabel = dur > 0 ? fmt(dur) : '—';
+    if (timeCurrentRef.current && timeCurrentRef.current.textContent !== curLabel) {
+      timeCurrentRef.current.textContent = curLabel;
     }
-    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== label) {
-      scrubPillTextRef.current.textContent = label;
+    if (timeTotalRef.current && timeTotalRef.current.textContent !== totalLabel) {
+      timeTotalRef.current.textContent = totalLabel;
+    }
+    const pillLabel = `${curLabel} / ${totalLabel}`;
+    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== pillLabel) {
+      scrubPillTextRef.current.textContent = pillLabel;
     }
   };
 
@@ -245,11 +246,9 @@ export function TrackDetailModal({
       waveformBars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div style={{ height: `${h}%` }} className="w-[2px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]" />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] max-w-[4px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
+        />
       )),
     [waveformBars]
   );
@@ -259,14 +258,9 @@ export function TrackDetailModal({
       waveformBars.map((h, i) => (
         <div
           key={i}
-          style={{ width: `${BAR_STEP_PX}px` }}
-          className="h-full flex items-center justify-center shrink-0"
-        >
-          <div
-            style={{ height: `${h}%` }}
-            className="w-[2px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
-          />
-        </div>
+          style={{ height: `${h}%` }}
+          className="flex-1 min-w-[1.5px] max-w-[4px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
+        />
       )),
     [waveformBars]
   );
@@ -752,33 +746,31 @@ export function TrackDetailModal({
                 onPointerDown={(e) => {
                   const dur = effectiveDuration || 180;
                   e.currentTarget.setPointerCapture(e.pointerId);
-                  const liveT = isCurrent ? player.getLiveTime() : 0;
-                  const startBar = Math.floor((liveT / dur) * BAR_COUNT);
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = rect.width ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
+                  const nextSec = ratio * dur;
+                  const startBar = Math.floor(ratio * BAR_COUNT);
                   dragRef.current = {
                     pointerId: e.pointerId,
-                    startX: e.clientX,
-                    startTime: liveT,
                     lastTickBar: startBar,
-                    moved: false,
                   };
-                  scrubTimeRef.current = liveT;
+                  scrubTimeRef.current = nextSec;
                   scrubbingRef.current = true;
                   setScrubbing(true);
-                  applyVisualFrame(liveT, dur);
+                  applyVisualFrame(nextSec, dur);
                   triggerHapticTick(10);
                 }}
                 onPointerMove={(e) => {
                   const drag = dragRef.current;
                   const dur = effectiveDuration || 180;
                   if (!drag || drag.pointerId !== e.pointerId) return;
-                  const dx = drag.startX - e.clientX;
-                  if (Math.abs(dx) > 3) drag.moved = true;
-                  const deltaSec = (dx / TOTAL_TAPE_PX) * dur;
-                  const nextSec = Math.max(0, Math.min(dur, drag.startTime + deltaSec));
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = rect.width ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
+                  const nextSec = ratio * dur;
                   scrubTimeRef.current = nextSec;
                   applyVisualFrame(nextSec, dur);
 
-                  const barIndex = Math.floor((nextSec / dur) * BAR_COUNT);
+                  const barIndex = Math.floor(ratio * BAR_COUNT);
                   if (barIndex !== drag.lastTickBar) {
                     drag.lastTickBar = barIndex;
                     triggerHapticTick(24);
@@ -792,20 +784,15 @@ export function TrackDetailModal({
                     e.currentTarget.releasePointerCapture(e.pointerId);
                   }
                   const targetSec = scrubTimeRef.current;
-                  const wasMoved = drag.moved;
                   scrubbingRef.current = false;
                   setScrubbing(false);
                   if (isCurrent) {
-                    if (wasMoved) {
-                      player.seek(targetSec);
-                      applyVisualFrame(targetSec, effectiveDuration);
-                    } else {
-                      player.togglePlay();
-                    }
+                    player.seek(targetSec);
+                    applyVisualFrame(targetSec, effectiveDuration);
                   } else {
                     void player.playTrack(
                       track,
-                      wasMoved ? targetSec : 0,
+                      targetSec,
                       group.versions.map((v) => v.track)
                     );
                   }
@@ -822,43 +809,32 @@ export function TrackDetailModal({
                   setScrubbing(false);
                 }}
                 style={{ touchAction: 'none' }}
-                className="relative w-full h-12 overflow-hidden cursor-grab active:cursor-grabbing select-none"
-                title="Glisser horizontalement pour naviguer dans le son (ou cliquer pour lancer)"
+                className="relative w-full h-12 cursor-pointer select-none"
+                title="Cliquer ou glisser pour naviguer dans le son"
               >
-                <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-[var(--surface)] to-transparent z-20" />
-                <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[var(--surface)] to-transparent z-20" />
-
-                <div className="pointer-events-none absolute inset-y-0 left-0 right-1/2 overflow-hidden">
-                  <div
-                    ref={tapePlayedRef}
-                    style={{ width: `${TOTAL_TAPE_PX}px` }}
-                    className="absolute inset-y-0 left-full flex items-center will-change-transform"
-                  >
-                    {playedBarsEl}
-                  </div>
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px]">
+                  {unplayedBarsEl}
                 </div>
 
-                <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 overflow-hidden">
-                  <div
-                    ref={tapeUnplayedRef}
-                    style={{ width: `${TOTAL_TAPE_PX}px` }}
-                    className="absolute inset-y-0 left-0 flex items-center will-change-transform"
-                  >
-                    {unplayedBarsEl}
-                  </div>
+                <div
+                  ref={tapePlayedRef}
+                  style={{ clipPath: 'inset(0 100% 0 0)' }}
+                  className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px] will-change-[clip-path]"
+                >
+                  {playedBarsEl}
                 </div>
 
-                <div className="pointer-events-none absolute left-1/2 top-0.5 bottom-0.5 w-[2px] -translate-x-1/2 rounded-full bg-[#8C271E] z-30" />
+                <div
+                  ref={playheadRef}
+                  style={{ left: '0%' }}
+                  className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-[#8C271E] dark:bg-[#E04F42] shadow-xs z-20"
+                />
               </div>
 
-              <p
-                ref={timeTextRef}
-                className="text-center font-mono text-xs text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]"
-              >
-                {`${isCurrent ? fmt(player.currentTime) : '0:00'} / ${
-                  effectiveDuration > 0 ? fmt(effectiveDuration) : '—'
-                }`}
-              </p>
+              <div className="flex items-center justify-between font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]">
+                <span ref={timeCurrentRef}>{isCurrent ? fmt(player.currentTime) : '0:00'}</span>
+                <span ref={timeTotalRef}>{effectiveDuration > 0 ? fmt(effectiveDuration) : '—'}</span>
+              </div>
 
               {track.markers.length > 0 && (
                 <div className="flex flex-wrap items-center justify-center gap-1.5 pt-0.5">
