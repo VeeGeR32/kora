@@ -108,22 +108,6 @@ async function getDriveRwToken(sa) {
   return cachedDriveRwToken;
 }
 
-async function resolveTargetRootFolderId(token, folderId) {
-  if (folderId && folderId !== 'root') return folderId;
-  // Find the first writable shared folder visible to the service account
-  const q = encodeURIComponent(
-    "mimeType='application/vnd.google-apps.folder' and trashed=false"
-  );
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,capabilities(canAddChildren))&pageSize=20&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) return null;
-  const data = await res.json();
-  const writable = (data.files || []).find((f) => f.capabilities?.canAddChildren);
-  return writable?.id || data.files?.[0]?.id || null;
-}
-
 function classifyDriveError(status, rawText) {
   const txt = String(rawText || '');
   const lower = txt.toLowerCase();
@@ -136,7 +120,7 @@ function classifyDriveError(status, rawText) {
       ok: false,
       needsUserOAuth: true,
       error:
-        'Google bloque la création de nouveaux fichiers par compte de service dans « Mon Drive » personnel. Clique sur « Autoriser Google & Sauvegarder » (1 seule fois) pour créer _Rowav_Data avec ton propre espace Drive.',
+        'Autorise ton compte Google 1 seule fois pour créer le dossier _Rowav_Data à la racine de ton Google Drive (sur ton propre quota).',
     };
   }
   if (status === 401) {
@@ -151,7 +135,7 @@ function classifyDriveError(status, rawText) {
     return {
       ok: false,
       readonly: true,
-      error: 'Accès en écriture refusé (vérifie que le dossier est partagé en mode Éditeur).',
+      error: 'Accès en écriture refusé sur Google Drive.',
     };
   }
   return {
@@ -160,7 +144,169 @@ function classifyDriveError(status, rawText) {
   };
 }
 
+/**
+ * Safely trashes accidental nested empty `_Rowav_Data` folders that were owned by the Service Account
+ * (from an earlier bug where `root` resolved to the most recently modified subfolder).
+ * NEVER touches user-owned folders or any folder containing audio files.
+ */
+async function cleanupAccidentalSaRowavFolders(saToken) {
+  try {
+    const q = encodeURIComponent(
+      "'me' in owners and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    );
+    const listRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      { headers: { Authorization: `Bearer ${saToken}` } }
+    );
+    if (!listRes.ok) return 0;
+    const data = await listRes.json();
+    const folders = Array.isArray(data.files) ? data.files : [];
+    if (folders.length === 0) return 0;
+
+    let trashed = 0;
+    for (const f of folders) {
+      // Safety check: ensure no audio file lives inside this folder before trashing
+      const audioQ = encodeURIComponent(
+        `'${f.id}' in parents and (mimeType contains 'audio/' or name contains '.mp3' or name contains '.wav') and trashed=false`
+      );
+      const checkRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${audioQ}&fields=files(id)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+        { headers: { Authorization: `Bearer ${saToken}` } }
+      );
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        if (Array.isArray(checkData.files) && checkData.files.length > 0) {
+          continue;
+        }
+      }
+      const delRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(f.id)}?supportsAllDrives=true`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${saToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ trashed: true }),
+        }
+      );
+      if (delRes.ok) trashed++;
+    }
+    if (trashed > 0) {
+      console.log(`[drive-storage] Cleaned up ${trashed} accidental Service-Account _Rowav_Data folder(s).`);
+    }
+    return trashed;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Ensures ONE single `_Rowav_Data` folder directly at the root of the user's "Mon Drive"
+ * using the user's own `drive.file` OAuth token (non-sensitive scope -> no red warning screen!),
+ * and shares it with the Service Account as Editor so background syncs & cover streaming work
+ * permanently across PC & iPhone without future popups.
+ */
+async function ensureUserRootRowavDataFolder(userToken, saEmail) {
+  // 1. Search ONLY at the root of the user's Drive ('root' in parents) -> recursion is impossible!
+  const q = encodeURIComponent(
+    "'root' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+  );
+  const searchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=5`,
+    { headers: { Authorization: `Bearer ${userToken}` } }
+  );
+  if (searchRes.status === 401) {
+    const txt = await searchRes.text().catch(() => '');
+    return classifyDriveError(401, txt);
+  }
+
+  let folderId = null;
+  if (searchRes.ok) {
+    const searchData = await searchRes.json();
+    folderId = searchData.files?.[0]?.id || null;
+  }
+
+  if (!folderId) {
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${userToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: '_Rowav_Data',
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: ['root'],
+      }),
+    });
+    if (!createRes.ok) {
+      const txt = await createRes.text().catch(() => '');
+      console.error(`[drive-storage] create root _Rowav_Data failed (${createRes.status}):`, txt.slice(0, 300));
+      return classifyDriveError(createRes.status, txt);
+    }
+    const created = await createRes.json();
+    folderId = created.id;
+  }
+
+  // Share the root `_Rowav_Data` folder with the Service Account (writer) so future PATCHes & cover GETs work silently
+  if (folderId && saEmail) {
+    await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
+        folderId
+      )}/permissions?sendNotificationEmail=false`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          role: 'writer',
+          type: 'user',
+          emailAddress: saEmail,
+        }),
+      }
+    ).catch(() => {
+      // Non-fatal if permission already exists
+    });
+  }
+
+  return { ok: true, id: folderId };
+}
+
+/**
+ * Finds an EXISTING user-owned `_Rowav_Data` folder shared with the Service Account.
+ * NEVER creates a Service-Account-owned `_Rowav_Data` folder (which has 0-byte quota and caused nesting!).
+ */
+async function findExistingSharedUserRowavFolder(saToken) {
+  const q = encodeURIComponent(
+    "sharedWithMe=true and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners"
+  );
+  const searchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    { headers: { Authorization: `Bearer ${saToken}` } }
+  );
+  if (!searchRes.ok) return null;
+  const data = await searchRes.json();
+  return data.files?.[0]?.id || null;
+}
+
 async function ensureSubFolder(token, parentId, name) {
+  // Hard anti-recursion guard: never create `_Rowav_Data` inside `_Rowav_Data`!
+  if (name === '_Rowav_Data') {
+    const parentRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(parentId)}?fields=id,name&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (parentRes.ok) {
+      const p = await parentRes.json();
+      if (p?.name === '_Rowav_Data') {
+        return { ok: true, id: p.id };
+      }
+    }
+  }
+
   const safeName = name.replace(/'/g, "\\'");
   const q = encodeURIComponent(
     `'${parentId}' in parents and name='${safeName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
@@ -203,7 +349,7 @@ async function ensureSubFolder(token, parentId, name) {
   return { ok: true, id: created.id };
 }
 
-async function upsertMultipartFile(token, parentId, fileName, mimeType, buffer) {
+async function upsertMultipartFile(token, parentId, fileName, mimeType, buffer, allowCreate = true) {
   const safeName = fileName.replace(/'/g, "\\'");
   const q = encodeURIComponent(
     `'${parentId}' in parents and name='${safeName}' and trashed=false`
@@ -219,6 +365,15 @@ async function upsertMultipartFile(token, parentId, fileName, mimeType, buffer) 
   } else if (searchRes.status === 401) {
     const txt = await searchRes.text().catch(() => '');
     return classifyDriveError(401, txt);
+  }
+
+  if (!existingId && !allowCreate) {
+    return {
+      ok: false,
+      needsUserOAuth: true,
+      error:
+        'Autorise ton compte Google 1 seule fois pour initialiser _Rowav_Data à la racine de ton Google Drive.',
+    };
   }
 
   const boundary = `rowav_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -317,19 +472,9 @@ export default async function handler(req, res) {
       (typeof req.headers['x-google-drive-token'] === 'string' &&
         req.headers['x-google-drive-token'].trim()) ||
       '';
-    // Use the user's own OAuth Drive token when provided (so new files are owned by the user
-    // and use their personal 15 Go / 5 To Google Drive quota!). Otherwise fall back to the
-    // Service Account (which can still PATCH files already owned by the user forever!).
-    const writeToken = rawUserDriveToken || saToken;
 
-    const rootFolderId = await resolveTargetRootFolderId(saToken, body.folderId);
-    if (!rootFolderId) {
-      return res.status(200).json({
-        ok: false,
-        readonly: true,
-        error: 'Aucun dossier Google Drive connecté.',
-      });
-    }
+    // Always clean up any accidental empty Service-Account `_Rowav_Data` folders first!
+    const cleanedCount = await cleanupAccidentalSaRowavFolders(saToken);
 
     if (action === 'upload_cover') {
       const dataUrl = typeof body.dataUrl === 'string' ? body.dataUrl : '';
@@ -337,18 +482,25 @@ export default async function handler(req, res) {
       if (!match) {
         return res.status(400).json({ ok: false, error: 'Image invalide.' });
       }
+      if (!rawUserDriveToken) {
+        return res.status(200).json({
+          ok: false,
+          needsUserOAuth: true,
+          error: 'Autorisation Google Drive requise pour créer une nouvelle pochette sur ton Drive.',
+        });
+      }
       const mimeType = match[1];
       const ext = mimeType.includes('webp') ? 'webp' : mimeType.includes('png') ? 'png' : 'jpg';
       const imgBuf = Buffer.from(match[2], 'base64');
 
-      const dataFolder = await ensureSubFolder(writeToken, rootFolderId, '_Rowav_Data');
+      const dataFolder = await ensureUserRootRowavDataFolder(rawUserDriveToken, sa.client_email);
       if (!dataFolder.ok) return res.status(200).json(dataFolder);
 
-      const coversFolder = await ensureSubFolder(writeToken, dataFolder.id, 'covers');
+      const coversFolder = await ensureSubFolder(rawUserDriveToken, dataFolder.id, 'covers');
       if (!coversFolder.ok) return res.status(200).json(coversFolder);
 
       const safeName = `${String(body.name || `cover_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_')}.${ext}`;
-      const up = await upsertMultipartFile(writeToken, coversFolder.id, safeName, mimeType, imgBuf);
+      const up = await upsertMultipartFile(rawUserDriveToken, coversFolder.id, safeName, mimeType, imgBuf, true);
       if (!up.ok) return res.status(200).json(up);
 
       return res.status(200).json({
@@ -359,8 +511,28 @@ export default async function handler(req, res) {
     }
 
     if (action === 'sync_studio_data') {
-      const dataFolder = await ensureSubFolder(writeToken, rootFolderId, '_Rowav_Data');
-      if (!dataFolder.ok) return res.status(200).json(dataFolder);
+      let dataFolderId = null;
+      let activeToken = saToken;
+      let allowCreate = false;
+
+      if (rawUserDriveToken) {
+        const ensured = await ensureUserRootRowavDataFolder(rawUserDriveToken, sa.client_email);
+        if (!ensured.ok) return res.status(200).json(ensured);
+        dataFolderId = ensured.id;
+        activeToken = rawUserDriveToken;
+        allowCreate = true;
+      } else {
+        dataFolderId = await findExistingSharedUserRowavFolder(saToken);
+        if (!dataFolderId) {
+          return res.status(200).json({
+            ok: false,
+            needsUserOAuth: true,
+            cleanedCount,
+            error:
+              'Autorise ton compte Google 1 seule fois pour créer _Rowav_Data à la racine de ton Google Drive (ensuite les sauvegardes sont automatiques).',
+          });
+        }
+      }
 
       const backupPayload = {
         version: 1,
@@ -375,27 +547,29 @@ export default async function handler(req, res) {
       };
       const jsonBuf = Buffer.from(JSON.stringify(backupPayload, null, 2), 'utf8');
       const upJson = await upsertMultipartFile(
-        writeToken,
-        dataFolder.id,
+        activeToken,
+        dataFolderId,
         'rowav_studio_backup.json',
         'application/json',
-        jsonBuf
+        jsonBuf,
+        allowCreate
       );
-      if (!upJson.ok) return res.status(200).json(upJson);
+      if (!upJson.ok) return res.status(200).json({ ...upJson, cleanedCount });
 
       return res.status(200).json({
         ok: true,
         fileId: upJson.fileId,
         syncedAt: backupPayload.syncedAt,
+        cleanedCount,
       });
     }
 
     if (action === 'load_studio_data') {
-      const dataFolder = await ensureSubFolder(saToken, rootFolderId, '_Rowav_Data');
-      if (!dataFolder.ok) return res.status(200).json(dataFolder);
+      const dataFolderId = await findExistingSharedUserRowavFolder(saToken);
+      if (!dataFolderId) return res.status(200).json({ ok: true, found: false });
 
       const q = encodeURIComponent(
-        `'${dataFolder.id}' in parents and name='rowav_studio_backup.json' and trashed=false`
+        `'${dataFolderId}' in parents and name='rowav_studio_backup.json' and trashed=false`
       );
       const searchRes = await fetch(
         `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&pageSize=1&supportsAllDrives=true&includeItemsFromAllDrives=true`,
