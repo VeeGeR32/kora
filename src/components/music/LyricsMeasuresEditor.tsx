@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Clock,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import type { LyricsBarBlock, LyricsBlockStatus, MusicTrack } from '../../types';
 import { computeFourBarGrid, type ComputedBarBlock } from '../../lib/audioAnalyzer';
+import { LyricLinesEditor } from './LyricLinesEditor';
 
 const SECTION_PRESETS = ['Intro', 'Couplet', 'Pré-refrain', 'Refrain', 'Pont', 'Outro'] as const;
 
@@ -57,67 +58,6 @@ function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-interface AutoGrowTextareaProps {
-  value: string;
-  placeholder: string;
-  inputRef: (el: HTMLTextAreaElement | null) => void;
-  onChange: (val: string) => void;
-  onFocus: () => void;
-  onNavigateBlock: (direction: 'prev' | 'next') => void;
-}
-
-function AutoGrowTextarea({
-  value,
-  placeholder,
-  inputRef,
-  onChange,
-  onFocus,
-  onNavigateBlock,
-}: AutoGrowTextareaProps) {
-  const localRef = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    const el = localRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(52, el.scrollHeight)}px`;
-  }, [value]);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    if (e.key === 'ArrowDown' && !e.shiftKey) {
-      const after = el.value.slice(el.selectionEnd);
-      if (!after.includes('\n')) {
-        e.preventDefault();
-        onNavigateBlock('next');
-      }
-    } else if (e.key === 'ArrowUp' && !e.shiftKey) {
-      const before = el.value.slice(0, el.selectionStart);
-      if (!before.includes('\n')) {
-        e.preventDefault();
-        onNavigateBlock('prev');
-      }
-    }
-  };
-
-  return (
-    <textarea
-      ref={(el) => {
-        localRef.current = el;
-        inputRef(el);
-      }}
-      value={value}
-      rows={2}
-      spellCheck={false}
-      onFocus={onFocus}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={handleKeyDown}
-      placeholder={placeholder}
-      className="w-full bg-transparent outline-none resize-none overflow-hidden text-[15px] sm:text-[15.5px] leading-[1.8] text-slate-900 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-600"
-    />
-  );
 }
 
 interface LyricsMeasuresEditorProps {
@@ -169,7 +109,9 @@ export function LyricsMeasuresEditor({
   const [editingSectionIdx, setEditingSectionIdx] = useState<number | null>(null);
   const [followLive, setFollowLive] = useState(true);
 
-  const textareaRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
+  const blockFocusApisRef = useRef<
+    Map<number, { focusStart: () => void; focusEnd: () => void }>
+  >(new Map());
   const blockCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   useEffect(() => {
@@ -208,22 +150,23 @@ export function LyricsMeasuresEditor({
     onChangeBlocks(next);
   };
 
-  const focusBlockTextarea = (targetIndex: number) => {
+  const focusBlockTextarea = (targetIndex: number, edge: 'start' | 'end' = 'start') => {
     const targetBlock = blocks.find((b) => b.index === targetIndex);
     if (!targetBlock) return;
+    const doFocus = () => {
+      const api = blockFocusApisRef.current.get(targetIndex);
+      if (api) {
+        if (edge === 'end') api.focusEnd();
+        else api.focusStart();
+      }
+    };
     if (targetBlock.status === 'empty') {
       updateBlock(targetIndex, { status: 'draft' });
-      window.setTimeout(() => {
-        const el = textareaRefs.current.get(targetIndex);
-        el?.focus();
-      }, 20);
+      window.setTimeout(doFocus, 25);
     } else {
-      const el = textareaRefs.current.get(targetIndex);
-      if (el) {
-        el.focus();
-      } else {
-        window.setTimeout(() => textareaRefs.current.get(targetIndex)?.focus(), 20);
-      }
+      const api = blockFocusApisRef.current.get(targetIndex);
+      if (api) doFocus();
+      else window.setTimeout(doFocus, 25);
     }
   };
 
@@ -238,7 +181,7 @@ export function LyricsMeasuresEditor({
     if (!cur) return;
     updateBlock(index, { status: nextStatus });
     if (nextStatus === 'draft' || nextStatus === 'done') {
-      window.setTimeout(() => textareaRefs.current.get(index)?.focus(), 25);
+      window.setTimeout(() => blockFocusApisRef.current.get(index)?.focusStart(), 30);
     }
   };
 
@@ -637,19 +580,20 @@ export function LyricsMeasuresEditor({
                     </div>
                   )}
 
-                  {/* Fluid continuous lyrics textarea */}
-                  <AutoGrowTextarea
+                  {/* Fluid continuous per-line lyrics editor with 1-click FIX toggle on every line */}
+                  <LyricLinesEditor
                     value={blk.text}
+                    compact
                     placeholder={
                       blk.status === 'planned'
-                        ? 'Zone réservée (tu peux laisser vide pour le squelette ou poser un premier jet ici)…'
+                        ? 'Zone réservée (laisse vide pour le squelette ou pose un premier jet ici)…'
                         : `Écris tes 4 mesures (M${g.startBar}–M${g.endBar})…`
                     }
-                    inputRef={(el) => {
-                      if (el) textareaRefs.current.set(g.index, el);
-                      else textareaRefs.current.delete(g.index);
+                    registerFocusApi={(api) => {
+                      if (api) blockFocusApisRef.current.set(g.index, api);
+                      else blockFocusApisRef.current.delete(g.index);
                     }}
-                    onFocus={() => onActiveBlockFocus?.(g.index)}
+                    onFocusLine={() => onActiveBlockFocus?.(g.index)}
                     onChange={(val) => {
                       const nextStatus: LyricsBlockStatus =
                         blk.status === 'planned' && val.trim().length > 0
@@ -659,10 +603,10 @@ export function LyricsMeasuresEditor({
                           : blk.status;
                       updateBlock(g.index, { text: val, status: nextStatus });
                     }}
-                    onNavigateBlock={(dir) => {
+                    onNavigateEdge={(dir) => {
                       const target = dir === 'next' ? g.index + 1 : g.index - 1;
                       if (target >= 0 && target < grid.length) {
-                        focusBlockTextarea(target);
+                        focusBlockTextarea(target, dir === 'prev' ? 'end' : 'start');
                       }
                     }}
                   />

@@ -36,6 +36,7 @@ import { YoutubeBeatPlayer } from './YoutubeBeatPlayer';
 import { LexCoreInspirationWidget, MetronomeWidget } from './LexCoreTools';
 import { LexCoreImportModal } from './LexCoreImportModal';
 import { LyricsMeasuresEditor } from './LyricsMeasuresEditor';
+import { LyricLinesEditor, parseLyricLines } from './LyricLinesEditor';
 import { groupMusicTracks } from '../../lib/musicVersioning';
 import { countLyricsFixTags } from '../../lib/trackCover';
 import {
@@ -128,8 +129,6 @@ export function LyricsStudio({
   const [trackPickerSearch, setTrackPickerSearch] = useState('');
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [confirmEmptyTrashOpen, setConfirmEmptyTrashOpen] = useState(false);
-
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Undo / Redo per active doc
   const [history, setHistory] = useState<string[]>([]);
@@ -460,15 +459,7 @@ export function LyricsStudio({
     }, 60);
   };
 
-  const wrapSelection = (wrapper: string) => {
-    if (!activeDoc || !textareaRef.current) return;
-    const ta = textareaRef.current;
-    const s = ta.selectionStart;
-    const e = ta.selectionEnd;
-    const sel = ta.value.slice(s, e) || 'texte';
-    const next = ta.value.slice(0, s) + `${wrapper}${sel}${wrapper}` + ta.value.slice(e);
-    handleContentChange(next);
-  };
+  const [focusedFreeLineIndex, setFocusedFreeLineIndex] = useState<number>(0);
 
   const insertWord = (word: string) => {
     if (!activeDoc) return;
@@ -489,34 +480,17 @@ export function LyricsStudio({
       handleBarBlocksChange(nextBlocks);
       return;
     }
-    const ta = textareaRef.current;
-    if (ta) {
-      const s = ta.selectionStart ?? activeDoc.content.length;
-      const e = ta.selectionEnd ?? activeDoc.content.length;
-      const spaceBefore = s > 0 && !/\s/.test(activeDoc.content[s - 1]) ? ' ' : '';
-      const next = activeDoc.content.slice(0, s) + spaceBefore + word + ' ' + activeDoc.content.slice(e);
-      handleContentChange(next);
-      ta.focus();
-    } else {
-      handleContentChange(activeDoc.content + (activeDoc.content ? ' ' : '') + word);
-    }
+    const rawLines = (activeDoc.content || '').split('\n');
+    const targetIdx = Math.min(Math.max(0, rawLines.length - 1), Math.max(0, focusedFreeLineIndex));
+    const curLine = rawLines[targetIdx] || '';
+    const sep = curLine && !/\s$/.test(curLine) ? ' ' : '';
+    rawLines[targetIdx] = `${curLine}${sep}${word} `;
+    handleContentChange(rawLines.join('\n'));
   };
 
-  const renderedMarkdown = useMemo(() => {
-    if (!activeDoc) return '';
-    const escaped = (activeDoc.content || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    const renderLine = (line: string) =>
-      line
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noreferrer" class="underline">$1</a>');
-    return escaped
-      .split(/\n{2,}/)
-      .map((p) => `<p class="mb-3">${p.split('\n').map(renderLine).join('<br/>')}</p>`)
-      .join('');
+  const renderedPreviewLines = useMemo(() => {
+    if (!activeDoc) return [];
+    return parseLyricLines(activeDoc.content || '');
   }, [activeDoc?.content]);
 
   const handleCreateDoc = () => {
@@ -538,7 +512,9 @@ export function LyricsStudio({
 
   const wordCount = useMemo(() => {
     if (!activeDoc?.content.trim()) return 0;
-    return activeDoc.content.trim().split(/\s+/).length;
+    const cleaned = activeDoc.content.replace(/\[FIX(?::[^\]]*)?\]/gi, '').trim();
+    if (!cleaned) return 0;
+    return cleaned.split(/\s+/).length;
   }, [activeDoc?.content]);
 
   const lineCount = useMemo(() => {
@@ -758,7 +734,7 @@ export function LyricsStudio({
                       {doc.title || 'Sans titre'}
                     </p>
                     <p className="text-[11px] text-slate-400 mt-0.5 truncate">
-                      {doc.content.trim().slice(0, 60) || 'Texte vide'}
+                      {doc.content.replace(/\[FIX(?::[^\]]*)?\]\s*/gi, '').trim().slice(0, 60) || 'Texte vide'}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -825,7 +801,9 @@ export function LyricsStudio({
             const isDocProdPlaying = Boolean(
               docProdTrack && player.currentTrack?.id === docProdTrack.id && player.isPlaying
             );
-            const words = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+            const cleanPreview = doc.content.replace(/\[FIX(?::[^\]]*)?\]\s*/gi, '').trim();
+            const words = cleanPreview ? cleanPreview.split(/\s+/).length : 0;
+            const docFixCount = countLyricsFixTags(doc.content);
 
             return (
               <div
@@ -845,6 +823,11 @@ export function LyricsStudio({
                       {doc.title || 'Sans titre'}
                     </h3>
                     <div className="flex items-center gap-1 shrink-0">
+                      {docFixCount > 0 && (
+                        <span className="rounded-full bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82] px-1.5 py-0.5 font-mono text-[9.5px] font-semibold">
+                          FIX ×{docFixCount}
+                        </span>
+                      )}
                       <button
                         type="button"
                         title={`Statut : ${st.label} (cliquer pour changer)`}
@@ -873,8 +856,8 @@ export function LyricsStudio({
                   </div>
 
                   <p className="text-xs leading-relaxed text-slate-500 dark:text-zinc-400 line-clamp-3 whitespace-pre-line min-h-[3.3rem]">
-                    {doc.content.trim() ? (
-                      doc.content.trim()
+                    {cleanPreview ? (
+                      cleanPreview
                     ) : (
                       <span className="italic text-slate-300 dark:text-zinc-600">Page blanche…</span>
                     )}
@@ -1285,37 +1268,14 @@ export function LyricsStudio({
                       {activeDoc.lastModified ? ` · ${fmtShortDate(activeDoc.lastModified)}` : ''}
                     </span>
                     {countLyricsFixTags(activeDoc.content) > 0 && (
-                      <span className="rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-2 py-0.5 font-mono text-[10px] font-semibold">
-                        [FIX] ×{countLyricsFixTags(activeDoc.content)}
+                      <span className="rounded-full bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82] px-2 py-0.5 font-mono text-[10px] font-semibold">
+                        FIX ×{countLyricsFixTags(activeDoc.content)}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => insertWord('[FIX]')}
-                      className="px-2 py-0.5 rounded-md font-mono text-[10px] font-semibold bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 cursor-pointer"
-                      title="Insérer une balise [FIX]"
-                    >
-                      + [FIX]
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => wrapSelection('**')}
-                      className="px-2 py-0.5 rounded-md font-bold hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
-                      title="Gras"
-                    >
-                      B
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => wrapSelection('*')}
-                      className="px-2 py-0.5 rounded-md italic hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-500 cursor-pointer"
-                      title="Italique"
-                    >
-                      I
-                    </button>
-                  </div>
+                  <span className="text-[10.5px] text-slate-400 dark:text-zinc-500">
+                    Clique sur l’icône à gauche d’une ligne pour la marquer À fix
+                  </span>
                 </div>
 
                 {markdownMode === 'edit' ? (
@@ -1336,20 +1296,38 @@ export function LyricsStudio({
                       onActiveBlockFocus={setFocusedBlockIndex}
                     />
                   ) : (
-                    <textarea
-                      ref={textareaRef}
+                    <LyricLinesEditor
                       value={activeDoc.content}
-                      onChange={(e) => handleContentChange(e.target.value)}
+                      onChange={handleContentChange}
+                      onFocusLine={setFocusedFreeLineIndex}
                       placeholder="Commence à écrire tes couplets, refrains, idées de flow…"
-                      spellCheck={false}
-                      className="flex-1 w-full min-h-[68dvh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700 pb-6"
+                      minHeightClass="flex-1 w-full min-h-[68dvh] pb-6"
                     />
                   )
                 ) : (
-                  <div
-                    className="flex-1 w-full min-h-[68dvh] text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 pb-6"
-                    dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
-                  />
+                  <div className="flex-1 w-full min-h-[68dvh] text-[15.5px] sm:text-base leading-[1.85] text-slate-800 dark:text-zinc-100 pb-6 space-y-0.5">
+                    {renderedPreviewLines.map((ln, idx) =>
+                      ln.text.trim().length === 0 && !ln.fix ? (
+                        <div key={idx} className="h-4" />
+                      ) : (
+                        <div
+                          key={idx}
+                          className={`flex items-start gap-2 rounded-xl px-2 -mx-2 py-0.5 ${
+                            ln.fix
+                              ? 'bg-rose-500/[0.08] dark:bg-rose-500/[0.13] ring-1 ring-rose-500/25 my-0.5 font-medium text-slate-950 dark:text-white'
+                              : ''
+                          }`}
+                        >
+                          {ln.fix && (
+                            <span className="mt-1 rounded-md bg-[#8C271E] text-white px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide shrink-0">
+                              FIX
+                            </span>
+                          )}
+                          <span className="whitespace-pre-wrap break-words">{ln.text}</span>
+                        </div>
+                      )
+                    )}
+                  </div>
                 )}
               </div>
 
