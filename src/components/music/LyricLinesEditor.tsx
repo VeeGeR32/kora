@@ -35,101 +35,96 @@ export function serializeLyricLines(lines: ParsedLyricLine[]): string {
     .join('\n');
 }
 
-interface LineRowInputProps {
-  line: ParsedLyricLine;
-  lineIndex: number;
-  placeholder?: string;
-  compact?: boolean;
-  inputRef: (el: HTMLTextAreaElement | null) => void;
-  onChangeText: (text: string) => void;
-  onToggleFix: () => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  onPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
-  onFocus: () => void;
-}
+/**
+ * Reconciles `fix` flags when the user edits text inside the single native `<textarea>`
+ * (handles typing, Enter line-splits, Backspace merges, and multi-line paste cleanly!).
+ */
+function reconcileLinesWithFixFlags(
+  prevLines: ParsedLyricLine[],
+  nextCleanRaw: string
+): ParsedLyricLine[] {
+  const normalized = nextCleanRaw.replace(/\r\n/g, '\n');
+  const nextRawLines = normalized.split('\n');
 
-function LineRowInput({
-  line,
-  placeholder,
-  compact,
-  inputRef,
-  onChangeText,
-  onToggleFix,
-  onKeyDown,
-  onPaste,
-  onFocus,
-}: LineRowInputProps) {
-  const localRef = useRef<HTMLTextAreaElement | null>(null);
+  // Auto-convert any pasted `[FIX]` tags into visual flags
+  const parsedIncoming = nextRawLines.map((rawLine) => {
+    const hasTag = FIX_PREFIX_RE.test(rawLine) || /\[FIX(?::[^\]]*)?\]/i.test(rawLine);
+    const text = hasTag
+      ? rawLine.replace(FIX_PREFIX_RE, '').replace(FIX_INLINE_RE, ' ').trimEnd()
+      : rawLine;
+    return { text, hasTag };
+  });
 
-  useEffect(() => {
-    const el = localRef.current;
-    if (!el) return;
-    el.style.height = '0px';
-    el.style.height = `${Math.max(compact ? 26 : 28, el.scrollHeight)}px`;
-  }, [line.text, compact]);
+  const oldLen = prevLines.length;
+  const newLen = parsedIncoming.length;
 
-  const hasContent = line.text.trim().length > 0;
+  // Match unchanged prefix lines
+  let prefix = 0;
+  while (
+    prefix < oldLen &&
+    prefix < newLen &&
+    prevLines[prefix].text === parsedIncoming[prefix].text &&
+    !parsedIncoming[prefix].hasTag
+  ) {
+    prefix++;
+  }
 
-  return (
-    <div
-      className={`group/line flex items-start gap-2 rounded-xl px-1.5 -mx-1.5 transition-colors ${
-        line.fix
-          ? 'bg-rose-500/[0.08] dark:bg-rose-500/[0.13] ring-1 ring-rose-500/25 py-0.5 my-0.5'
-          : 'hover:bg-slate-100/50 dark:hover:bg-zinc-800/35 py-[1px]'
-      }`}
-    >
-      {/* 1-Click Per-Line FIX Toggle Button */}
-      <button
-        type="button"
-        tabIndex={-1}
-        onMouseDown={(e) => {
-          // Keep typing flow smooth without stealing scroll
-          e.preventDefault();
-        }}
-        onClick={onToggleFix}
-        title={
-          line.fix
-            ? 'Retirer le repère À fix sur cette ligne'
-            : 'Marquer cette ligne comme À fix'
+  // Match unchanged suffix lines
+  let suffix = 0;
+  while (
+    suffix < oldLen - prefix &&
+    suffix < newLen - prefix &&
+    prevLines[oldLen - 1 - suffix].text === parsedIncoming[newLen - 1 - suffix].text &&
+    !parsedIncoming[newLen - 1 - suffix].hasTag
+  ) {
+    suffix++;
+  }
+
+  const result: ParsedLyricLine[] = new Array(newLen);
+
+  // 1. Copy prefix flags verbatim
+  for (let i = 0; i < prefix; i++) {
+    result[i] = { text: parsedIncoming[i].text, fix: prevLines[i].fix };
+  }
+
+  // 2. Copy suffix flags verbatim
+  for (let s = 0; s < suffix; s++) {
+    const oldIdx = oldLen - 1 - s;
+    const newIdx = newLen - 1 - s;
+    result[newIdx] = { text: parsedIncoming[newIdx].text, fix: prevLines[oldIdx].fix };
+  }
+
+  // 3. Reconcile edited middle span
+  const oldMidCount = oldLen - prefix - suffix;
+  const newMidCount = newLen - prefix - suffix;
+
+  for (let m = 0; m < newMidCount; m++) {
+    const newIdx = prefix + m;
+    const incoming = parsedIncoming[newIdx];
+    let keepFix = incoming.hasTag;
+
+    if (!keepFix) {
+      if (oldMidCount === newMidCount) {
+        // Same number of lines edited in place -> preserve exact flag
+        keepFix = prevLines[prefix + m]?.fix ?? false;
+      } else if (newMidCount === 1 && oldMidCount > 1) {
+        // Multiple lines merged into 1 (Backspace/Delete) -> keep fix if any merged line had fix
+        for (let k = 0; k < oldMidCount; k++) {
+          if (prevLines[prefix + k]?.fix) keepFix = true;
         }
-        className={`mt-[3px] inline-flex items-center justify-center gap-1 rounded-md transition-all cursor-pointer shrink-0 ${
-          line.fix
-            ? 'bg-[#8C271E] text-white px-1.5 h-5 text-[9.5px] font-bold tracking-wide shadow-xs'
-            : hasContent
-            ? 'h-5 w-5 text-slate-300 dark:text-zinc-600 opacity-50 sm:opacity-0 sm:group-hover/line:opacity-100 sm:group-focus-within/line:opacity-100 hover:!opacity-100 hover:bg-rose-500/12 hover:text-[#8C271E] dark:hover:text-[#f08b82]'
-            : 'h-5 w-5 text-slate-300 dark:text-zinc-700 opacity-0 pointer-events-none'
-        }`}
-      >
-        <Wrench size={10} />
-        {line.fix && <span>FIX</span>}
-      </button>
+      } else if (m === 0 && oldMidCount >= 1) {
+        // Line split with Enter -> keep fix on the original top line, new line starts clean
+        keepFix = prevLines[prefix]?.fix ?? false;
+      }
+    }
 
-      {/* Clean, borderless wrapping lyric line */}
-      <textarea
-        ref={(el) => {
-          localRef.current = el;
-          inputRef(el);
-        }}
-        rows={1}
-        value={line.text}
-        spellCheck={false}
-        onFocus={onFocus}
-        onChange={(e) => onChangeText(e.target.value)}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-        placeholder={placeholder}
-        className={`flex-1 min-w-0 bg-transparent outline-none resize-none overflow-hidden ${
-          compact
-            ? 'text-[15px] sm:text-[15.5px] leading-[1.7]'
-            : 'text-[15.5px] sm:text-base leading-[1.8]'
-        } ${
-          line.fix
-            ? 'text-slate-950 dark:text-white font-medium'
-            : 'text-slate-800 dark:text-zinc-100'
-        } placeholder:text-slate-300 dark:placeholder:text-zinc-600`}
-      />
-    </div>
-  );
+    result[newIdx] = {
+      text: incoming.text,
+      fix: keepFix && incoming.text.trim().length > 0,
+    };
+  }
+
+  return result.length > 0 ? result : [{ text: '', fix: false }];
 }
 
 interface LyricLinesEditorProps {
@@ -143,6 +138,13 @@ interface LyricLinesEditorProps {
   registerFocusApi?: (api: { focusStart: () => void; focusEnd: () => void } | null) => void;
 }
 
+/**
+ * Single native `<textarea>` overlaid pixel-for-pixel onto an in-flow mirror with an interactive
+ * left FIX gutter:
+ * - 100% native multi-line selection & copy/paste (Ctrl+C, Ctrl+A, iOS selection handles)
+ * - 1-click per-line FIX button aligned even on wrapped lines on mobile
+ * - ZERO raw `[FIX]` tags ever visible inside the lyrics!
+ */
 export function LyricLinesEditor({
   value,
   onChange,
@@ -154,239 +156,157 @@ export function LyricLinesEditor({
   registerFocusApi,
 }: LyricLinesEditorProps) {
   const lines = useMemo(() => parseLyricLines(value), [value]);
-  const lineRefs = useRef<Map<number, HTMLTextAreaElement>>(new Map());
-  const pendingFocusRef = useRef<{ idx: number; pos: number } | null>(null);
-
-  const focusLineAt = (idx: number, pos?: number) => {
-    const clampedIdx = Math.max(0, Math.min(lines.length - 1, idx));
-    const el = lineRefs.current.get(clampedIdx);
-    if (el) {
-      el.focus();
-      const targetPos = typeof pos === 'number' ? Math.min(el.value.length, Math.max(0, pos)) : el.value.length;
-      try {
-        el.setSelectionRange(targetPos, targetPos);
-      } catch {
-        // ignore
-      }
-    }
-  };
+  const cleanText = useMemo(() => lines.map((l) => l.text).join('\n'), [lines]);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (!registerFocusApi) return;
     registerFocusApi({
       focusStart: () => {
-        const el = lineRefs.current.get(0);
-        if (el) {
-          el.focus();
-          try {
-            el.setSelectionRange(0, 0);
-          } catch {
-            // ignore
-          }
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        try {
+          el.setSelectionRange(0, 0);
+        } catch {
+          // ignore
         }
       },
       focusEnd: () => {
-        const lastIdx = Math.max(0, lines.length - 1);
-        const el = lineRefs.current.get(lastIdx);
-        if (el) {
-          el.focus();
-          try {
-            el.setSelectionRange(el.value.length, el.value.length);
-          } catch {
-            // ignore
-          }
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        try {
+          const len = el.value.length;
+          el.setSelectionRange(len, len);
+        } catch {
+          // ignore
         }
       },
     });
     return () => registerFocusApi(null);
-  }, [registerFocusApi, lines.length]);
+  }, [registerFocusApi]);
 
-  useEffect(() => {
-    const pending = pendingFocusRef.current;
-    if (!pending) return;
-    pendingFocusRef.current = null;
-    const el = lineRefs.current.get(pending.idx);
-    if (el) {
-      el.focus();
-      const p = Math.min(el.value.length, Math.max(0, pending.pos));
-      try {
-        el.setSelectionRange(p, p);
-      } catch {
-        // ignore
-      }
-    }
-  }, [lines]);
-
-  const commitLines = (next: ParsedLyricLine[], focusTarget?: { idx: number; pos: number }) => {
-    const safe = next.length > 0 ? next : [{ text: '', fix: false }];
-    if (focusTarget) {
-      pendingFocusRef.current = focusTarget;
-    }
-    onChange(serializeLyricLines(safe));
-  };
-
-  const handleChangeText = (idx: number, rawNext: string) => {
-    // Handle IME / mobile autocomplete inserting newlines directly into onChange
-    if (rawNext.includes('\n')) {
-      const parts = rawNext.replace(/\r\n/g, '\n').split('\n');
-      const next = [...lines];
-      const replacement: ParsedLyricLine[] = parts.map((p, pIdx) => ({
-        text: p,
-        fix: pIdx === 0 ? lines[idx].fix : false,
-      }));
-      next.splice(idx, 1, ...replacement);
-      commitLines(next, { idx: idx + replacement.length - 1, pos: replacement[replacement.length - 1].text.length });
-      return;
-    }
-    const next = lines.map((l, i) => (i === idx ? { ...l, text: rawNext } : l));
-    commitLines(next);
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const reconciled = reconcileLinesWithFixFlags(lines, e.target.value);
+    onChange(serializeLyricLines(reconciled));
   };
 
   const handleToggleFix = (idx: number) => {
     const next = lines.map((l, i) => (i === idx ? { ...l, fix: !l.fix } : l));
-    commitLines(next);
+    onChange(serializeLyricLines(next));
   };
 
-  const handleKeyDown = (idx: number, e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const reportCursorLine = (el: HTMLTextAreaElement) => {
+    if (!onFocusLine) return;
+    const pos = el.selectionStart ?? 0;
+    const lineIdx = el.value.slice(0, pos).split('\n').length - 1;
+    onFocusLine(lineIdx);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
-    const start = el.selectionStart ?? 0;
-    const end = el.selectionEnd ?? 0;
-
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      const before = el.value.slice(0, start);
-      const after = el.value.slice(end);
-      const next = [...lines];
-      next[idx] = { ...next[idx], text: before };
-      next.splice(idx + 1, 0, { text: after, fix: false });
-      commitLines(next, { idx: idx + 1, pos: 0 });
-      return;
-    }
-
-    if (e.key === 'Backspace' && start === 0 && end === 0) {
-      if (idx > 0) {
-        e.preventDefault();
-        const prev = lines[idx - 1];
-        const cur = lines[idx];
-        const joinPos = prev.text.length;
-        const next = [...lines];
-        next[idx - 1] = {
-          text: prev.text + cur.text,
-          fix: prev.fix || cur.fix,
-        };
-        next.splice(idx, 1);
-        commitLines(next, { idx: idx - 1, pos: joinPos });
-      } else if (lines.length === 1 && lines[0].text === '' && onNavigateEdge) {
-        e.preventDefault();
-        onNavigateEdge('prev');
-      }
-      return;
-    }
-
-    if (e.key === 'Delete' && start === el.value.length && end === el.value.length && idx < lines.length - 1) {
-      e.preventDefault();
-      const cur = lines[idx];
-      const nextLine = lines[idx + 1];
-      const joinPos = cur.text.length;
-      const next = [...lines];
-      next[idx] = {
-        text: cur.text + nextLine.text,
-        fix: cur.fix || nextLine.fix,
-      };
-      next.splice(idx + 1, 1);
-      commitLines(next, { idx, pos: joinPos });
-      return;
-    }
-
-    if (e.key === 'ArrowUp' && !e.shiftKey) {
-      // Only navigate up if caret is near top of textarea (no wrapped text before or caret at start)
-      if (idx > 0) {
-        e.preventDefault();
-        focusLineAt(idx - 1, start);
-      } else if (onNavigateEdge) {
-        e.preventDefault();
-        onNavigateEdge('prev');
-      }
-      return;
-    }
-
-    if (e.key === 'ArrowDown' && !e.shiftKey) {
-      if (idx < lines.length - 1) {
-        e.preventDefault();
-        focusLineAt(idx + 1, start);
-      } else if (onNavigateEdge) {
+    if (e.key === 'ArrowDown' && !e.shiftKey && onNavigateEdge) {
+      const after = el.value.slice(el.selectionEnd ?? 0);
+      if (!after.includes('\n')) {
         e.preventDefault();
         onNavigateEdge('next');
       }
+    } else if (e.key === 'ArrowUp' && !e.shiftKey && onNavigateEdge) {
+      const before = el.value.slice(0, el.selectionStart ?? 0);
+      if (!before.includes('\n')) {
+        e.preventDefault();
+        onNavigateEdge('prev');
+      }
+    } else if (
+      e.key === 'Backspace' &&
+      el.value.length === 0 &&
+      (el.selectionStart ?? 0) === 0 &&
+      onNavigateEdge
+    ) {
+      e.preventDefault();
+      onNavigateEdge('prev');
     }
   };
 
-  const handlePaste = (idx: number, e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const pasted = e.clipboardData.getData('text/plain');
-    if (!pasted) return;
-    if (!pasted.includes('\n') && !/\[FIX(?::[^\]]*)?\]/i.test(pasted)) {
-      return; // Let native single-line paste run cleanly
-    }
-    e.preventDefault();
-    const el = e.currentTarget;
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? el.value.length;
-    const before = el.value.slice(0, start);
-    const after = el.value.slice(end);
-
-    const parsedPasted = parseLyricLines(pasted);
-    const next = [...lines];
-    if (parsedPasted.length === 1) {
-      next[idx] = {
-        text: before + parsedPasted[0].text + after,
-        fix: next[idx].fix || parsedPasted[0].fix,
-      };
-      commitLines(next, { idx, pos: before.length + parsedPasted[0].text.length });
-    } else {
-      const inserted: ParsedLyricLine[] = parsedPasted.map((p, i) => {
-        if (i === 0) {
-          return { text: before + p.text, fix: next[idx].fix || p.fix };
-        }
-        if (i === parsedPasted.length - 1) {
-          return { text: p.text + after, fix: p.fix };
-        }
-        return p;
-      });
-      next.splice(idx, 1, ...inserted);
-      const lastInsertedIdx = idx + inserted.length - 1;
-      const lastCursorPos = parsedPasted[parsedPasted.length - 1].text.length;
-      commitLines(next, { idx: lastInsertedIdx, pos: lastCursorPos });
-    }
-  };
+  const textMetricsCls = compact
+    ? 'font-sans text-[15px] sm:text-[15.5px] leading-[1.78]'
+    : 'font-sans text-[15.5px] sm:text-base leading-[1.85]';
 
   return (
     <div
-      className={`space-y-0.5 ${minHeightClass}`}
+      className={`relative w-full ${minHeightClass}`}
       onClick={(e) => {
-        // Clicking empty space below the last line focuses the last line naturally
         if (e.target === e.currentTarget) {
-          focusLineAt(lines.length - 1);
+          textareaRef.current?.focus();
         }
       }}
     >
-      {lines.map((line, idx) => (
-        <LineRowInput
-          key={idx}
-          line={line}
-          lineIndex={idx}
-          compact={compact}
-          placeholder={idx === 0 ? placeholder : undefined}
-          inputRef={(el) => {
-            if (el) lineRefs.current.set(idx, el);
-            else lineRefs.current.delete(idx);
-          }}
-          onFocus={() => onFocusLine?.(idx)}
-          onChangeText={(txt) => handleChangeText(idx, txt)}
-          onToggleFix={() => handleToggleFix(idx)}
-          onKeyDown={(e) => handleKeyDown(idx, e)}
-          onPaste={(e) => handlePaste(idx, e)}
-        />
-      ))}
+      {/* Layer 1: Pixel-locked in-flow mirror + clickable per-line FIX gutter */}
+      <div className="w-full">
+        {lines.map((line, idx) => {
+          const hasContent = line.text.trim().length > 0;
+          return (
+            <div
+              key={idx}
+              className={`group/line relative flex items-start rounded-lg transition-colors ${
+                line.fix
+                  ? 'bg-rose-500/[0.09] dark:bg-rose-500/[0.14] shadow-[inset_2px_0_0_#8C271E]'
+                  : ''
+              }`}
+            >
+              {/* Fixed-width 42px left gutter so textarea left offset never shifts */}
+              <div className="relative z-20 w-[42px] shrink-0 flex items-start justify-start pt-[4px] pl-1 select-none">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleToggleFix(idx)}
+                  title={
+                    line.fix
+                      ? 'Retirer le repère À fix'
+                      : 'Marquer cette ligne comme À fix'
+                  }
+                  className={`inline-flex items-center justify-center gap-0.5 rounded-md transition-all cursor-pointer ${
+                    line.fix
+                      ? 'bg-[#8C271E] text-white px-1.5 h-[19px] text-[9px] font-bold tracking-wide shadow-xs'
+                      : hasContent
+                      ? 'h-[19px] w-[19px] text-slate-300 dark:text-zinc-600 opacity-55 sm:opacity-30 hover:!opacity-100 hover:bg-rose-500/12 hover:text-[#8C271E] dark:hover:text-[#f08b82]'
+                      : 'h-[19px] w-[19px] opacity-0 pointer-events-none'
+                  }`}
+                >
+                  <Wrench size={9.5} />
+                  {line.fix && <span>FIX</span>}
+                </button>
+              </div>
+
+              {/* Invisible text mirror guaranteeing identical wrapping height with the overlaid textarea */}
+              <div
+                aria-hidden="true"
+                style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}
+                className={`flex-1 min-w-0 p-0 m-0 pr-1 text-transparent select-none pointer-events-none whitespace-pre-wrap ${textMetricsCls}`}
+              >
+                {line.text.length > 0 ? line.text : '\u200B'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Layer 2: Single native <textarea> for 100% native multi-line selection, Ctrl+C & mobile handles */}
+      <textarea
+        ref={textareaRef}
+        value={cleanText}
+        spellCheck={false}
+        onChange={handleTextareaChange}
+        onKeyDown={handleKeyDown}
+        onFocus={(e) => reportCursorLine(e.currentTarget)}
+        onSelect={(e) => reportCursorLine(e.currentTarget)}
+        onClick={(e) => reportCursorLine(e.currentTarget)}
+        placeholder={placeholder}
+        style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}
+        className={`absolute top-0 bottom-0 left-[42px] right-0 z-10 w-[calc(100%-42px)] h-full p-0 m-0 pr-1 bg-transparent border-0 outline-none resize-none overflow-hidden whitespace-pre-wrap text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-600 caret-[#8C271E] ${textMetricsCls}`}
+      />
     </div>
   );
 }

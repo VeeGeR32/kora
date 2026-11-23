@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Copy,
   Disc3,
   Edit3,
   Eye,
@@ -1273,9 +1274,33 @@ export function LyricsStudio({
                       </span>
                     )}
                   </div>
-                  <span className="text-[10.5px] text-slate-400 dark:text-zinc-500">
-                    Clique sur l’icône à gauche d’une ligne pour la marquer À fix
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden sm:inline text-[10.5px] text-slate-400 dark:text-zinc-500">
+                      🔧 à gauche d’une ligne = À fix
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleanAll = (activeDoc.content || '')
+                          .replace(/^\s*\[FIX(?::[^\]]*)?\]\s*/gim, '')
+                          .replace(/\s*\[FIX(?::[^\]]*)?\]\s*/gi, ' ')
+                          .trim();
+                        if (!cleanAll) {
+                          notify('Texte vide');
+                          return;
+                        }
+                        void navigator.clipboard
+                          ?.writeText(cleanAll)
+                          .then(() => notify('Texte copié ✓'))
+                          .catch(() => notify('Impossible de copier automatiquement'));
+                      }}
+                      title="Copier tout le texte proprement"
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 dark:border-zinc-800 px-2 py-0.5 text-[10.5px] font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 hover:border-slate-400 transition cursor-pointer"
+                    >
+                      <Copy size={10} />
+                      Copier
+                    </button>
+                  </div>
                 </div>
 
                 {markdownMode === 'edit' ? (

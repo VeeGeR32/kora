@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Crosshair,
+  GripVertical,
   Loader2,
   Music,
   Navigation,
@@ -13,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { LyricsBarBlock, LyricsBlockStatus, MusicTrack } from '../../types';
 import { computeFourBarGrid, type ComputedBarBlock } from '../../lib/audioAnalyzer';
+import { triggerHapticTick } from '../../lib/haptics';
 import { LyricLinesEditor } from './LyricLinesEditor';
 
 const SECTION_PRESETS = ['Intro', 'Couplet', 'Pré-refrain', 'Refrain', 'Pont', 'Outro'] as const;
@@ -103,6 +105,17 @@ export function LyricsMeasuresEditor({
   const [keyDraft, setKeyDraft] = useState(musicalKey);
   const [editingSectionIdx, setEditingSectionIdx] = useState<number | null>(null);
   const [followLive, setFollowLive] = useState(true);
+
+  // Touch + Mouse Pointer Drag-and-Drop state for shifting / moving 4-bar blocks effortlessly!
+  const [dragState, setDragState] = useState<{
+    fromIdx: number;
+    overIdx: number;
+    clientX: number;
+    clientY: number;
+    label: string;
+    preview: string;
+  } | null>(null);
+  const dragInfoRef = useRef<{ pointerId: number; fromIdx: number; overIdx: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const blockFocusApisRef = useRef<
@@ -224,6 +237,149 @@ export function LyricsMeasuresEditor({
   const commitKey = () => {
     onUpdateTrackMeta({ musicalKey: keyDraft.trim() || undefined });
     setEditingKey(false);
+  };
+
+  // Smart non-destructive block move / cascade-shift when dropping `fromIdx` onto `toIdx`
+  const applyBlockDrop = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= grid.length || toIdx >= grid.length) {
+      return;
+    }
+
+    // Build full aligned array matching grid length
+    const byIdx = new Map(blocks.map((b) => [b.index, b]));
+    const full: LyricsBarBlock[] = grid.map((g) => {
+      const existing = byIdx.get(g.index);
+      return existing
+        ? { ...existing, index: g.index }
+        : {
+            id: `blk_${g.index}`,
+            index: g.index,
+            sectionLabel: g.suggestedSection,
+            status: 'empty',
+            text: '',
+          };
+    });
+
+    const isBlockEmpty = (b: LyricsBarBlock) => b.status === 'empty' && !b.text.trim();
+    const makeEmpty = (i: number): LyricsBarBlock => ({
+      id: `blk_${i}`,
+      index: i,
+      sectionLabel: grid[i]?.suggestedSection || 'Couplet',
+      status: 'empty',
+      text: '',
+    });
+
+    const src = { ...full[fromIdx] };
+    const dst = full[toIdx];
+
+    if (isBlockEmpty(dst)) {
+      // Case 1: Drop onto empty slot -> clean direct move!
+      full[toIdx] = { ...src, id: `blk_${toIdx}`, index: toIdx };
+      full[fromIdx] = makeEmpty(fromIdx);
+    } else if (fromIdx < toIdx) {
+      // Case 2: Dragging DOWN onto occupied block -> cascade/ripple shift downward into next free slot!
+      const nextEmptyIdx = full.findIndex((b, idx) => idx > toIdx && isBlockEmpty(b));
+      if (nextEmptyIdx !== -1) {
+        for (let i = nextEmptyIdx; i > toIdx; i--) {
+          full[i] = { ...full[i - 1], id: `blk_${i}`, index: i };
+        }
+        full[toIdx] = { ...src, id: `blk_${toIdx}`, index: toIdx };
+        full[fromIdx] = makeEmpty(fromIdx);
+      } else {
+        // Every block below is occupied -> swap cleanly so zero text is ever lost
+        full[toIdx] = { ...src, id: `blk_${toIdx}`, index: toIdx };
+        full[fromIdx] = { ...dst, id: `blk_${fromIdx}`, index: fromIdx };
+      }
+    } else {
+      // Case 3: Dragging UP onto occupied block -> reorder insert (shifts intermediate blocks down by 1)
+      for (let i = fromIdx; i > toIdx; i--) {
+        full[i] = { ...full[i - 1], id: `blk_${i}`, index: i };
+      }
+      full[toIdx] = { ...src, id: `blk_${toIdx}`, index: toIdx };
+    }
+
+    onChangeBlocks(full);
+    triggerHapticTick(12);
+  };
+
+  const findBlockIndexAtPoint = (clientY: number): number => {
+    let bestIdx = dragInfoRef.current?.overIdx ?? 0;
+    let bestDist = Infinity;
+    for (const [idx, el] of blockRowRefs.current.entries()) {
+      const rect = el.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) {
+        return idx;
+      }
+      const center = (rect.top + rect.bottom) / 2;
+      const dist = Math.abs(clientY - center);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = idx;
+      }
+    }
+    return bestIdx;
+  };
+
+  const handleStartBlockDrag = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    fromIdx: number,
+    g: ComputedBarBlock,
+    blk: LyricsBarBlock
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragInfoRef.current = { pointerId: e.pointerId, fromIdx, overIdx: fromIdx };
+    const cleanLine = blk.text.replace(/\[FIX(?::[^\]]*)?\]\s*/gi, '').split('\n')[0]?.trim() || blk.note?.trim() || STATUS_META[blk.status].label;
+    setDragState({
+      fromIdx,
+      overIdx: fromIdx,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      label: `M${g.startBar}–${g.endBar}`,
+      preview: cleanLine.slice(0, 36),
+    });
+    triggerHapticTick(10);
+  };
+
+  const handleMoveBlockDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const info = dragInfoRef.current;
+    if (!info || info.pointerId !== e.pointerId) return;
+    e.preventDefault();
+
+    // Gentle edge auto-scroll when dragging near top/bottom of viewport
+    const scrollParent = containerRef.current?.closest('.overflow-y-auto') as HTMLElement | null;
+    if (scrollParent) {
+      const rect = scrollParent.getBoundingClientRect();
+      if (e.clientY < rect.top + 60) {
+        scrollParent.scrollTop -= 12;
+      } else if (e.clientY > rect.bottom - 70) {
+        scrollParent.scrollTop += 12;
+      }
+    }
+
+    const overIdx = findBlockIndexAtPoint(e.clientY);
+    if (overIdx !== info.overIdx) {
+      info.overIdx = overIdx;
+      triggerHapticTick(6);
+    }
+    setDragState((prev) =>
+      prev ? { ...prev, overIdx, clientX: e.clientX, clientY: e.clientY } : null
+    );
+  };
+
+  const handleEndBlockDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const info = dragInfoRef.current;
+    if (!info || info.pointerId !== e.pointerId) return;
+    dragInfoRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    const { fromIdx, overIdx } = info;
+    setDragState(null);
+    if (fromIdx !== overIdx) {
+      applyBlockDrop(fromIdx, overIdx);
+    }
   };
 
   return (
@@ -380,6 +536,11 @@ export function LyricsMeasuresEditor({
             Math.abs(activeAbLoop.end - g.endSec) < 0.35;
 
           const isEmptyCompact = blk.status === 'empty' && !blk.text.trim();
+          const isBeingDragged = dragState?.fromIdx === g.index;
+          const isDropTarget =
+            dragState !== null &&
+            dragState.overIdx === g.index &&
+            dragState.fromIdx !== g.index;
           const sectionDisplay =
             blk.sectionLabel && !/^FIX(?::|$)/i.test(blk.sectionLabel.trim())
               ? blk.sectionLabel
@@ -392,8 +553,12 @@ export function LyricsMeasuresEditor({
                 if (el) blockRowRefs.current.set(g.index, el);
                 else blockRowRefs.current.delete(g.index);
               }}
-              className={`relative pl-3 transition-colors duration-200 ${
-                isCurrentBlock
+              className={`relative pl-3 transition-all duration-150 ${
+                isDropTarget
+                  ? 'ring-2 ring-[#8C271E] bg-[#8C271E]/[0.08] dark:bg-[#8C271E]/[0.16] rounded-xl my-1'
+                  : isBeingDragged
+                  ? 'opacity-35 scale-[0.99]'
+                  : isCurrentBlock
                   ? 'bg-[#8C271E]/[0.045] dark:bg-[#8C271E]/[0.10] rounded-xl my-0.5'
                   : ''
               } ${isEmptyCompact ? 'py-1.5' : 'py-2.5'}`}
@@ -415,6 +580,23 @@ export function LyricsMeasuresEditor({
               {/* SINGLE ULTRA-SLIM INLINE MEASURE HEADER (1 line only, zero clutter!) */}
               <div className="flex items-center justify-between gap-2 min-h-[22px]">
                 <div className="flex items-center gap-1.5 min-w-0">
+                  {/* Touch + Mouse Drag Handle to shift/move this 4-bar block onto any other measure */}
+                  {!isEmptyCompact && (
+                    <button
+                      type="button"
+                      onPointerDown={(e) => handleStartBlockDrag(e, g.index, g, blk)}
+                      onPointerMove={handleMoveBlockDrag}
+                      onPointerUp={handleEndBlockDrag}
+                      onPointerCancel={handleEndBlockDrag}
+                      style={{ touchAction: 'none' }}
+                      title="Glisser-déposer pour déplacer ou décaler ce bloc de 4 mesures"
+                      aria-label={`Déplacer M${g.startBar}–M${g.endBar}`}
+                      className="h-5 w-4 -ml-1 inline-flex items-center justify-center rounded text-slate-300 dark:text-zinc-600 hover:text-[#8C271E] dark:hover:text-[#f08b82] cursor-grab active:cursor-grabbing shrink-0"
+                    >
+                      <GripVertical size={12} />
+                    </button>
+                  )}
+
                   {/* Compact Play/Jump Measure Pill */}
                   <button
                     type="button"
@@ -481,8 +663,15 @@ export function LyricsMeasuresEditor({
                     </div>
                   )}
 
+                  {/* Drop Target Indicator Pill */}
+                  {isDropTarget && (
+                    <span className="rounded-full bg-[#8C271E] text-white px-2 py-0.5 text-[9.5px] font-bold">
+                      {isEmptyCompact ? `Déplacer → M${g.startBar}–${g.endBar}` : `Décaler ici → M${g.startBar}–${g.endBar}`}
+                    </span>
+                  )}
+
                   {/* Quick inline trigger on empty Instru blocks (single subtle button, zero clutter!) */}
-                  {isEmptyCompact && (
+                  {isEmptyCompact && !isDropTarget && (
                     <div className="flex items-center gap-1 ml-1">
                       <button
                         type="button"
@@ -596,6 +785,27 @@ export function LyricsMeasuresEditor({
           );
         })}
       </div>
+
+      {/* Floating Drag Pill following finger/cursor while moving a 4-bar block */}
+      {dragState && (
+        <div
+          style={{
+            transform: `translate3d(${Math.max(12, Math.min((typeof window !== 'undefined' ? window.innerWidth : 400) - 230, dragState.clientX - 30))}px, ${Math.max(12, dragState.clientY - 46)}px, 0)`,
+          }}
+          className="fixed top-0 left-0 z-[90] pointer-events-none rounded-xl bg-[#8C271E] text-white shadow-xl shadow-black/30 px-3 py-1.5 flex items-center gap-2 max-w-[230px]"
+        >
+          <GripVertical size={12} className="opacity-80 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-mono font-bold leading-tight">
+              {dragState.label}
+              {dragState.overIdx !== dragState.fromIdx && grid[dragState.overIdx]
+                ? ` → M${grid[dragState.overIdx].startBar}–${grid[dragState.overIdx].endBar}`
+                : ''}
+            </p>
+            <p className="text-[10.5px] opacity-90 truncate">{dragState.preview}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
