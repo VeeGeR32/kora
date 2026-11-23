@@ -441,10 +441,22 @@ export interface LivePlaybackCommand {
   id: string;
   fromDeviceId: string;
   targetDeviceId: string;
-  type: 'play' | 'pause' | 'toggle' | 'seek' | 'next' | 'prev' | 'playTrack' | 'stop';
+  type:
+    | 'play'
+    | 'pause'
+    | 'toggle'
+    | 'seek'
+    | 'next'
+    | 'prev'
+    | 'playTrack'
+    | 'stop'
+    | 'setRepeat'
+    | 'setShuffle';
   timeSec?: number;
   trackId?: string;
   queueIds?: string[];
+  repeatMode?: 'off' | 'all' | 'one';
+  shuffle?: boolean;
   issuedAt: number;
 }
 
@@ -452,6 +464,7 @@ export interface LivePlaybackState {
   activeDeviceId: string;
   activeDeviceName: string;
   activeDeviceType: 'mobile' | 'tablet' | 'desktop';
+  claimSeq?: number; // Monotonic ownership counter (immune to PC/iPhone clock skew!)
   trackId: string;
   queueIds: string[];
   isPlaying: boolean;
@@ -460,7 +473,7 @@ export interface LivePlaybackState {
   positionUpdatedAt: number;
   repeatMode?: 'off' | 'all' | 'one';
   shuffle?: boolean;
-  command?: LivePlaybackCommand;
+  command?: LivePlaybackCommand; // Legacy compatibility
   updatedAt: number;
 }
 
@@ -573,6 +586,7 @@ export interface LastSessionState {
   audioExpanded?: boolean;
   scrollY?: number;
   livePlayback?: LivePlaybackState | null;
+  liveCommand?: LivePlaybackCommand | null;
   driveSources?: DriveSource[];
   playlists?: MusicPlaylist[];
   likedSocialTracks?: SocialTrackItem[];

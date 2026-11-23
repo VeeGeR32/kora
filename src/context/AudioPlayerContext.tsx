@@ -3,20 +3,35 @@ import type { LivePlaybackCommand, LivePlaybackState, MusicTrack } from '../type
 import { getMediaObjectUrl, saveMediaBlob } from '../lib/mediaDb';
 import { downloadGoogleDriveAudioBlob, ensureGoogleDriveToken } from '../lib/googleDrive';
 import { getLocalDeviceInfo, type LocalDeviceInfo } from '../lib/deviceIdentity';
+import { groupMusicTracks } from '../lib/musicVersioning';
 import { useApp } from './AppContext';
 
-function shuffleTracksFisherYates(tracks: MusicTrack[], avoidFirstId?: string): MusicTrack[] {
+function shuffleTracksFisherYates(
+  tracks: MusicTrack[],
+  avoidGroupKeys?: Set<string>,
+  groupKeyOf?: (t: MusicTrack) => string
+): MusicTrack[] {
   const arr = [...tracks];
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
-  if (avoidFirstId && arr.length > 1 && arr[0].id === avoidFirstId) {
-    const swapIdx = 1 + Math.floor(Math.random() * (arr.length - 1));
-    [arr[0], arr[swapIdx]] = [arr[swapIdx], arr[0]];
+  if (avoidGroupKeys && avoidGroupKeys.size > 0 && arr.length > 1) {
+    const getKey = (t: MusicTrack) => (groupKeyOf ? groupKeyOf(t) : t.id);
+    if (avoidGroupKeys.has(getKey(arr[0]))) {
+      const freshIdx = arr.findIndex((t, idx) => idx > 0 && !avoidGroupKeys.has(getKey(t)));
+      const swapIdx = freshIdx > 0 ? freshIdx : 1 + Math.floor(Math.random() * (arr.length - 1));
+      [arr[0], arr[swapIdx]] = [arr[swapIdx], arr[0]];
+    }
   }
   return arr;
 }
+
+function getTrackCacheKey(track: MusicTrack): string {
+  return track.mediaId || (track.googleDriveFileId ? `drive_${track.googleDriveFileId}` : track.id);
+}
+
+const MAX_RAM_AUDIO_CACHE = 24;
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
@@ -66,7 +81,16 @@ interface AudioPlayerContextValue {
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
 
 export function AudioPlayerProvider({ children }: { children: React.ReactNode }) {
-  const { state, updateMusicTrack, updateLastSession, publishLivePlayback, notify } = useApp();
+  const {
+    state,
+    updateMusicTrack,
+    updateLastSession,
+    livePlayback,
+    liveCommand,
+    publishLivePlayback,
+    publishLiveCommand,
+    notify,
+  } = useApp();
   const localDevice = useMemo(() => getLocalDeviceInfo(), []);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const pendingResumeSecRef = useRef<number | null>(null);
@@ -76,7 +100,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [isLoadingTrack, setIsLoadingTrack] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
+  const [repeatMode, setRepeatModeState] = useState<RepeatMode>('off');
   const [shuffle, setShuffle] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [overlayCount, setOverlayCount] = useState(0);
@@ -87,10 +111,50 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     end: null,
   });
 
+  // Deduplicated song catalog (1 entry per song group = latest version) so auto-play / shuffle NEVER replays v1/v2/v3 back-to-back!
+  const { dedupedLibraryTracks, groupKeyByTrackId } = useMemo(() => {
+    const groups = groupMusicTracks(state.musicTracks);
+    const keyMap = new Map<string, string>();
+    const latestList: MusicTrack[] = [];
+    for (const g of groups) {
+      latestList.push(g.latestTrack);
+      for (const id of g.allTrackIds) {
+        keyMap.set(id, g.groupKey);
+      }
+    }
+    return { dedupedLibraryTracks: latestList, groupKeyByTrackId: keyMap };
+  }, [state.musicTracks]);
+
+  const dedupedLibraryRef = useRef<MusicTrack[]>(dedupedLibraryTracks);
+  const groupKeyMapRef = useRef<Map<string, string>>(groupKeyByTrackId);
+  useEffect(() => {
+    dedupedLibraryRef.current = dedupedLibraryTracks;
+    groupKeyMapRef.current = groupKeyByTrackId;
+  }, [dedupedLibraryTracks, groupKeyByTrackId]);
+
+  const getGroupKey = useCallback((track: MusicTrack): string => {
+    return groupKeyMapRef.current.get(track.id) || track.id;
+  }, []);
+
+  // Connect synchronization refs (monotonic claimSeq -> 100% immune to PC/iPhone clock skew!)
   const remoteSessionRef = useRef<LivePlaybackState | null>(null);
-  const lastHandledCommandIdRef = useRef<string | null>(null);
-  const lastLocalClaimAtRef = useRef<number>(0);
+  const claimSeqRef = useRef<number>(0);
+  const handledCommandIdsRef = useRef<Set<string>>(new Set());
   const suppressLocalPublishRef = useRef<boolean>(false);
+
+  // Rolling history of recently played song groupKeys (prevents random repeats!)
+  const recentGroupKeysRef = useRef<string[]>([]);
+  const recordPlayedGroup = useCallback(
+    (track: MusicTrack) => {
+      const gk = getGroupKey(track);
+      const next = [gk, ...recentGroupKeysRef.current.filter((k) => k !== gk)].slice(0, 18);
+      recentGroupKeysRef.current = next;
+    },
+    [getGroupKey]
+  );
+
+  // Pre-selected fallback next track when on the last song of a queue (so we can prefetch it into RAM for iOS background!)
+  const preselectedNextTrackRef = useRef<MusicTrack | null>(null);
 
   const registerFullscreenOverlay = useCallback(() => {
     setOverlayCount((c) => c + 1);
@@ -131,20 +195,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       window.scrollTo(0, scrollY);
     };
   }, [hasFullscreenOverlay, expanded]);
+
   const requestOpenTrackPage = useCallback((trackId: string) => {
     setPendingOpenTrackId(trackId);
   }, []);
   const clearPendingOpenTrackPage = useCallback(() => {
     setPendingOpenTrackId(null);
-  }, []);
-
-  const loop = repeatMode !== 'off';
-  const setLoop = useCallback((v: boolean) => {
-    setRepeatMode(v ? 'one' : 'off');
-  }, []);
-
-  const cycleRepeatMode = useCallback(() => {
-    setRepeatMode((prev) => (prev === 'off' ? 'all' : prev === 'all' ? 'one' : 'off'));
   }, []);
 
   const repeatModeRef = useRef<RepeatMode>(repeatMode);
@@ -154,10 +210,15 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const queueRef = useRef(queue);
   const baseQueueRef = useRef<MusicTrack[]>([]);
   const playRequestIdRef = useRef(0);
+  const lastEndedReqIdRef = useRef(-1);
   const lastReportedSecRef = useRef(-1);
+  const prefetchedNearEndForReqIdRef = useRef(-1);
   const playNextRef = useRef<() => void>(() => {});
   const playPrevRef = useRef<() => void>(() => {});
-  // Instant in-memory ObjectURL cache + deduplicated in-flight downloads + active fetch abort
+  const togglePlayRef = useRef<() => void>(() => {});
+  const pauseRef = useRef<() => void>(() => {});
+  const seekRef = useRef<(sec: number) => void>(() => {});
+  // Instant in-memory ObjectURL LRU cache + deduplicated in-flight downloads + active fetch abort
   const memoryUrlCacheRef = useRef<Map<string, string>>(new Map());
   const inFlightDownloadsRef = useRef<Map<string, Promise<string | null>>>(new Map());
   const activeFetchAbortRef = useRef<AbortController | null>(null);
@@ -179,13 +240,13 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     queueRef.current = queue;
   }, [queue]);
 
-  // Keep queue in sync with library tracks if no custom project queue is active
-  const effectiveQueue = queue.length > 0 ? queue : state.musicTracks;
+  // Keep queue in sync with deduplicated library tracks if no custom project queue is active
+  const effectiveQueue = queue.length > 0 ? queue : dedupedLibraryTracks;
   const currentIdx = currentTrack
     ? effectiveQueue.findIndex((t) => t.id === currentTrack.id)
     : -1;
   const hasNext =
-    (effectiveQueue.length > 1 && currentIdx >= 0) || state.musicTracks.length > 1;
+    (effectiveQueue.length > 1 && currentIdx >= 0) || dedupedLibraryTracks.length > 1;
   const hasPrev = effectiveQueue.length > 1 && currentIdx >= 0;
 
   // Pre-warm Google Drive token silently on boot so the very first track click is instant
@@ -197,10 +258,49 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     void ensureGoogleDriveToken(state.preferences.firebaseConfig).catch(() => {});
   }, [state.musicTracks, state.preferences.firebaseConfig]);
 
+  // Helper to insert into RAM LRU cache without leaking Blob URLs on iOS Safari
+  const putInMemoryUrlCache = useCallback((cacheKey: string, url: string) => {
+    const cache = memoryUrlCacheRef.current;
+    if (cache.has(cacheKey)) {
+      cache.delete(cacheKey);
+    }
+    cache.set(cacheKey, url);
+
+    if (cache.size > MAX_RAM_AUDIO_CACHE) {
+      const protectedKeys = new Set<string>();
+      const cur = currentTrackRef.current;
+      if (cur) protectedKeys.add(getTrackCacheKey(cur));
+      const activeQ = queueRef.current;
+      const curIdx = cur ? activeQ.findIndex((t) => t.id === cur.id) : -1;
+      if (curIdx >= 0) {
+        for (let offset = 1; offset <= 2; offset++) {
+          const nextT = activeQ[curIdx + offset];
+          if (nextT) protectedKeys.add(getTrackCacheKey(nextT));
+        }
+      }
+      if (preselectedNextTrackRef.current) {
+        protectedKeys.add(getTrackCacheKey(preselectedNextTrackRef.current));
+      }
+
+      for (const [k, oldUrl] of cache.entries()) {
+        if (cache.size <= MAX_RAM_AUDIO_CACHE) break;
+        if (protectedKeys.has(k)) continue;
+        cache.delete(k);
+        if (oldUrl.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(oldUrl);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  }, []);
+
   // Fast track URL resolver with RAM cache -> IndexedDB -> Drive (non-blocking IDB save!)
   const resolveTrackAudioUrl = useCallback(
     async (track: MusicTrack, signal?: AbortSignal): Promise<string | null> => {
-      const cacheKey = track.mediaId || (track.googleDriveFileId ? `drive_${track.googleDriveFileId}` : track.id);
+      const cacheKey = getTrackCacheKey(track);
 
       const memHit = memoryUrlCacheRef.current.get(cacheKey);
       if (memHit) return memHit;
@@ -208,14 +308,14 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       if (track.mediaId) {
         const idbUrl = await getMediaObjectUrl(track.mediaId);
         if (idbUrl) {
-          memoryUrlCacheRef.current.set(cacheKey, idbUrl);
+          putInMemoryUrlCache(cacheKey, idbUrl);
           return idbUrl;
         }
       }
       if (track.googleDriveFileId) {
         const driveIdbUrl = await getMediaObjectUrl(`drive_${track.googleDriveFileId}`);
         if (driveIdbUrl) {
-          memoryUrlCacheRef.current.set(cacheKey, driveIdbUrl);
+          putInMemoryUrlCache(cacheKey, driveIdbUrl);
           return driveIdbUrl;
         }
       }
@@ -235,7 +335,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
             const blob = await downloadGoogleDriveAudioBlob(token, track.googleDriveFileId!, signal);
             // Play IMMEDIATELY from RAM ObjectURL (0ms!) and persist to IndexedDB in background
             const instantUrl = URL.createObjectURL(blob);
-            memoryUrlCacheRef.current.set(cacheKey, instantUrl);
+            putInMemoryUrlCache(cacheKey, instantUrl);
             void saveMediaBlob(cacheKey, blob, `${track.title}.mp3`).catch(() => {});
             return instantUrl;
           } catch (err) {
@@ -251,30 +351,87 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       }
       return null;
     },
-    [state.preferences.firebaseConfig]
+    [state.preferences.firebaseConfig, putInMemoryUrlCache]
   );
 
-  // Silent lookahead prefetch: preloads the NEXT track in the queue in the background -> 0ms Next!
-  const prefetchUpcomingTrack = useCallback(
-    (currentId: string, activeQ: MusicTrack[]) => {
-      if (activeQ.length <= 1) return;
-      const idx = activeQ.findIndex((t) => t.id === currentId);
-      if (idx < 0) return;
-      const nextTrack = activeQ[idx + 1] || (repeatModeRef.current === 'all' ? activeQ[0] : null);
-      if (!nextTrack || nextTrack.id === currentId) return;
-      const cacheKey =
-        nextTrack.mediaId ||
-        (nextTrack.googleDriveFileId ? `drive_${nextTrack.googleDriveFileId}` : nextTrack.id);
-      if (memoryUrlCacheRef.current.has(cacheKey) || inFlightDownloadsRef.current.has(cacheKey)) {
-        return;
-      }
-      void resolveTrackAudioUrl(nextTrack).catch(() => {});
+  // Pick a fresh random non-repeating track from the deduplicated library
+  const pickFreshLibraryTrack = useCallback(
+    (currentTrackObj: MusicTrack | null): { next: MusicTrack; queue: MusicTrack[] } | null => {
+      const allUnique = dedupedLibraryRef.current;
+      const playable = allUnique.filter((t) =>
+        Boolean(t.mediaId || t.cloudAudioUrl || t.googleDriveFileId)
+      );
+      const pool = playable.length > 0 ? playable : allUnique;
+      if (pool.length === 0) return null;
+
+      const curGroup = currentTrackObj ? getGroupKey(currentTrackObj) : null;
+      const recentSet = new Set(recentGroupKeysRef.current);
+      if (curGroup) recentSet.add(curGroup);
+
+      // Prefer songs not played in the last ~18 tracks; if user listened to everything, only avoid the current song
+      const freshCandidates = pool.filter((t) => !recentSet.has(getGroupKey(t)));
+      const effectiveAvoid =
+        freshCandidates.length > 0 ? recentSet : curGroup ? new Set([curGroup]) : undefined;
+
+      const randomQueue = shuffleTracksFisherYates(pool, effectiveAvoid, getGroupKey);
+      return { next: randomQueue[0], queue: randomQueue };
     },
-    [resolveTrackAudioUrl]
+    [getGroupKey]
+  );
+
+  // Silent 2-track lookahead RAM prefetcher (guarantees 0ms synchronous swap on `ended` -> unbroken iOS PWA background audio!)
+  const prefetchUpcomingTracks = useCallback(
+    (currentId: string, activeQ: MusicTrack[]) => {
+      const targets: MusicTrack[] = [];
+      const idx = activeQ.findIndex((t) => t.id === currentId);
+
+      if (idx >= 0) {
+        if (idx + 1 < activeQ.length) targets.push(activeQ[idx + 1]);
+        if (idx + 2 < activeQ.length) targets.push(activeQ[idx + 2]);
+      }
+
+      // If we are on the last track of the queue, also prefetch the loop-back or pre-selected random next track!
+      if (targets.length === 0) {
+        if (repeatModeRef.current === 'all' && activeQ.length > 1) {
+          targets.push(activeQ[0]);
+        } else {
+          const cur = currentTrackRef.current;
+          const existingPre = preselectedNextTrackRef.current;
+          const isPreValid =
+            existingPre &&
+            existingPre.id !== currentId &&
+            (!cur || getGroupKey(existingPre) !== getGroupKey(cur));
+          if (isPreValid && existingPre) {
+            targets.push(existingPre);
+          } else {
+            const picked = pickFreshLibraryTrack(cur);
+            if (picked && picked.next.id !== currentId) {
+              preselectedNextTrackRef.current = picked.next;
+              targets.push(picked.next);
+            }
+          }
+        }
+      }
+
+      for (const t of targets) {
+        if (!t || t.id === currentId) continue;
+        const cacheKey = getTrackCacheKey(t);
+        if (memoryUrlCacheRef.current.has(cacheKey) || inFlightDownloadsRef.current.has(cacheKey)) {
+          continue;
+        }
+        void resolveTrackAudioUrl(t).catch(() => {});
+      }
+    },
+    [resolveTrackAudioUrl, getGroupKey, pickFreshLibraryTrack]
   );
 
   const publishLocalLive = useCallback(
-    (overrides?: Partial<Pick<LivePlaybackState, 'isPlaying' | 'positionSec' | 'durationSec' | 'trackId'>>) => {
+    (
+      overrides?: Partial<
+        Pick<LivePlaybackState, 'isPlaying' | 'positionSec' | 'durationSec' | 'trackId' | 'repeatMode' | 'shuffle'>
+      >,
+      bumpClaimSeq = false
+    ) => {
       if (suppressLocalPublishRef.current || remoteSessionRef.current) return;
       const trk = currentTrackRef.current;
       const trackId = overrides?.trackId || trk?.id;
@@ -301,19 +458,23 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       const qIds = queueRef.current.slice(0, 60).map((t) => t.id);
       if (!qIds.includes(trackId)) qIds.unshift(trackId);
 
-      lastLocalClaimAtRef.current = now;
+      if (bumpClaimSeq || claimSeqRef.current === 0) {
+        claimSeqRef.current += 1;
+      }
+
       const payload: LivePlaybackState = {
         activeDeviceId: localDevice.id,
         activeDeviceName: localDevice.name,
         activeDeviceType: localDevice.type,
+        claimSeq: claimSeqRef.current,
         trackId,
         queueIds: qIds,
         isPlaying: playing,
         positionSec: Math.max(0, pos),
         durationSec: Math.max(0, dur),
         positionUpdatedAt: now,
-        repeatMode: repeatModeRef.current,
-        shuffle: shuffleRef.current,
+        repeatMode: overrides?.repeatMode ?? repeatModeRef.current,
+        shuffle: typeof overrides?.shuffle === 'boolean' ? overrides.shuffle : shuffleRef.current,
         updatedAt: now,
       };
       void publishLivePlayback(payload);
@@ -321,10 +482,17 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     [localDevice, publishLivePlayback]
   );
 
+  // Send remote control command to dedicated `liveCommand` field (NEVER touches `livePlayback` -> ZERO race conditions!)
   const sendRemoteCommand = useCallback(
     (
       type: LivePlaybackCommand['type'],
-      extra?: { timeSec?: number; trackId?: string; queueIds?: string[] }
+      extra?: {
+        timeSec?: number;
+        trackId?: string;
+        queueIds?: string[];
+        repeatMode?: RepeatMode;
+        shuffle?: boolean;
+      }
     ) => {
       const remote = remoteSessionRef.current;
       if (!remote) return;
@@ -337,20 +505,15 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         ...(typeof extra?.timeSec === 'number' ? { timeSec: extra.timeSec } : {}),
         ...(extra?.trackId ? { trackId: extra.trackId } : {}),
         ...(extra?.queueIds ? { queueIds: extra.queueIds } : {}),
+        ...(extra?.repeatMode ? { repeatMode: extra.repeatMode } : {}),
+        ...(typeof extra?.shuffle === 'boolean' ? { shuffle: extra.shuffle } : {}),
         issuedAt: now,
       };
 
-      // Optimistic local mirror update so controls feel 0ms responsive
+      // Optimistic local mirror update so controls feel 0ms snappy while waiting for active device confirmation
       const elapsed = remote.isPlaying ? Math.max(0, (now - remote.positionUpdatedAt) / 1000) : 0;
-      const curPos = Math.min(
-        remote.durationSec || Infinity,
-        remote.positionSec + elapsed
-      );
-      let nextRemote: LivePlaybackState = {
-        ...remote,
-        command: cmd,
-        updatedAt: now,
-      };
+      const curPos = Math.min(remote.durationSec || Infinity, remote.positionSec + elapsed);
+      let nextRemote: LivePlaybackState = { ...remote };
       if (type === 'toggle') {
         nextRemote = {
           ...nextRemote,
@@ -368,13 +531,100 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       } else if (type === 'seek' && typeof extra?.timeSec === 'number') {
         nextRemote = { ...nextRemote, positionSec: extra.timeSec, positionUpdatedAt: now };
         setCurrentTime(extra.timeSec);
+      } else if (type === 'setRepeat' && extra?.repeatMode) {
+        nextRemote = { ...nextRemote, repeatMode: extra.repeatMode };
+        repeatModeRef.current = extra.repeatMode;
+        setRepeatModeState(extra.repeatMode);
+      } else if (type === 'setShuffle' && typeof extra?.shuffle === 'boolean') {
+        nextRemote = { ...nextRemote, shuffle: extra.shuffle };
+        shuffleRef.current = extra.shuffle;
+        setShuffle(extra.shuffle);
       }
       remoteSessionRef.current = nextRemote;
       setRemoteSession(nextRemote);
-      void publishLivePlayback(nextRemote);
+
+      // Write ONLY to the isolated `liveCommand` slot!
+      void publishLiveCommand(cmd);
     },
-    [localDevice.id, publishLivePlayback]
+    [localDevice.id, publishLiveCommand]
   );
+
+  const setRepeatMode = useCallback(
+    (mode: RepeatMode) => {
+      if (remoteSessionRef.current) {
+        sendRemoteCommand('setRepeat', { repeatMode: mode });
+        return;
+      }
+      repeatModeRef.current = mode;
+      setRepeatModeState(mode);
+      if (currentTrackRef.current) {
+        publishLocalLive({ repeatMode: mode });
+        prefetchUpcomingTracks(currentTrackRef.current.id, queueRef.current);
+      }
+    },
+    [sendRemoteCommand, publishLocalLive, prefetchUpcomingTracks]
+  );
+
+  const loop = repeatMode !== 'off';
+  const setLoop = useCallback(
+    (v: boolean) => {
+      setRepeatMode(v ? 'one' : 'off');
+    },
+    [setRepeatMode]
+  );
+
+  const cycleRepeatMode = useCallback(() => {
+    const next: RepeatMode =
+      repeatModeRef.current === 'off'
+        ? 'all'
+        : repeatModeRef.current === 'all'
+        ? 'one'
+        : 'off';
+    setRepeatMode(next);
+  }, [setRepeatMode]);
+
+  const applyLocalShuffle = useCallback(
+    (nextShuffle: boolean) => {
+      shuffleRef.current = nextShuffle;
+      setShuffle(nextShuffle);
+
+      const cur = currentTrackRef.current;
+      const base = baseQueueRef.current.length > 0 ? baseQueueRef.current : queueRef.current;
+      if (base.length <= 1) return;
+
+      if (nextShuffle) {
+        const rest = cur
+          ? shuffleTracksFisherYates(
+              base.filter((t) => t.id !== cur.id),
+              new Set([getGroupKey(cur)]),
+              getGroupKey
+            )
+          : shuffleTracksFisherYates(base);
+        const nextQ = cur ? [cur, ...rest] : rest;
+        queueRef.current = nextQ;
+        setQueue(nextQ);
+      } else {
+        queueRef.current = base;
+        setQueue(base);
+      }
+      if (cur) {
+        prefetchUpcomingTracks(cur.id, queueRef.current);
+      }
+    },
+    [getGroupKey, prefetchUpcomingTracks]
+  );
+
+  const toggleShuffle = useCallback(() => {
+    const nextShuffle = !shuffleRef.current;
+    if (remoteSessionRef.current) {
+      sendRemoteCommand('setShuffle', { shuffle: nextShuffle });
+      return;
+    }
+    applyLocalShuffle(nextShuffle);
+    if (currentTrackRef.current) {
+      publishLocalLive({ shuffle: nextShuffle });
+    }
+  }, [sendRemoteCommand, applyLocalShuffle, publishLocalLive]);
 
   const playTrack = useCallback(
     async (
@@ -384,7 +634,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       internalQueueSwap = false,
       forceLocal = false
     ) => {
-      // If controlling another device (Spotify Connect mode), send playTrack command to that device!
+      // If controlling another device (Rowav Connect mode), send playTrack command to that device!
       if (!forceLocal && remoteSessionRef.current) {
         const qIds =
           customQueue && customQueue.length > 0
@@ -405,15 +655,20 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         return;
       }
 
-      // Claiming playback on this device
+      // Claiming playback on this device (bump monotonic claimSeq so other devices respect it regardless of clock skew!)
+      const wasRemote = Boolean(remoteSessionRef.current);
       remoteSessionRef.current = null;
       setRemoteSession(null);
-      lastLocalClaimAtRef.current = Date.now();
+      if (wasRemote || claimSeqRef.current === 0) {
+        claimSeqRef.current += 1;
+      }
 
       const audio = audioRef.current;
       if (!audio) return;
 
       const reqId = ++playRequestIdRef.current;
+      prefetchedNearEndForReqIdRef.current = -1;
+      preselectedNextTrackRef.current = null;
 
       // Cancel any previous in-flight Drive download so full bandwidth goes to this track
       if (activeFetchAbortRef.current) {
@@ -423,83 +678,104 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
       const isDifferentTrack = currentTrackRef.current?.id !== track.id;
 
-      // IMMEDIATELY silence & stop the current track when switching songs!
-      if (isDifferentTrack) {
-        suppressLocalPublishRef.current = true;
-        audio.pause();
-        audio.removeAttribute('src');
-        suppressLocalPublishRef.current = false;
-        setIsPlaying(false);
-        setCurrentTime(startAtSec ?? 0);
-        setDuration(track.durationSec || 0);
-      }
-
+      // Update queue BEFORE playing (using deduplicated library tracks by default -> NO v1/v2/v3 back-to-back repeats!)
       if (customQueue && customQueue.length > 0) {
+        // Deduplicate identical track IDs inside customQueue
+        const seenIds = new Set<string>();
+        const cleanCustom = customQueue.filter((t) => {
+          if (seenIds.has(t.id)) return false;
+          seenIds.add(t.id);
+          return true;
+        });
         if (!internalQueueSwap) {
-          baseQueueRef.current = customQueue;
-          if (shuffleRef.current && customQueue.length > 1) {
+          baseQueueRef.current = cleanCustom;
+          if (shuffleRef.current && cleanCustom.length > 1) {
             const rest = shuffleTracksFisherYates(
-              customQueue.filter((t) => t.id !== track.id)
+              cleanCustom.filter((t) => t.id !== track.id),
+              new Set([getGroupKey(track)]),
+              getGroupKey
             );
             const nextQ = [track, ...rest];
             queueRef.current = nextQ;
             setQueue(nextQ);
           } else {
-            queueRef.current = customQueue;
-            setQueue(customQueue);
+            queueRef.current = cleanCustom;
+            setQueue(cleanCustom);
           }
         } else {
-          queueRef.current = customQueue;
-          setQueue(customQueue);
+          queueRef.current = cleanCustom;
+          setQueue(cleanCustom);
         }
       } else if (queueRef.current.length === 0 || !queueRef.current.some((t) => t.id === track.id)) {
-        baseQueueRef.current = state.musicTracks;
-        if (shuffleRef.current && state.musicTracks.length > 1) {
-          const rest = shuffleTracksFisherYates(
-            state.musicTracks.filter((t) => t.id !== track.id)
-          );
+        const libPool = dedupedLibraryRef.current.length > 0 ? dedupedLibraryRef.current : state.musicTracks;
+        // Replace the song's group entry with the exact clicked track version so there's only 1 entry for this song!
+        const clickedGroup = getGroupKey(track);
+        const withoutSameGroup = libPool.filter(
+          (t) => t.id !== track.id && getGroupKey(t) !== clickedGroup
+        );
+        const orderedBase = [track, ...withoutSameGroup];
+        baseQueueRef.current = orderedBase;
+        if (shuffleRef.current && orderedBase.length > 1) {
+          const rest = shuffleTracksFisherYates(withoutSameGroup, new Set([clickedGroup]), getGroupKey);
           const nextQ = [track, ...rest];
           queueRef.current = nextQ;
           setQueue(nextQ);
         } else {
-          queueRef.current = state.musicTracks;
-          setQueue(state.musicTracks);
+          queueRef.current = orderedBase;
+          setQueue(orderedBase);
         }
       }
 
-      // Immediately reflect track selection + clean player loading skeleton (if not already in RAM)
+      // Immediately update track metadata & history
       currentTrackRef.current = track;
       setCurrentTrack(track);
+      recordPlayedGroup(track);
       pendingResumeSecRef.current = null;
       lastReportedSecRef.current = -1;
-
-      const cacheKey =
-        track.mediaId || (track.googleDriveFileId ? `drive_${track.googleDriveFileId}` : track.id);
-      const isInstantHit = Boolean(memoryUrlCacheRef.current.get(cacheKey) || track.cloudAudioUrl);
-      if (!isInstantHit) {
-        setIsLoadingTrack(true);
+      if (isDifferentTrack) {
+        setAbLoop({ start: null, end: null });
+        setCurrentTime(startAtSec ?? 0);
+        setDuration(track.durationSec || 0);
       }
 
-      const abortController = new AbortController();
-      activeFetchAbortRef.current = abortController;
+      // CRITICAL FOR iOS PWA BACKGROUND AUDIO:
+      // Check RAM ObjectURL cache SYNCHRONOUSLY before ANY `await`!
+      // When switching tracks on `ended` in the background, swapping `audio.src` and calling `audio.play()`
+      // synchronously with ZERO `await`s keeps iOS's native AVAudioSession continuously alive!
+      const cacheKey = getTrackCacheKey(track);
+      const instantSrc = memoryUrlCacheRef.current.get(cacheKey) || track.cloudAudioUrl || null;
 
-      let src: string | null = null;
-      try {
-        src = await resolveTrackAudioUrl(track, abortController.signal);
-      } catch (err) {
-        if (reqId !== playRequestIdRef.current) return;
-        setIsLoadingTrack(false);
-        notify(`Google Drive : ${(err as Error).message}`);
-      } finally {
-        if (activeFetchAbortRef.current === abortController) {
-          activeFetchAbortRef.current = null;
+      let src: string | null = instantSrc;
+
+      if (!src) {
+        // Track is not in RAM yet -> show loading indicator WITHOUT stripping `audio.src` (which kills iOS background audio!)
+        if (isDifferentTrack && !audio.ended) {
+          suppressLocalPublishRef.current = true;
+          audio.pause();
+          suppressLocalPublishRef.current = false;
+          setIsPlaying(false);
         }
+        setIsLoadingTrack(true);
+
+        const abortController = new AbortController();
+        activeFetchAbortRef.current = abortController;
+
+        try {
+          src = await resolveTrackAudioUrl(track, abortController.signal);
+        } catch (err) {
+          if (reqId !== playRequestIdRef.current) return;
+          setIsLoadingTrack(false);
+          notify(`Google Drive : ${(err as Error).message}`);
+        } finally {
+          if (activeFetchAbortRef.current === abortController) {
+            activeFetchAbortRef.current = null;
+          }
+        }
+        if (reqId !== playRequestIdRef.current) return;
       }
-      if (reqId !== playRequestIdRef.current) return;
 
       if (!src) {
         audio.pause();
-        audio.removeAttribute('src');
         setDuration(track.durationSec || 0);
         setCurrentTime(startAtSec ?? 0);
         setIsPlaying(false);
@@ -511,34 +787,45 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       if (!isSameSrc) {
         audio.src = src;
         setDuration(track.durationSec || 0);
-        setAbLoop({ start: null, end: null });
       }
       if (typeof startAtSec === 'number') {
-        audio.currentTime = startAtSec;
+        try {
+          audio.currentTime = startAtSec;
+        } catch {
+          // Will seek once metadata is ready
+        }
         setCurrentTime(startAtSec);
       } else if (!isSameSrc) {
         setCurrentTime(0);
       }
+
+      // Call audio.play() IMMEDIATELY (still synchronous when `instantSrc` hit!)
+      const playPromise = audio.play();
+
       updateLastSession({
         audioTrackId: track.id,
-        audioTimeSec: Math.round(typeof startAtSec === 'number' ? startAtSec : audio.currentTime || 0),
+        audioTimeSec: Math.round(typeof startAtSec === 'number' ? startAtSec : 0),
       });
+
       try {
-        await audio.play();
+        await playPromise;
         if (reqId === playRequestIdRef.current) {
           setIsPlaying(true);
           setIsLoadingTrack(false);
-          publishLocalLive({
-            trackId: track.id,
-            isPlaying: true,
-            positionSec: typeof startAtSec === 'number' ? startAtSec : audio.currentTime || 0,
-            durationSec:
-              isFinite(audio.duration) && audio.duration > 0
-                ? audio.duration
-                : track.durationSec || 0,
-          });
-          // Silently prefetch the next track in the queue so the next skip is 0ms instant!
-          prefetchUpcomingTrack(track.id, queueRef.current);
+          publishLocalLive(
+            {
+              trackId: track.id,
+              isPlaying: true,
+              positionSec: typeof startAtSec === 'number' ? startAtSec : audio.currentTime || 0,
+              durationSec:
+                isFinite(audio.duration) && audio.duration > 0
+                  ? audio.duration
+                  : track.durationSec || 0,
+            },
+            wasRemote
+          );
+          // Prefetch next 2 tracks into RAM so the next transition is 0ms synchronous (even with screen locked!)
+          prefetchUpcomingTracks(track.id, queueRef.current);
         }
       } catch {
         if (reqId === playRequestIdRef.current) {
@@ -550,65 +837,61 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     [
       state.musicTracks,
       resolveTrackAudioUrl,
-      prefetchUpcomingTrack,
+      prefetchUpcomingTracks,
       notify,
       updateLastSession,
       publishLocalLive,
       sendRemoteCommand,
+      getGroupKey,
+      recordPlayedGroup,
     ]
   );
 
   const playShuffled = useCallback(
     async (tracks: MusicTrack[]) => {
       if (tracks.length === 0) return;
-      baseQueueRef.current = tracks;
-      const shuffled = shuffleTracksFisherYates(tracks, currentTrackRef.current?.id);
+      // Deduplicate by song groupKey (keeps only 1 version per song so shuffle never replays v1/v2/v3 back-to-back!)
+      const seenGroups = new Set<string>();
+      const uniqueTracks = tracks.filter((t) => {
+        const gk = getGroupKey(t);
+        if (seenGroups.has(gk)) return false;
+        seenGroups.add(gk);
+        return true;
+      });
+      const pool = uniqueTracks.length > 0 ? uniqueTracks : tracks;
+      baseQueueRef.current = pool;
+      const avoid = new Set<string>(recentGroupKeysRef.current);
+      if (currentTrackRef.current) avoid.add(getGroupKey(currentTrackRef.current));
+      const shuffled = shuffleTracksFisherYates(pool, avoid, getGroupKey);
       shuffleRef.current = true;
       setShuffle(true);
       await playTrack(shuffled[0], 0, shuffled, true);
     },
-    [playTrack]
+    [playTrack, getGroupKey]
   );
-
-  const toggleShuffle = useCallback(() => {
-    const nextShuffle = !shuffleRef.current;
-    shuffleRef.current = nextShuffle;
-    setShuffle(nextShuffle);
-
-    const cur = currentTrackRef.current;
-    const base = baseQueueRef.current.length > 0 ? baseQueueRef.current : queueRef.current;
-    if (base.length <= 1) return;
-
-    if (nextShuffle) {
-      const rest = cur
-        ? shuffleTracksFisherYates(base.filter((t) => t.id !== cur.id))
-        : shuffleTracksFisherYates(base);
-      const nextQ = cur ? [cur, ...rest] : rest;
-      queueRef.current = nextQ;
-      setQueue(nextQ);
-    } else {
-      queueRef.current = base;
-      setQueue(base);
-    }
-  }, []);
 
   const restoreTrack = useCallback(
     (track: MusicTrack, startAtSec = 0, shouldExpand = false) => {
+      // Never clobber an active remote Connect session on startup restore!
+      if (remoteSessionRef.current) return;
       const audio = audioRef.current;
       if (audio) {
+        suppressLocalPublishRef.current = true;
         audio.pause();
-        audio.removeAttribute('src');
+        suppressLocalPublishRef.current = false;
       }
       const clamped = Math.max(0, Math.round(startAtSec));
       pendingResumeSecRef.current = clamped;
+      currentTrackRef.current = track;
       setCurrentTrack(track);
-      setQueue((prev) => (prev.length > 0 ? prev : state.musicTracks));
+      setAbLoop({ start: null, end: null });
+      setQueue((prev) => (prev.length > 0 ? prev : dedupedLibraryRef.current));
       setCurrentTime(clamped);
       setDuration(track.durationSec || 0);
       setIsPlaying(false);
       setExpanded(Boolean(shouldExpand));
     },
-    [state.musicTracks]
+    []
   );
 
   const playNext = useCallback(() => {
@@ -616,39 +899,58 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       sendRemoteCommand('next');
       return;
     }
-    const activeQ = queueRef.current.length > 0 ? queueRef.current : state.musicTracks;
+    const activeQ = queueRef.current.length > 0 ? queueRef.current : dedupedLibraryRef.current;
     const cur = currentTrackRef.current;
+    const curGroup = cur ? getGroupKey(cur) : null;
     const idx = cur ? activeQ.findIndex((t) => t.id === cur.id) : -1;
 
-    // 1. More tracks remain in the current queue (e.g. next song in project)
+    // 1. More tracks remain in the current queue (skip accidental duplicate IDs)
     if (idx >= 0 && idx < activeQ.length - 1) {
-      void playTrack(activeQ[idx + 1], 0, activeQ, true);
-      return;
+      for (let i = idx + 1; i < activeQ.length; i++) {
+        if (activeQ[i].id !== cur?.id) {
+          void playTrack(activeQ[i], 0, activeQ, true, true);
+          return;
+        }
+      }
     }
 
     // 2. End of queue reached:
-    // If repeatMode === 'all', loop the current queue/project cleanly!
-    if (repeatModeRef.current === 'all' && activeQ.length > 0) {
-      if (shuffleRef.current && activeQ.length > 1) {
-        const base = baseQueueRef.current.length > 0 ? baseQueueRef.current : activeQ;
-        const reshuffled = shuffleTracksFisherYates(base, cur?.id);
-        void playTrack(reshuffled[0], 0, reshuffled, true);
+    // If repeatMode === 'all' AND queue has > 1 distinct track, loop the current project/playlist cleanly!
+    if (repeatModeRef.current === 'all' && activeQ.length > 1) {
+      if (shuffleRef.current) {
+        const base = baseQueueRef.current.length > 1 ? baseQueueRef.current : activeQ;
+        const reshuffled = shuffleTracksFisherYates(
+          base,
+          curGroup ? new Set([curGroup]) : undefined,
+          getGroupKey
+        );
+        void playTrack(reshuffled[0], 0, reshuffled, true, true);
       } else {
-        void playTrack(activeQ[0], 0, activeQ, true);
+        const firstDifferent = activeQ.find((t) => t.id !== cur?.id) || activeQ[0];
+        void playTrack(firstDifferent, 0, activeQ, true, true);
       }
       return;
     }
 
-    // 3. No more tracks in queue (and not looping the project) -> play randomly from library without repeating!
-    const playableLibrary = state.musicTracks.filter(
-      (t) => Boolean(t.mediaId || t.cloudAudioUrl || t.googleDriveFileId)
-    );
-    const pool = playableLibrary.length > 0 ? playableLibrary : state.musicTracks;
-    if (pool.length === 0) return;
-    baseQueueRef.current = pool;
-    const randomQueue = shuffleTracksFisherYates(pool, cur?.id);
-    void playTrack(randomQueue[0], 0, randomQueue, true);
-  }, [state.musicTracks, playTrack, sendRemoteCommand]);
+    // 3. End of queue (or 1-track queue) -> play the pre-fetched next song (or a fresh non-repeating library song!)
+    const pre = preselectedNextTrackRef.current;
+    preselectedNextTrackRef.current = null;
+    if (pre && pre.id !== cur?.id && (!curGroup || getGroupKey(pre) !== curGroup)) {
+      const picked = pickFreshLibraryTrack(cur);
+      const rest = (picked?.queue || dedupedLibraryRef.current).filter(
+        (t) => t.id !== pre.id && getGroupKey(t) !== getGroupKey(pre)
+      );
+      const nextQ = [pre, ...rest];
+      baseQueueRef.current = nextQ;
+      void playTrack(pre, 0, nextQ, true, true);
+      return;
+    }
+
+    const picked = pickFreshLibraryTrack(cur);
+    if (!picked) return;
+    baseQueueRef.current = picked.queue;
+    void playTrack(picked.next, 0, picked.queue, true, true);
+  }, [playTrack, sendRemoteCommand, getGroupKey, pickFreshLibraryTrack]);
 
   const playPrev = useCallback(() => {
     if (remoteSessionRef.current) {
@@ -660,109 +962,16 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       audio.currentTime = 0;
       lastReportedSecRef.current = 0;
       setCurrentTime(0);
+      publishLocalLive({ positionSec: 0 });
       return;
     }
-    const activeQ = queueRef.current.length > 0 ? queueRef.current : state.musicTracks;
+    const activeQ = queueRef.current.length > 0 ? queueRef.current : dedupedLibraryRef.current;
     if (activeQ.length === 0) return;
     const cur = currentTrackRef.current;
     const idx = cur ? activeQ.findIndex((t) => t.id === cur.id) : 0;
     const prevIdx = idx > 0 ? idx - 1 : activeQ.length - 1;
-    void playTrack(activeQ[prevIdx], 0, activeQ, true);
-  }, [state.musicTracks, playTrack]);
-
-  useEffect(() => {
-    playNextRef.current = playNext;
-    playPrevRef.current = playPrev;
-  }, [playNext, playPrev]);
-
-  useEffect(() => {
-    const audio = new Audio();
-    audio.preload = 'metadata';
-    audioRef.current = audio;
-
-    const onTimeUpdate = () => {
-      const t = audio.currentTime;
-      const wholeSec = Math.floor(t);
-      if (wholeSec !== lastReportedSecRef.current) {
-        lastReportedSecRef.current = wholeSec;
-        setCurrentTime(t);
-      }
-      const { start, end } = abLoopRef.current;
-      if (end !== null && t >= end) {
-        if (repeatModeRef.current !== 'off') {
-          audio.currentTime = start ?? 0;
-          void audio.play().catch(() => {});
-        } else {
-          audio.pause();
-          setIsPlaying(false);
-        }
-      }
-    };
-
-    const onLoadedMeta = () => {
-      if (isFinite(audio.duration) && audio.duration > 0) {
-        setDuration(audio.duration);
-        const cur = currentTrackRef.current;
-        if (cur && !cur.durationSec) {
-          updateMusicTrack(cur.id, { durationSec: Math.round(audio.duration) });
-        }
-      }
-    };
-
-    const onEnded = () => {
-      if (repeatModeRef.current === 'one') {
-        audio.currentTime = abLoopRef.current.start ?? 0;
-        void audio.play().catch(() => {});
-      } else {
-        playNextRef.current();
-      }
-    };
-
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('loadedmetadata', onLoadedMeta);
-    audio.addEventListener('ended', onEnded);
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
-
-    return () => {
-      audio.pause();
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('loadedmetadata', onLoadedMeta);
-      audio.removeEventListener('ended', onEnded);
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
-    };
-  }, []);
-
-  // Keep currentTrack metadata live-synced when renamed/favorited/edited in AppContext
-  useEffect(() => {
-    setCurrentTrack((prev) => {
-      if (!prev) return prev;
-      const latest = state.musicTracks.find((t) => t.id === prev.id);
-      if (!latest || latest === prev) return prev;
-      return latest;
-    });
-  }, [state.musicTracks]);
-
-  // Native iOS Lock Screen & AirPods MediaSession integration
-  useEffect(() => {
-    if (!currentTrack || typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    try {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.manualGroupTitle || currentTrack.title,
-        artist: state.preferences.name || currentTrack.artist || 'Kora Music',
-      });
-      navigator.mediaSession.setActionHandler('play', () => void audioRef.current?.play().catch(() => {}));
-      navigator.mediaSession.setActionHandler('pause', () => audioRef.current?.pause());
-      navigator.mediaSession.setActionHandler('previoustrack', () => playPrevRef.current());
-      navigator.mediaSession.setActionHandler('nexttrack', () => playNextRef.current());
-    } catch {
-      // ignore unsupported handlers
-    }
-  }, [currentTrack]);
+    void playTrack(activeQ[prevIdx], 0, activeQ, true, true);
+  }, [playTrack, sendRemoteCommand, publishLocalLive]);
 
   const togglePlay = useCallback(() => {
     if (remoteSessionRef.current) {
@@ -782,7 +991,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       void audio
         .play()
         .then(() => {
-          publishLocalLive({ isPlaying: true });
+          publishLocalLive({ isPlaying: true }, true);
         })
         .catch(() => {});
     } else {
@@ -843,6 +1052,219 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     [updateLastSession, sendRemoteCommand, publishLocalLive]
   );
 
+  useEffect(() => {
+    playNextRef.current = playNext;
+    playPrevRef.current = playPrev;
+    togglePlayRef.current = togglePlay;
+    pauseRef.current = pause;
+    seekRef.current = seek;
+  }, [playNext, playPrev, togglePlay, pause, seek]);
+
+  // Attach listeners to the single persistent DOM <audio> element
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.preload = 'auto';
+
+    const syncMediaSessionPosition = () => {
+      if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+      if (typeof navigator.mediaSession.setPositionState !== 'function') return;
+      if (!isFinite(audio.duration) || audio.duration <= 0) return;
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: audio.duration,
+          playbackRate: audio.playbackRate || 1,
+          position: Math.max(0, Math.min(audio.duration, audio.currentTime || 0)),
+        });
+      } catch {
+        // Ignore unsupported browsers
+      }
+    };
+
+    const onTimeUpdate = () => {
+      const t = audio.currentTime;
+      const wholeSec = Math.floor(t);
+      if (wholeSec !== lastReportedSecRef.current) {
+        lastReportedSecRef.current = wholeSec;
+        setCurrentTime(t);
+      }
+
+      // Near-end safety prefetch: 20s before track ends, ensure next 2 tracks are warm in RAM for iOS background swap!
+      const reqId = playRequestIdRef.current;
+      if (
+        isFinite(audio.duration) &&
+        audio.duration > 10 &&
+        audio.duration - t <= 20 &&
+        prefetchedNearEndForReqIdRef.current !== reqId &&
+        currentTrackRef.current
+      ) {
+        prefetchedNearEndForReqIdRef.current = reqId;
+        prefetchUpcomingTracks(currentTrackRef.current.id, queueRef.current);
+      }
+
+      const { start, end } = abLoopRef.current;
+      if (end !== null && t >= end) {
+        if (repeatModeRef.current !== 'off') {
+          audio.currentTime = start ?? 0;
+          void audio.play().catch(() => {});
+        } else {
+          audio.pause();
+          setIsPlaying(false);
+        }
+      }
+    };
+
+    const onLoadedMeta = () => {
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+        syncMediaSessionPosition();
+        const cur = currentTrackRef.current;
+        if (cur && !cur.durationSec) {
+          updateMusicTrack(cur.id, { durationSec: Math.round(audio.duration) });
+        }
+      }
+    };
+
+    const onEnded = () => {
+      const reqId = playRequestIdRef.current;
+      if (repeatModeRef.current === 'one') {
+        audio.currentTime = abLoopRef.current.start ?? 0;
+        void audio.play().catch(() => {});
+        syncMediaSessionPosition();
+        return;
+      }
+      // Strict guard: never trigger playNext twice for the same playback request!
+      if (lastEndedReqIdRef.current === reqId) return;
+      lastEndedReqIdRef.current = reqId;
+      playNextRef.current();
+    };
+
+    const onPlay = () => {
+      setIsPlaying(true);
+      if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.playbackState = 'playing';
+        } catch {
+          // ignore
+        }
+      }
+      syncMediaSessionPosition();
+    };
+
+    const onPause = () => {
+      setIsPlaying(false);
+      if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.playbackState = 'paused';
+        } catch {
+          // ignore
+        }
+      }
+      syncMediaSessionPosition();
+    };
+
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('loadedmetadata', onLoadedMeta);
+    audio.addEventListener('ended', onEnded);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
+
+    return () => {
+      audio.pause();
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('loadedmetadata', onLoadedMeta);
+      audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+    };
+  }, [prefetchUpcomingTracks, updateMusicTrack]);
+
+  // Keep currentTrack metadata live-synced when renamed/favorited/edited in AppContext
+  useEffect(() => {
+    setCurrentTrack((prev) => {
+      if (!prev) return prev;
+      const latest = state.musicTracks.find((t) => t.id === prev.id);
+      if (!latest || latest === prev) return prev;
+      return latest;
+    });
+  }, [state.musicTracks]);
+
+  // Native iOS Lock Screen, Control Center & AirPods MediaSession integration
+  useEffect(() => {
+    if (!currentTrack || typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try {
+      const linkedProj = state.musicProjects.find(
+        (p) => p.id === currentTrack.linkedProjectId || p.trackIds.includes(currentTrack.id)
+      );
+      const coverSrc =
+        currentTrack.coverDataUrl ||
+        currentTrack.cloudCoverUrl ||
+        linkedProj?.coverDataUrl ||
+        `${window.location.origin}/icon-512.png`;
+      const artwork: MediaImage[] = coverSrc
+        ? [{ src: coverSrc, sizes: '512x512', type: 'image/png' }]
+        : [];
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.manualGroupTitle || currentTrack.title,
+        artist: state.preferences.name || currentTrack.artist || 'Rowav',
+        album: linkedProj?.title || 'Rowav Studio',
+        artwork,
+      });
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+
+      navigator.mediaSession.setActionHandler('play', () => {
+        if (remoteSessionRef.current) {
+          sendRemoteCommand('play');
+        } else {
+          const a = audioRef.current;
+          if (a && a.src && a.paused) {
+            void a
+              .play()
+              .then(() => publishLocalLive({ isPlaying: true }))
+              .catch(() => {});
+          } else {
+            togglePlayRef.current();
+          }
+        }
+      });
+      navigator.mediaSession.setActionHandler('pause', () => pauseRef.current());
+      navigator.mediaSession.setActionHandler('previoustrack', () => playPrevRef.current());
+      navigator.mediaSession.setActionHandler('nexttrack', () => playNextRef.current());
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (typeof details.seekTime === 'number') {
+          seekRef.current(details.seekTime);
+        }
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const offset = details.seekOffset || 10;
+        const curT = audioRef.current?.currentTime ?? 0;
+        seekRef.current(Math.max(0, curT - offset));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const offset = details.seekOffset || 10;
+        const curT = audioRef.current?.currentTime ?? 0;
+        seekRef.current(curT + offset);
+      });
+    } catch {
+      // ignore unsupported handlers
+    }
+  }, [currentTrack, isPlaying, state.preferences.name, state.musicProjects, sendRemoteCommand, publishLocalLive]);
+
+  // Also ensure MediaSession playbackState reflects remote playback state cleanly
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = !currentTrack
+        ? 'none'
+        : isPlaying
+        ? 'playing'
+        : 'paused';
+    } catch {
+      // ignore
+    }
+  }, [currentTrack, isPlaying]);
+
   const setExpandedSynced = useCallback(
     (v: boolean) => {
       setExpanded(v);
@@ -858,6 +1280,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       sendRemoteCommand('stop');
       remoteSessionRef.current = null;
       setRemoteSession(null);
+      currentTrackRef.current = null;
       setCurrentTrack(null);
       setExpanded(false);
       setIsPlaying(false);
@@ -915,17 +1338,24 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     const remoteQueue = r
       ? r.queueIds.map((id) => byId.get(id)).filter((t): t is MusicTrack => Boolean(t))
       : queueRef.current;
+    // Bump claimSeq strictly above remote's claimSeq so the old device yields cleanly & immediately!
+    claimSeqRef.current = Math.max(claimSeqRef.current, r?.claimSeq ?? 0) + 1;
     remoteSessionRef.current = null;
     setRemoteSession(null);
-    lastLocalClaimAtRef.current = Date.now();
     await playTrack(trk, liveSec, remoteQueue.length > 0 ? remoteQueue : undefined, true, true);
+    publishLocalLive({
+      trackId: trk.id,
+      isPlaying: true,
+      positionSec: liveSec,
+    });
     notify(`Lecture transférée sur ${localDevice.name} ✓`);
-  }, [state.musicTracks, getLiveTime, playTrack, localDevice.name, notify]);
+  }, [state.musicTracks, getLiveTime, playTrack, publishLocalLive, localDevice.name, notify]);
 
-  // Real-time Rowav Connect synchronization listener (Spotify Connect style!)
-  const incomingLivePlayback = state.preferences.lastSession?.livePlayback ?? null;
+  // =========================================================================
+  // ROWAV CONNECT LISTENER 1: Live playback state (`livePlayback` channel)
+  // =========================================================================
   useEffect(() => {
-    if (!incomingLivePlayback) {
+    if (!livePlayback) {
       if (remoteSessionRef.current) {
         remoteSessionRef.current = null;
         setRemoteSession(null);
@@ -937,106 +1367,60 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       return;
     }
 
-    // CASE 1: WE are the active playback device — execute any incoming remote control command!
-    if (incomingLivePlayback.activeDeviceId === localDevice.id) {
+    const incomingSeq = livePlayback.claimSeq ?? 0;
+
+    // CASE 1: WE are the active playback device!
+    if (livePlayback.activeDeviceId === localDevice.id) {
+      if (incomingSeq > claimSeqRef.current) {
+        claimSeqRef.current = incomingSeq;
+      }
       if (remoteSessionRef.current) {
         remoteSessionRef.current = null;
         setRemoteSession(null);
       }
-      const cmd = incomingLivePlayback.command;
-      if (
-        cmd &&
-        cmd.targetDeviceId === localDevice.id &&
-        cmd.id !== lastHandledCommandIdRef.current &&
-        Date.now() - cmd.issuedAt < 30_000
-      ) {
-        lastHandledCommandIdRef.current = cmd.id;
-        const audio = audioRef.current;
-        if (cmd.type === 'toggle') {
-          if (audio && audio.src) {
-            if (audio.paused) {
-              void audio
-                .play()
-                .then(() => publishLocalLive({ isPlaying: true }))
-                .catch(() => {});
-            } else {
-              audio.pause();
-              publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0 });
-            }
-          } else if (currentTrackRef.current) {
-            void playTrack(currentTrackRef.current, pendingResumeSecRef.current ?? 0, undefined, false, true);
-          }
-        } else if (cmd.type === 'play') {
-          if (audio && audio.src) {
-            void audio
-              .play()
-              .then(() => publishLocalLive({ isPlaying: true }))
-              .catch(() => {});
-          } else if (currentTrackRef.current) {
-            void playTrack(currentTrackRef.current, pendingResumeSecRef.current ?? 0, undefined, false, true);
-          }
-        } else if (cmd.type === 'pause') {
-          if (audio) {
-            audio.pause();
-            publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0 });
-          }
-        } else if (cmd.type === 'seek' && typeof cmd.timeSec === 'number') {
-          if (audio && audio.src) {
-            audio.currentTime = cmd.timeSec;
-          } else {
-            pendingResumeSecRef.current = cmd.timeSec;
-          }
-          setCurrentTime(cmd.timeSec);
-          publishLocalLive({ positionSec: cmd.timeSec });
-        } else if (cmd.type === 'next') {
-          playNextRef.current();
-        } else if (cmd.type === 'prev') {
-          playPrevRef.current();
-        } else if (cmd.type === 'playTrack' && cmd.trackId) {
-          const targetTrack = state.musicTracks.find((t) => t.id === cmd.trackId);
-          if (targetTrack) {
-            const byId = new Map(state.musicTracks.map((t) => [t.id, t]));
-            const targetQueue = cmd.queueIds
-              ? cmd.queueIds.map((id) => byId.get(id)).filter((t): t is MusicTrack => Boolean(t))
-              : undefined;
-            void playTrack(
-              targetTrack,
-              typeof cmd.timeSec === 'number' ? cmd.timeSec : 0,
-              targetQueue && targetQueue.length > 0 ? targetQueue : undefined,
-              true,
-              true
-            );
-          }
-        } else if (cmd.type === 'stop') {
-          closePlayer();
-        }
-      }
       return;
     }
 
-    // CASE 2: ANOTHER device is the active playback device!
-    const ageMs = Date.now() - incomingLivePlayback.updatedAt;
-    const maxStaleMs = incomingLivePlayback.isPlaying ? 60 * 60 * 1000 : 15 * 60 * 1000;
+    // CASE 2: ANOTHER device is publishing live playback!
+    const ageMs = Date.now() - livePlayback.updatedAt;
+    // Ignore stale sessions (e.g. closed browser tab > 10m ago or paused > 5m ago)
+    const maxStaleMs = livePlayback.isPlaying ? 10 * 60 * 1000 : 5 * 60 * 1000;
     if (ageMs > maxStaleMs) return;
-    if (incomingLivePlayback.updatedAt < lastLocalClaimAtRef.current) return;
 
-    // If our local audio was playing, another device just took over -> pause silently!
+    // Prevent stale/older claims from hijacking an actively playing local device (immune to clock skew!)
+    const alreadyMirroringThisDevice =
+      remoteSessionRef.current?.activeDeviceId === livePlayback.activeDeviceId;
+    const localAudioActive = Boolean(audioRef.current && audioRef.current.src && !audioRef.current.paused);
+
+    if (!alreadyMirroringThisDevice && incomingSeq > 0 && incomingSeq < claimSeqRef.current) {
+      return;
+    }
+    // If local device is actively playing and incoming has the SAME seq (tie without explicit takeover), keep local!
+    if (!alreadyMirroringThisDevice && localAudioActive && incomingSeq <= claimSeqRef.current) {
+      return;
+    }
+
+    // Valid remote takeover or update -> adopt remote claimSeq and pause local audio silently
+    if (incomingSeq > claimSeqRef.current) {
+      claimSeqRef.current = incomingSeq;
+    }
     if (audioRef.current && !audioRef.current.paused) {
       suppressLocalPublishRef.current = true;
       audioRef.current.pause();
       suppressLocalPublishRef.current = false;
     }
 
-    const remoteTrack = state.musicTracks.find((t) => t.id === incomingLivePlayback.trackId);
+    const remoteTrack = state.musicTracks.find((t) => t.id === livePlayback.trackId);
     if (!remoteTrack) return;
 
-    remoteSessionRef.current = incomingLivePlayback;
-    setRemoteSession(incomingLivePlayback);
+    remoteSessionRef.current = livePlayback;
+    setRemoteSession(livePlayback);
     currentTrackRef.current = remoteTrack;
     setCurrentTrack(remoteTrack);
+    setAbLoop({ start: null, end: null });
 
     const byId = new Map(state.musicTracks.map((t) => [t.id, t]));
-    const remoteQueue = incomingLivePlayback.queueIds
+    const remoteQueue = (livePlayback.queueIds || [])
       .map((id) => byId.get(id))
       .filter((t): t is MusicTrack => Boolean(t));
     if (remoteQueue.length > 0) {
@@ -1044,25 +1428,125 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       setQueue(remoteQueue);
     }
 
-    const elapsed = incomingLivePlayback.isPlaying
-      ? Math.max(0, (Date.now() - incomingLivePlayback.positionUpdatedAt) / 1000)
+    const elapsed = livePlayback.isPlaying
+      ? Math.max(0, (Date.now() - livePlayback.positionUpdatedAt) / 1000)
       : 0;
-    const dur = incomingLivePlayback.durationSec || remoteTrack.durationSec || 0;
-    const pos = Math.min(dur || Infinity, Math.max(0, incomingLivePlayback.positionSec + elapsed));
+    const dur = livePlayback.durationSec || remoteTrack.durationSec || 0;
+    const pos = Math.min(dur || Infinity, Math.max(0, livePlayback.positionSec + elapsed));
 
     setDuration(dur);
     setCurrentTime(pos);
-    setIsPlaying(incomingLivePlayback.isPlaying);
+    setIsPlaying(livePlayback.isPlaying);
     setIsLoadingTrack(false);
-    if (incomingLivePlayback.repeatMode) {
-      repeatModeRef.current = incomingLivePlayback.repeatMode;
-      setRepeatMode(incomingLivePlayback.repeatMode);
+    if (livePlayback.repeatMode) {
+      repeatModeRef.current = livePlayback.repeatMode;
+      setRepeatModeState(livePlayback.repeatMode);
     }
-    if (typeof incomingLivePlayback.shuffle === 'boolean') {
-      shuffleRef.current = incomingLivePlayback.shuffle;
-      setShuffle(incomingLivePlayback.shuffle);
+    if (typeof livePlayback.shuffle === 'boolean') {
+      shuffleRef.current = livePlayback.shuffle;
+      setShuffle(livePlayback.shuffle);
     }
-  }, [incomingLivePlayback, localDevice.id, state.musicTracks, playTrack, publishLocalLive, closePlayer]);
+  }, [livePlayback, localDevice.id, state.musicTracks]);
+
+  // =========================================================================
+  // ROWAV CONNECT LISTENER 2: Dedicated command channel (`liveCommand`)
+  // Executed ONLY by the target active device — zero races with heartbeats!
+  // =========================================================================
+  useEffect(() => {
+    const cmd = liveCommand || livePlayback?.command || null;
+    if (!cmd || !cmd.id) return;
+    if (cmd.targetDeviceId !== localDevice.id) return;
+    if (cmd.fromDeviceId === localDevice.id) return;
+    if (handledCommandIdsRef.current.has(cmd.id)) return;
+    // Allow up to 2 minutes of clock skew between PC & iPhone
+    if (Math.abs(Date.now() - cmd.issuedAt) > 120_000) return;
+
+    handledCommandIdsRef.current.add(cmd.id);
+    if (handledCommandIdsRef.current.size > 100) {
+      const oldest = handledCommandIdsRef.current.values().next().value;
+      if (oldest) handledCommandIdsRef.current.delete(oldest);
+    }
+
+    // Clear the command slot cleanly in Firestore once accepted
+    void publishLiveCommand(null);
+
+    const audio = audioRef.current;
+    if (cmd.type === 'toggle') {
+      if (audio && audio.src) {
+        if (audio.paused) {
+          void audio
+            .play()
+            .then(() => publishLocalLive({ isPlaying: true }))
+            .catch(() => {});
+        } else {
+          audio.pause();
+          publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0 });
+        }
+      } else if (currentTrackRef.current) {
+        void playTrack(currentTrackRef.current, pendingResumeSecRef.current ?? 0, undefined, false, true);
+      }
+    } else if (cmd.type === 'play') {
+      if (audio && audio.src) {
+        void audio
+          .play()
+          .then(() => publishLocalLive({ isPlaying: true }))
+          .catch(() => {});
+      } else if (currentTrackRef.current) {
+        void playTrack(currentTrackRef.current, pendingResumeSecRef.current ?? 0, undefined, false, true);
+      }
+    } else if (cmd.type === 'pause') {
+      if (audio) {
+        audio.pause();
+        publishLocalLive({ isPlaying: false, positionSec: audio.currentTime || 0 });
+      }
+    } else if (cmd.type === 'seek' && typeof cmd.timeSec === 'number') {
+      if (audio && audio.src) {
+        audio.currentTime = cmd.timeSec;
+      } else {
+        pendingResumeSecRef.current = cmd.timeSec;
+      }
+      setCurrentTime(cmd.timeSec);
+      publishLocalLive({ positionSec: cmd.timeSec });
+    } else if (cmd.type === 'next') {
+      playNextRef.current();
+    } else if (cmd.type === 'prev') {
+      playPrevRef.current();
+    } else if (cmd.type === 'setRepeat' && cmd.repeatMode) {
+      repeatModeRef.current = cmd.repeatMode;
+      setRepeatModeState(cmd.repeatMode);
+      publishLocalLive({ repeatMode: cmd.repeatMode });
+    } else if (cmd.type === 'setShuffle' && typeof cmd.shuffle === 'boolean') {
+      applyLocalShuffle(cmd.shuffle);
+      publishLocalLive({ shuffle: cmd.shuffle });
+    } else if (cmd.type === 'playTrack' && cmd.trackId) {
+      const targetTrack = state.musicTracks.find((t) => t.id === cmd.trackId);
+      if (targetTrack) {
+        const byId = new Map(state.musicTracks.map((t) => [t.id, t]));
+        const targetQueue = cmd.queueIds
+          ? cmd.queueIds.map((id) => byId.get(id)).filter((t): t is MusicTrack => Boolean(t))
+          : undefined;
+        void playTrack(
+          targetTrack,
+          typeof cmd.timeSec === 'number' ? cmd.timeSec : 0,
+          targetQueue && targetQueue.length > 0 ? targetQueue : undefined,
+          true,
+          true
+        );
+      }
+    } else if (cmd.type === 'stop') {
+      closePlayer();
+    }
+  }, [
+    liveCommand,
+    livePlayback?.command,
+    localDevice.id,
+    state.musicTracks,
+    playTrack,
+    publishLocalLive,
+    publishLiveCommand,
+    applyLocalShuffle,
+    closePlayer,
+  ]);
 
   // Smooth 1Hz React clock update while mirroring a playing remote device (60fps rAF reads getLiveTime())
   useEffect(() => {
@@ -1073,9 +1557,18 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     return () => window.clearInterval(id);
   }, [remoteSession, getLiveTime]);
 
-  // Periodically save playback timestamp & publish Connect heartbeat while playing locally
+  // Lightweight Connect heartbeat (~350 bytes every 20s while playing locally) — NEVER triggers full appState pushes!
   useEffect(() => {
-    const persistNow = () => {
+    const heartbeat = () => {
+      if (remoteSessionRef.current) return;
+      const cur = currentTrackRef.current;
+      if (!cur) return;
+      const audio = audioRef.current;
+      if (audio && audio.src && !audio.paused) {
+        publishLocalLive({ isPlaying: true, positionSec: audio.currentTime || 0 });
+      }
+    };
+    const saveOnLeave = () => {
       if (remoteSessionRef.current) return;
       const cur = currentTrackRef.current;
       if (!cur) return;
@@ -1084,19 +1577,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         audioTrackId: cur.id,
         audioTimeSec: t,
       });
-      if (isPlaying) {
-        publishLocalLive({ isPlaying: true, positionSec: getLiveTime() });
-      }
     };
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') persistNow();
-    };
-    window.addEventListener('pagehide', persistNow);
-    document.addEventListener('visibilitychange', onHide);
-    const timer = isPlaying && !remoteSession ? window.setInterval(persistNow, 12_000) : null;
+    window.addEventListener('pagehide', saveOnLeave);
+    const timer = isPlaying && !remoteSession ? window.setInterval(heartbeat, 20_000) : null;
     return () => {
-      window.removeEventListener('pagehide', persistNow);
-      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', saveOnLeave);
       if (timer !== null) window.clearInterval(timer);
     };
   }, [isPlaying, remoteSession, getLiveTime, updateLastSession, publishLocalLive]);
@@ -1184,6 +1669,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       pause,
       seek,
       setLoop,
+      setRepeatMode,
       cycleRepeatMode,
       toggleShuffle,
       setExpandedSynced,
@@ -1203,6 +1689,14 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
   return (
     <AudioPlayerContext.Provider value={contextValue}>
+      {/* Persistent DOM <audio playsInline> element for rock-solid iOS Safari / PWA background continuity */}
+      <audio
+        ref={audioRef}
+        playsInline
+        preload="auto"
+        className="hidden"
+        aria-hidden="true"
+      />
       {children}
     </AudioPlayerContext.Provider>
   );

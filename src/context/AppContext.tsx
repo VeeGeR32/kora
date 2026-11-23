@@ -16,6 +16,7 @@ import type {
   GradeEntry,
   HomeworkItem,
   LastSessionState,
+  LivePlaybackCommand,
   LivePlaybackState,
   LyricsDoc,
   LyricsFolder,
@@ -54,6 +55,7 @@ import {
   formatFirebaseSyncError,
   getEnvFirebaseConfig,
   listenAuthState,
+  pushLiveCommandDelta,
   pushLivePlaybackDelta,
   pushStateToCloud,
   requestGoogleDriveWriteAccessToken,
@@ -287,7 +289,10 @@ interface AppContextValue {
   // Preferences & Data
   updatePreferences: (patch: Partial<UserPreferences>) => void;
   updateLastSession: (patch: Partial<Omit<LastSessionState, 'savedAt'>>) => void;
+  livePlayback: LivePlaybackState | null;
+  liveCommand: LivePlaybackCommand | null;
   publishLivePlayback: (live: LivePlaybackState | null) => Promise<void>;
+  publishLiveCommand: (cmd: LivePlaybackCommand | null) => Promise<void>;
   toggleTheme: () => void;
   resetToDemo: () => void;
   clearAllData: () => void;
@@ -407,6 +412,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [workoutModalOpen, setWorkoutModalOpen] = useState(false);
   const [autoSyncingDrive, setAutoSyncingDrive] = useState(false);
   const [serviceAccountEmail, setServiceAccountEmail] = useState<string | null>(null);
+  const [livePlayback, setLivePlayback] = useState<LivePlaybackState | null>(null);
+  const [liveCommand, setLiveCommand] = useState<LivePlaybackCommand | null>(null);
+  const lastLiveSigRef = useRef<string>('');
+  const lastCmdIdRef = useRef<string>('');
 
   const lastDriveAutoSyncAtRef = useRef<number>(0);
   const driveSyncInFlightRef = useRef<boolean>(false);
@@ -499,6 +508,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ignoreNextPushRef.current = true;
           lastPushedUpdatedAtRef.current = remote.updatedAt || 0;
           setState(mergeWithSeed(remote));
+          const initLive = remote.preferences?.lastSession?.livePlayback ?? null;
+          const initCmd = remote.preferences?.lastSession?.liveCommand ?? null;
+          lastLiveSigRef.current = initLive
+            ? `${initLive.activeDeviceId}:${initLive.claimSeq ?? 0}:${initLive.updatedAt}:${initLive.trackId}:${initLive.isPlaying}:${Math.round(initLive.positionSec)}`
+            : 'null';
+          lastCmdIdRef.current = initCmd?.id || '';
+          setLivePlayback(initLive);
+          setLiveCommand(initCmd);
           setLastCloudSyncAt(Date.now());
           setCloudError(null);
         } else {
@@ -536,7 +553,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             resolvedFbConfig,
             cloudUser.uid,
             (remote, meta) => {
-              // Ignore local cache echoes of our own writes; accept any server snapshot that differs
+              // 1. ALWAYS propagate Connect livePlayback & liveCommand immediately from server snapshots
+              // (immune to clock skew or same-ms updatedAt collisions!)
+              if (!meta.fromCache) {
+                const rLive = remote.preferences?.lastSession?.livePlayback ?? null;
+                const rCmd = remote.preferences?.lastSession?.liveCommand ?? null;
+                const nextLiveSig = rLive
+                  ? `${rLive.activeDeviceId}:${rLive.claimSeq ?? 0}:${rLive.updatedAt}:${rLive.trackId}:${rLive.isPlaying}:${Math.round(rLive.positionSec)}:${rLive.repeatMode || ''}:${String(rLive.shuffle)}`
+                  : 'null';
+                if (nextLiveSig !== lastLiveSigRef.current) {
+                  lastLiveSigRef.current = nextLiveSig;
+                  setLivePlayback(rLive);
+                }
+                const nextCmdId = rCmd?.id || '';
+                if (nextCmdId !== lastCmdIdRef.current) {
+                  lastCmdIdRef.current = nextCmdId;
+                  setLiveCommand(rCmd);
+                }
+              }
+
+              // 2. Ignore local cache echoes of our own writes; accept any server snapshot that differs
               const remoteTs = remote.updatedAt || 0;
               const localTs = latestStateRef.current.updatedAt || 0;
               if (remoteTs === lastPushedUpdatedAtRef.current || remoteTs === localTs) return;
@@ -2852,8 +2888,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           },
         },
       };
+      lastLiveSigRef.current = live
+        ? `${live.activeDeviceId}:${live.claimSeq ?? 0}:${live.updatedAt}:${live.trackId}:${live.isPlaying}:${Math.round(live.positionSec)}:${live.repeatMode || ''}:${String(live.shuffle)}`
+        : 'null';
+      setLivePlayback(live);
       try {
         const ts = await pushLivePlaybackDelta(resolvedFbConfig, cloudUser.uid, live);
+        lastPushedUpdatedAtRef.current = ts;
+      } catch {
+        // Fallback silently if document isn't initialized yet
+      }
+    },
+    [cloudUser, resolvedFbConfig]
+  );
+
+  const publishLiveCommand = useCallback(
+    async (cmd: LivePlaybackCommand | null) => {
+      if (!cloudUser) return;
+      const cur = latestStateRef.current;
+      const prevSession: LastSessionState = cur.preferences.lastSession || {
+        activeTab: 'music',
+        savedAt: Date.now(),
+      };
+      latestStateRef.current = {
+        ...cur,
+        preferences: {
+          ...cur.preferences,
+          lastSession: {
+            ...prevSession,
+            liveCommand: cmd,
+          },
+        },
+      };
+      lastCmdIdRef.current = cmd?.id || '';
+      try {
+        const ts = await pushLiveCommandDelta(resolvedFbConfig, cloudUser.uid, cmd);
         lastPushedUpdatedAtRef.current = ts;
       } catch {
         // Fallback silently if document isn't initialized yet
@@ -3067,7 +3136,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         completeActiveFocus,
         updatePreferences,
         updateLastSession,
+        livePlayback,
+        liveCommand,
         publishLivePlayback,
+        publishLiveCommand,
         toggleTheme,
         resetToDemo,
         clearAllData,

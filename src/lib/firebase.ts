@@ -17,6 +17,7 @@ import {
   type User,
 } from 'firebase/auth';
 import {
+  deleteField,
   doc,
   getDoc,
   initializeFirestore,
@@ -30,7 +31,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
-import type { AppState, FirebaseUserConfig, MusicProject, MusicTrack } from '../types';
+import type { AppState, FirebaseUserConfig, LivePlaybackCommand, LivePlaybackState, MusicProject, MusicTrack } from '../types';
 import { groupMusicTracks } from './musicVersioning';
 import { recompressDataUrl } from './trackCover';
 
@@ -438,6 +439,9 @@ function sanitizeStateForFirestore(state: AppState): Record<string, unknown> {
     if (ls.livePlayback && typeof ls.livePlayback === 'object' && ls.livePlayback.activeDeviceId) {
       cleanSession.livePlayback = ls.livePlayback;
     }
+    if (ls.liveCommand && typeof ls.liveCommand === 'object' && ls.liveCommand.id) {
+      cleanSession.liveCommand = ls.liveCommand;
+    }
     if (Array.isArray(ls.driveSources)) {
       cleanSession.driveSources = ls.driveSources.slice(0, 25);
     }
@@ -639,15 +643,77 @@ export async function pushStateToCloud(
     }
   }
 
-  await setDoc(refDoc, cleanPayload);
+  // Use field-level updateDoc so normal appState saves (scroll, lyrics, projects, audioTimeSec…)
+  // NEVER overwrite `preferences.lastSession.livePlayback` or `preferences.lastSession.liveCommand`!
+  // Fall back to setDoc only if the document does not exist yet (first-ever account save).
+  const updateMap: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(cleanPayload)) {
+    if (k !== 'preferences') {
+      updateMap[k] = v;
+    }
+  }
+  const cleanPrefs = (cleanPayload.preferences || {}) as Record<string, unknown>;
+  const optionalPrefKeys = [
+    'bio',
+    'avatarColor',
+    'avatarUrl',
+    'geminiApiKey',
+    'pronoteBridgeUrl',
+    'pronoteBridgeToken',
+    'firebaseConfig',
+    'notifications',
+    'activeWorkout',
+    'activeFocus',
+  ];
+  for (const [k, v] of Object.entries(cleanPrefs)) {
+    if (k !== 'lastSession') {
+      updateMap[`preferences.${k}`] = v;
+    }
+  }
+  for (const k of optionalPrefKeys) {
+    if (!(k in cleanPrefs)) {
+      updateMap[`preferences.${k}`] = deleteField();
+    }
+  }
+  if (cleanPrefs.lastSession && typeof cleanPrefs.lastSession === 'object') {
+    const lsObj = cleanPrefs.lastSession as Record<string, unknown>;
+    const optionalLsKeys = [
+      'openMusicProjectId',
+      'selectedLyricsId',
+      'audioTrackId',
+      'audioTimeSec',
+      'audioExpanded',
+    ];
+    for (const [k, v] of Object.entries(lsObj)) {
+      // STRICT ISOLATION: Connect fields are owned exclusively by pushLivePlaybackDelta / pushLiveCommandDelta
+      if (k === 'livePlayback' || k === 'liveCommand') continue;
+      updateMap[`preferences.lastSession.${k}`] = v;
+    }
+    for (const k of optionalLsKeys) {
+      if (!(k in lsObj)) {
+        updateMap[`preferences.lastSession.${k}`] = deleteField();
+      }
+    }
+  }
+
+  try {
+    await updateDoc(refDoc, updateMap);
+  } catch (err) {
+    const code = (err as { code?: string })?.code || '';
+    if (code === 'not-found') {
+      await setDoc(refDoc, cleanPayload);
+    } else {
+      throw err;
+    }
+  }
   return cleanPayload.updatedAt as number;
 }
 
-/** Ultra-lightweight Firestore delta write (~350 bytes) for real-time Spotify Connect playback sync */
+/** Ultra-lightweight Firestore delta write (~350 bytes) for real-time Rowav Connect active playback state */
 export async function pushLivePlaybackDelta(
   config: FirebaseUserConfig | null | undefined,
   uid: string,
-  livePlayback: AppState['preferences']['lastSession'] extends { livePlayback?: infer T } ? T : unknown
+  livePlayback: LivePlaybackState | null
 ): Promise<number> {
   const bundle = initFirebaseClient(config);
   const ts = Date.now();
@@ -656,6 +722,28 @@ export async function pushLivePlaybackDelta(
   const sanitized = livePlayback ? JSON.parse(JSON.stringify(livePlayback)) : null;
   await updateDoc(refDoc, {
     'preferences.lastSession.livePlayback': sanitized,
+    updatedAt: ts,
+  });
+  return ts;
+}
+
+/**
+ * Dedicated Firestore delta write for Rowav Connect remote commands.
+ * Written to `preferences.lastSession.liveCommand` (completely separate from `livePlayback`),
+ * so active device heartbeats can NEVER race with or overwrite incoming remote commands!
+ */
+export async function pushLiveCommandDelta(
+  config: FirebaseUserConfig | null | undefined,
+  uid: string,
+  liveCommand: LivePlaybackCommand | null
+): Promise<number> {
+  const bundle = initFirebaseClient(config);
+  const ts = Date.now();
+  if (!bundle) return ts;
+  const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
+  const sanitized = liveCommand ? JSON.parse(JSON.stringify(liveCommand)) : null;
+  await updateDoc(refDoc, {
+    'preferences.lastSession.liveCommand': sanitized,
     updatedAt: ts,
   });
   return ts;

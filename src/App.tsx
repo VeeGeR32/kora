@@ -66,7 +66,7 @@ function KoraMusicApp() {
       setActivePageState(ls.musicSubTab);
     }
 
-    if (ls.audioTrackId && !player.isPlaying) {
+    if (ls.audioTrackId && !player.isPlaying && !player.isRemotePlayback) {
       const foundTrack = state.musicTracks.find((t) => t.id === ls.audioTrackId);
       if (foundTrack && player.currentTrack?.id !== foundTrack.id) {
         player.restoreTrack(foundTrack, ls.audioTimeSec || 0, Boolean(ls.audioExpanded));
