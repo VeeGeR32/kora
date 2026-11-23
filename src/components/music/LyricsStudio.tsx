@@ -12,6 +12,7 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  LayoutList,
   Music2,
   Pause,
   Play,
@@ -27,15 +28,22 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import type { LyricsDoc } from '../../types';
+import type { LyricsBarBlock, LyricsDoc, MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import { YoutubeBeatPlayer } from './YoutubeBeatPlayer';
 import { LexCoreInspirationWidget, MetronomeWidget } from './LexCoreTools';
 import { LexCoreImportModal } from './LexCoreImportModal';
+import { LyricsMeasuresEditor } from './LyricsMeasuresEditor';
 import { groupMusicTracks } from '../../lib/musicVersioning';
 import { countLyricsFixTags } from '../../lib/trackCover';
+import {
+  computeFourBarGrid,
+  isTrackAnalyzed,
+  serializeBarBlocksToContent,
+  syncBarBlocksWithGrid,
+} from '../../lib/audioAnalyzer';
 
 interface LyricsStudioProps {
   initialDocId?: string | null;
@@ -186,6 +194,174 @@ export function LyricsStudio({
     [linkedTrack, prodByTrackId]
   );
 
+  // Prefer the clean instrumental *_prod track for BPM / Key / 4-bar energy analysis when available
+  const analysisTrack = linkedProdTrack || linkedTrack;
+  const [analyzingTrackId, setAnalyzingTrackId] = useState<string | null>(null);
+  const [focusedBlockIndex, setFocusedBlockIndex] = useState<number>(0);
+  const [livePlaySec, setLivePlaySec] = useState<number>(0);
+
+  // 100% AUTOMATIC BPM, Key & 4-bar structure analysis whenever a track is attached or opened!
+  useEffect(() => {
+    if (!activeDoc || !analysisTrack) return;
+    if (isTrackAnalyzed(analysisTrack)) return;
+    if (!analysisTrack.mediaId && !analysisTrack.googleDriveFileId && !analysisTrack.cloudAudioUrl) {
+      return;
+    }
+    let alive = true;
+    setAnalyzingTrackId(analysisTrack.id);
+    void player.analyzeTrackAudio(analysisTrack).then((res) => {
+      if (!alive) return;
+      setAnalyzingTrackId((prev) => (prev === analysisTrack.id ? null : prev));
+      // Mirror detected BPM / Key / bar metadata onto linkedTrack when analysis ran on linkedProdTrack
+      if (res && linkedTrack && linkedTrack.id !== analysisTrack.id) {
+        updateMusicTrack(linkedTrack.id, {
+          durationSec: linkedTrack.durationSec || Math.round(res.durationSec),
+          bpm: linkedTrack.bpm || res.bpm,
+          musicalKey: linkedTrack.musicalKey || res.musicalKey || undefined,
+          barOffsetSec: res.barOffsetSec,
+          barBlockEnergies: res.barBlockEnergies,
+          audioAnalyzedAt: res.analyzedAt,
+        });
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [activeDoc?.id, analysisTrack?.id, analysisTrack?.audioAnalyzedAt]);
+
+  // Compute live 4-bar grid and seamlessly keep `activeDoc.barBlocks` synced with it
+  const measuresVisible = Boolean(linkedTrack && activeDoc?.showMeasures !== false);
+  const effectiveGrid = useMemo(() => {
+    if (!linkedTrack || !analysisTrack) return [];
+    const dur = analysisTrack.durationSec || linkedTrack.durationSec || 150;
+    const bpm = analysisTrack.bpm || linkedTrack.bpm || 120;
+    const offset = analysisTrack.barOffsetSec ?? linkedTrack.barOffsetSec ?? 0;
+    const energies = analysisTrack.barBlockEnergies || linkedTrack.barBlockEnergies;
+    return computeFourBarGrid(dur, bpm, offset, energies);
+  }, [
+    linkedTrack?.id,
+    linkedTrack?.durationSec,
+    linkedTrack?.bpm,
+    linkedTrack?.barOffsetSec,
+    linkedTrack?.barBlockEnergies,
+    analysisTrack?.id,
+    analysisTrack?.durationSec,
+    analysisTrack?.bpm,
+    analysisTrack?.barOffsetSec,
+    analysisTrack?.barBlockEnergies,
+  ]);
+
+  const resolvedBarBlocks = useMemo<LyricsBarBlock[]>(() => {
+    if (!activeDoc || effectiveGrid.length === 0) return [];
+    return syncBarBlocksWithGrid(effectiveGrid, activeDoc.barBlocks, activeDoc.content);
+  }, [activeDoc?.id, activeDoc?.barBlocks, activeDoc?.content, effectiveGrid]);
+
+  // Persist initial auto-generated 4-bar structure onto the doc as soon as a track is attached
+  useEffect(() => {
+    if (!activeDoc || !linkedTrack || effectiveGrid.length === 0) return;
+    if (!activeDoc.barBlocks || activeDoc.barBlocks.length === 0) {
+      const initialBlocks = syncBarBlocksWithGrid(effectiveGrid, undefined, activeDoc.content);
+      updateLyricsDoc(activeDoc.id, { barBlocks: initialBlocks });
+    }
+  }, [activeDoc?.id, linkedTrack?.id, effectiveGrid.length]);
+
+  const isPlayingEitherLinked = Boolean(
+    player.isPlaying &&
+      player.currentTrack &&
+      ((linkedTrack && player.currentTrack.id === linkedTrack.id) ||
+        (linkedProdTrack && player.currentTrack.id === linkedProdTrack.id))
+  );
+
+  // Smooth ~5Hz playhead tracker for active 4-bar block & live M1..M4 bar pulse
+  useEffect(() => {
+    if (!activeDoc || !linkedTrack) {
+      setLivePlaySec(0);
+      return;
+    }
+    const isLoaded =
+      player.currentTrack &&
+      (player.currentTrack.id === linkedTrack.id ||
+        (linkedProdTrack && player.currentTrack.id === linkedProdTrack.id));
+    if (!isLoaded) {
+      setLivePlaySec(0);
+      return;
+    }
+    setLivePlaySec(player.getLiveTime());
+    if (!player.isPlaying) return;
+    const id = window.setInterval(() => {
+      setLivePlaySec(player.getLiveTime());
+    }, 180);
+    return () => window.clearInterval(id);
+  }, [activeDoc?.id, linkedTrack?.id, linkedProdTrack?.id, player.currentTrack?.id, player.isPlaying, player.currentTime]);
+
+  const handleBarBlocksChange = (nextBlocks: LyricsBarBlock[]) => {
+    if (!activeDoc) return;
+    const serialized = serializeBarBlocksToContent(nextBlocks);
+    updateLyricsDoc(activeDoc.id, {
+      barBlocks: nextBlocks,
+      content: serialized,
+    });
+  };
+
+  const handleUpdateAnalysisMeta = (patch: Partial<MusicTrack>) => {
+    if (analysisTrack) updateMusicTrack(analysisTrack.id, patch);
+    if (linkedTrack && linkedTrack.id !== analysisTrack?.id) {
+      updateMusicTrack(linkedTrack.id, patch);
+    }
+  };
+
+  const handleReanalyzeTrack = () => {
+    if (!analysisTrack) return;
+    setAnalyzingTrackId(analysisTrack.id);
+    void player.analyzeTrackAudio(analysisTrack, { force: true }).then((res) => {
+      setAnalyzingTrackId(null);
+      if (res && linkedTrack && linkedTrack.id !== analysisTrack.id) {
+        updateMusicTrack(linkedTrack.id, {
+          durationSec: linkedTrack.durationSec || Math.round(res.durationSec),
+          bpm: res.bpm,
+          musicalKey: res.musicalKey || undefined,
+          barOffsetSec: res.barOffsetSec,
+          barBlockEnergies: res.barBlockEnergies,
+          audioAnalyzedAt: res.analyzedAt,
+        });
+      }
+      if (res) {
+        notify(`Analysé : ${res.bpm} BPM${res.musicalKey ? ` · ${res.musicalKey}` : ''} ✓`);
+      }
+    });
+  };
+
+  const handleJumpToBarSec = (startSec: number) => {
+    const targetTrack =
+      player.currentTrack && linkedProdTrack && player.currentTrack.id === linkedProdTrack.id
+        ? linkedProdTrack
+        : linkedTrack || linkedProdTrack;
+    if (!targetTrack) return;
+    if (player.currentTrack?.id === targetTrack.id) {
+      player.seek(startSec);
+      if (!player.isPlaying) player.togglePlay();
+    } else {
+      void player.playTrack(targetTrack, startSec);
+    }
+  };
+
+  const handleToggleBlockLoop = (startSec: number, endSec: number) => {
+    const isSameLoop =
+      player.abLoop.start !== null &&
+      player.abLoop.end !== null &&
+      Math.abs(player.abLoop.start - startSec) < 0.35 &&
+      Math.abs(player.abLoop.end - endSec) < 0.35;
+    if (isSameLoop) {
+      player.setAbLoop({ start: null, end: null });
+      return;
+    }
+    player.setAbLoop({ start: startSec, end: endSec });
+    if (player.repeatMode === 'off') {
+      player.setRepeatMode('one');
+    }
+    handleJumpToBarSec(startSec);
+  };
+
   useEffect(() => {
     if (activeDoc) {
       setBeatMode(activeDoc.linkedTrackId ? 'mp3' : activeDoc.mediaUrl ? 'youtube' : 'mp3');
@@ -256,7 +432,10 @@ export function LyricsStudio({
       setHistory(nextHist);
       setHistoryStep(nextHist.length - 1);
     }
-    updateLyricsDoc(activeDoc.id, { content: nextContent });
+    updateLyricsDoc(activeDoc.id, {
+      content: nextContent,
+      ...(measuresVisible ? {} : { barBlocks: undefined }),
+    });
   };
 
   const handleUndo = () => {
@@ -293,6 +472,23 @@ export function LyricsStudio({
 
   const insertWord = (word: string) => {
     if (!activeDoc) return;
+    if (measuresVisible && resolvedBarBlocks.length > 0 && markdownMode === 'edit') {
+      const targetIdx = Math.min(
+        resolvedBarBlocks.length - 1,
+        Math.max(0, focusedBlockIndex)
+      );
+      const nextBlocks = resolvedBarBlocks.map((b, i) => {
+        if (i !== targetIdx) return b;
+        const sep = b.text && !/\s$/.test(b.text) ? ' ' : '';
+        return {
+          ...b,
+          status: b.status === 'empty' || b.status === 'planned' ? ('draft' as const) : b.status,
+          text: `${b.text}${sep}${word} `,
+        };
+      });
+      handleBarBlocksChange(nextBlocks);
+      return;
+    }
     const ta = textareaRef.current;
     if (ta) {
       const s = ta.selectionStart ?? activeDoc.content.length;
@@ -855,6 +1051,29 @@ export function LyricsStudio({
                   {markdownMode === 'edit' ? <Eye size={14} /> : <Edit3 size={14} />}
                 </button>
 
+                {/* Mesures 4-bar Skeleton Toggle (when a track is linked) */}
+                {linkedTrack && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateLyricsDoc(activeDoc.id, { showMeasures: !measuresVisible })
+                    }
+                    title={
+                      measuresVisible
+                        ? 'Masquer les blocs de 4 mesures (texte libre)'
+                        : 'Afficher le découpage automatique par blocs de 4 mesures'
+                    }
+                    className={`inline-flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-medium transition cursor-pointer ${
+                      measuresVisible
+                        ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                        : 'border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-slate-400'
+                    }`}
+                  >
+                    <LayoutList size={12} />
+                    <span className="hidden sm:inline">Mesures</span>
+                  </button>
+                )}
+
                 {/* Beat Bar Toggle */}
                 <button
                   type="button"
@@ -1100,14 +1319,32 @@ export function LyricsStudio({
                 </div>
 
                 {markdownMode === 'edit' ? (
-                  <textarea
-                    ref={textareaRef}
-                    value={activeDoc.content}
-                    onChange={(e) => handleContentChange(e.target.value)}
-                    placeholder="Commence à écrire tes couplets, refrains, idées de flow…"
-                    spellCheck={false}
-                    className="flex-1 w-full min-h-[68dvh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700 pb-6"
-                  />
+                  measuresVisible && linkedTrack && analysisTrack ? (
+                    <LyricsMeasuresEditor
+                      track={linkedTrack}
+                      analysisTrack={analysisTrack}
+                      blocks={resolvedBarBlocks}
+                      analyzing={analyzingTrackId === analysisTrack.id}
+                      isPlayingThisSong={isPlayingEitherLinked}
+                      liveTimeSec={livePlaySec}
+                      activeAbLoop={player.abLoop}
+                      onChangeBlocks={handleBarBlocksChange}
+                      onUpdateTrackMeta={handleUpdateAnalysisMeta}
+                      onReanalyze={handleReanalyzeTrack}
+                      onJumpToSec={handleJumpToBarSec}
+                      onToggleBlockLoop={handleToggleBlockLoop}
+                      onActiveBlockFocus={setFocusedBlockIndex}
+                    />
+                  ) : (
+                    <textarea
+                      ref={textareaRef}
+                      value={activeDoc.content}
+                      onChange={(e) => handleContentChange(e.target.value)}
+                      placeholder="Commence à écrire tes couplets, refrains, idées de flow…"
+                      spellCheck={false}
+                      className="flex-1 w-full min-h-[68dvh] bg-transparent outline-none resize-none text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-700 pb-6"
+                    />
+                  )
                 ) : (
                   <div
                     className="flex-1 w-full min-h-[68dvh] text-[15px] sm:text-base leading-[1.9] text-slate-800 dark:text-zinc-100 pb-6"

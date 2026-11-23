@@ -4,6 +4,11 @@ import { getMediaObjectUrl, saveMediaBlob } from '../lib/mediaDb';
 import { downloadGoogleDriveAudioBlob, ensureGoogleDriveToken } from '../lib/googleDrive';
 import { getLocalDeviceInfo, type LocalDeviceInfo } from '../lib/deviceIdentity';
 import { groupMusicTracks } from '../lib/musicVersioning';
+import {
+  analyzeTrackAudioUrl,
+  isTrackAnalyzed,
+  type TrackAudioAnalysis,
+} from '../lib/audioAnalyzer';
 import { useApp } from './AppContext';
 
 function shuffleTracksFisherYates(
@@ -76,6 +81,11 @@ interface AudioPlayerContextValue {
   remoteDevice: { id: string; name: string; type: 'mobile' | 'tablet' | 'desktop' } | null;
   isRemotePlayback: boolean;
   transferToThisDevice: () => Promise<void>;
+  // Automatic BPM, Key & 4-bar audio analysis
+  analyzeTrackAudio: (
+    track: MusicTrack,
+    options?: { force?: boolean; knownUrl?: string }
+  ) => Promise<TrackAudioAnalysis | null>;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -221,6 +231,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   // Instant in-memory ObjectURL LRU cache + deduplicated in-flight downloads + active fetch abort
   const memoryUrlCacheRef = useRef<Map<string, string>>(new Map());
   const inFlightDownloadsRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  const inFlightAnalysisRef = useRef<Map<string, Promise<TrackAudioAnalysis | null>>>(new Map());
   const activeFetchAbortRef = useRef<AbortController | null>(null);
   const driveTokenWarmedRef = useRef(false);
 
@@ -378,6 +389,89 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     },
     [getGroupKey]
   );
+
+  // Automatic client-side BPM, Musical Key & 4-bar structure analyzer (deduplicated per track!)
+  const analyzeTrackAudio = useCallback(
+    async (
+      track: MusicTrack,
+      options?: { force?: boolean; knownUrl?: string }
+    ): Promise<TrackAudioAnalysis | null> => {
+      if (!options?.force && isTrackAnalyzed(track)) {
+        return {
+          durationSec: track.durationSec || 0,
+          bpm: track.bpm!,
+          musicalKey: track.musicalKey || '',
+          barOffsetSec: track.barOffsetSec || 0,
+          barBlockEnergies: track.barBlockEnergies || [],
+          analyzedAt: track.audioAnalyzedAt || new Date().toISOString(),
+        };
+      }
+
+      const existing = inFlightAnalysisRef.current.get(track.id);
+      if (existing) return existing;
+
+      const job = (async (): Promise<TrackAudioAnalysis | null> => {
+        try {
+          const url = options?.knownUrl || (await resolveTrackAudioUrl(track));
+          if (!url) return null;
+          const result = await analyzeTrackAudioUrl(url);
+          // Persist onto the track (preserving any user-edited BPM/Key unless `force`)
+          const patch: Partial<MusicTrack> = {
+            durationSec: track.durationSec || Math.round(result.durationSec),
+            bpm: options?.force || !track.bpm ? result.bpm : track.bpm,
+            musicalKey: options?.force || !track.musicalKey ? result.musicalKey || undefined : track.musicalKey,
+            barOffsetSec: result.barOffsetSec,
+            barBlockEnergies: result.barBlockEnergies,
+            audioAnalyzedAt: result.analyzedAt,
+          };
+          updateMusicTrack(track.id, patch);
+          return result;
+        } catch {
+          return null;
+        } finally {
+          inFlightAnalysisRef.current.delete(track.id);
+        }
+      })();
+
+      inFlightAnalysisRef.current.set(track.id, job);
+      return job;
+    },
+    [resolveTrackAudioUrl, updateMusicTrack]
+  );
+
+  // Quiet background analyzer for tracks ALREADY cached locally in IndexedDB (0 network / 0 mobile data!)
+  const cachedScanStartedRef = useRef(false);
+  useEffect(() => {
+    if (cachedScanStartedRef.current) return;
+    const unanalyzed = dedupedLibraryTracks.filter((t) => !isTrackAnalyzed(t));
+    if (unanalyzed.length === 0) return;
+    cachedScanStartedRef.current = true;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      let scanned = 0;
+      for (const trk of unanalyzed) {
+        if (cancelled || scanned >= 20) break;
+        const cacheKey = getTrackCacheKey(trk);
+        const memHit = memoryUrlCacheRef.current.get(cacheKey);
+        const localHit =
+          memHit ||
+          (trk.mediaId ? await getMediaObjectUrl(trk.mediaId) : null) ||
+          (trk.googleDriveFileId ? await getMediaObjectUrl(`drive_${trk.googleDriveFileId}`) : null);
+        if (!localHit) continue;
+        putInMemoryUrlCache(cacheKey, localHit);
+        await analyzeTrackAudio(trk, { knownUrl: localHit });
+        scanned++;
+        // Yield politely between tracks so UI stays 60fps
+        await new Promise((r) => window.setTimeout(r, 350));
+      }
+    }, 5500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [dedupedLibraryTracks, analyzeTrackAudio, putInMemoryUrlCache]);
 
   // Silent 2-track lookahead RAM prefetcher (guarantees 0ms synchronous swap on `ended` -> unbroken iOS PWA background audio!)
   const prefetchUpcomingTracks = useCallback(
@@ -826,6 +920,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           );
           // Prefetch next 2 tracks into RAM so the next transition is 0ms synchronous (even with screen locked!)
           prefetchUpcomingTracks(track.id, queueRef.current);
+          // Automatically detect BPM, musical Key & 4-bar energy structure in the background for every played track!
+          if (!isTrackAnalyzed(track) && src) {
+            void analyzeTrackAudio(track, { knownUrl: src });
+          }
         }
       } catch {
         if (reqId === playRequestIdRef.current) {
@@ -844,6 +942,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       sendRemoteCommand,
       getGroupKey,
       recordPlayedGroup,
+      analyzeTrackAudio,
     ]
   );
 
@@ -1644,6 +1743,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       remoteDevice,
       isRemotePlayback,
       transferToThisDevice,
+      analyzeTrackAudio,
     }),
     [
       currentTrack,
@@ -1684,6 +1784,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       remoteDevice,
       isRemotePlayback,
       transferToThisDevice,
+      analyzeTrackAudio,
     ]
   );
 

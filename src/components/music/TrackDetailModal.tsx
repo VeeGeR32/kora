@@ -28,6 +28,7 @@ import type { MusicTrack, TrackMood, TrackStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
+import { isTrackAnalyzed } from '../../lib/audioAnalyzer';
 import { triggerHapticTick } from '../../lib/haptics';
 import { shareOrCopyPublicLink } from '../../lib/publicShare';
 import {
@@ -198,6 +199,13 @@ export function TrackDetailModal({
 
   const isCurrentTrack = Boolean(track && player.currentTrack?.id === track.id);
   const isPlayingTrack = isCurrentTrack && player.isPlaying;
+
+  // Automatically detect BPM, Key & 4-bar structure when opening an unanalyzed track page
+  useEffect(() => {
+    if (!track || isTrackAnalyzed(track)) return;
+    if (!track.mediaId && !track.googleDriveFileId && !track.cloudAudioUrl) return;
+    void player.analyzeTrackAudio(track);
+  }, [track?.id, track?.audioAnalyzedAt, player.analyzeTrackAudio]);
   const effectiveDurationVal =
     (isCurrentTrack && player.duration > 0 ? player.duration : track?.durationSec) || 0;
 

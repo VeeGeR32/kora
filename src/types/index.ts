@@ -293,6 +293,9 @@ export interface MusicTrack {
   durationSec?: number;
   bpm?: number;
   musicalKey?: string;
+  barOffsetSec?: number; // Auto-detected start of Bar 1 (seconds)
+  barBlockEnergies?: number[]; // Normalized 0..100 RMS energy per 4-bar block
+  audioAnalyzedAt?: string; // ISO timestamp of last automatic BPM/Key/Bar analysis
   status: TrackStatus;
   mood?: TrackMood; // Tag d'ambiance (energetic / chill / experimental)
   tags: string[];
@@ -315,10 +318,23 @@ export interface LyricsFolder {
   createdAt: string;
 }
 
+export type LyricsBlockStatus = 'empty' | 'planned' | 'draft' | 'done';
+
+export interface LyricsBarBlock {
+  id: string;
+  index: number; // 0-based 4-bar block index (0 => M1–M4, 1 => M5–M8, ...)
+  sectionLabel?: string; // e.g. 'Intro' | 'Couplet' | 'Pré-refrain' | 'Refrain' | 'Pont' | 'Outro'
+  status: LyricsBlockStatus; // 'empty' = instru, 'planned' = à écrire, 'draft' = provisoire, 'done' = validé
+  note?: string; // Optional skeleton cue e.g. "flow rapide", "topline aiguë", "yaourt"
+  text: string;
+}
+
 export interface LyricsDoc {
   id: string;
   title: string;
   content: string;
+  barBlocks?: LyricsBarBlock[]; // 4-bar measure blocks synced with linkedTrack
+  showMeasures?: boolean; // Show/hide measure blocks inline in the lyrics editor
   folderId: string | null;
   status: 1 | 2 | 3; // 1=Brouillon, 2=En cours, 3=Terminé (LexCore)
   mediaUrl: string; // YouTube beat URL (LexCore)
