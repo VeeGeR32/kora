@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   Compass,
   Disc3,
+  GitBranch,
   Globe,
   Heart,
   ListMusic,
@@ -54,11 +55,17 @@ function formatDuration(sec?: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+const BAR_COUNT = 110;
+const BAR_STEP_PX = 4.5;
+const TOTAL_TAPE_PX = BAR_COUNT * BAR_STEP_PX;
+
 export type SocialViewMode = 'discover' | 'profile' | 'messages';
 
 interface SocialHubViewProps {
   initialMode?: SocialViewMode;
   initialArtistUid?: string | null;
+  initialSocialTrack?: SocialTrackItem | null;
+  onClearInitialSocialTrack?: () => void;
   onOpenOwnProject?: (projectId: string) => void;
   onOpenPlaylist?: (playlistId: string) => void;
 }
@@ -66,6 +73,8 @@ interface SocialHubViewProps {
 export function SocialHubView({
   initialMode = 'discover',
   initialArtistUid = null,
+  initialSocialTrack = null,
+  onClearInitialSocialTrack,
   onOpenOwnProject,
   onOpenPlaylist,
 }: SocialHubViewProps) {
@@ -93,6 +102,12 @@ export function SocialHubView({
   const [mode, setMode] = useState<SocialViewMode>(initialMode);
   const [viewingArtistUid, setViewingArtistUid] = useState<string | null>(initialArtistUid);
   const [viewingSocialProjectId, setViewingSocialProjectId] = useState<string | null>(null);
+  const [viewingSocialTrackId, setViewingSocialTrackId] = useState<string | null>(
+    initialSocialTrack?.id || null
+  );
+  const [fallbackSocialTrack, setFallbackSocialTrack] = useState<SocialTrackItem | null>(
+    initialSocialTrack
+  );
   const [feedFilter, setFeedFilter] = useState<'trending' | 'following' | 'recent'>('trending');
 
   const [loading, setLoading] = useState(true);
@@ -132,9 +147,18 @@ export function SocialHubView({
   useEffect(() => {
     if (initialArtistUid) {
       setViewingArtistUid(initialArtistUid);
+      setViewingSocialTrackId(null);
+      setViewingSocialProjectId(null);
       setMode('profile');
     }
   }, [initialArtistUid]);
+
+  useEffect(() => {
+    if (initialSocialTrack) {
+      setFallbackSocialTrack(initialSocialTrack);
+      setViewingSocialTrackId(initialSocialTrack.id);
+    }
+  }, [initialSocialTrack]);
 
   const trackGroups = useMemo(() => groupMusicTracks(state.musicTracks), [state.musicTracks]);
 
@@ -159,7 +183,6 @@ export function SocialHubView({
     void loadSocialData(false);
   }, [loadSocialData]);
 
-  // Keep my local likedSocialTracks in sync with server likes
   const likedIdSet = useMemo(
     () => new Set(likedSocialTracks.map((t) => t.id)),
     [likedSocialTracks]
@@ -231,6 +254,30 @@ export function SocialHubView({
     [socialProjects, viewingSocialProjectId]
   );
 
+  const activeSocialTrack = useMemo<SocialTrackItem | null>(() => {
+    if (!viewingSocialTrackId) return null;
+    for (const p of socialProjects) {
+      const found = p.tracks.find((t) => t.id === viewingSocialTrackId);
+      if (found) return found;
+    }
+    const fromLiked = likedSocialTracks.find((t) => t.id === viewingSocialTrackId);
+    if (fromLiked) return fromLiked;
+    if (fallbackSocialTrack?.id === viewingSocialTrackId) return fallbackSocialTrack;
+    return null;
+  }, [viewingSocialTrackId, socialProjects, likedSocialTracks, fallbackSocialTrack]);
+
+  // Deterministic 110-bar waveform for the active community track (matches TrackDetailModal!)
+  const activeTrackWaveformBars = useMemo(() => {
+    const id = activeSocialTrack?.id || 'rowav';
+    let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 31);
+    return Array.from({ length: BAR_COUNT }, (_, idx) => {
+      seed = (seed * 9301 + 49297) % 233280;
+      const rnd = seed / 233280;
+      const env = Math.sin((idx / BAR_COUNT) * Math.PI) * 0.55 + 0.45;
+      return Math.max(0.18, Math.min(1, (0.25 + rnd * 0.75) * env));
+    });
+  }, [activeSocialTrack?.id]);
+
   const filteredProjects = useMemo(() => {
     const list = [...socialProjects];
     if (feedFilter === 'following') {
@@ -246,7 +293,6 @@ export function SocialHubView({
         (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
       );
     }
-    // Trending: sort by total likes + ratings
     return list.sort((a, b) => {
       const scoreA =
         (a.likesCount || 0) * 2 +
@@ -258,7 +304,6 @@ export function SocialHubView({
     });
   }, [socialProjects, feedFilter, profiles, myUid]);
 
-  // Play a social track or a full social project inside Kora's native MiniAudioPlayer
   const handlePlaySocialTrack = (track: SocialTrackItem, queueItems?: SocialTrackItem[]) => {
     const playable = socialTrackToMusicTrack(track);
     if (player.currentTrack?.id === playable.id) {
@@ -271,32 +316,23 @@ export function SocialHubView({
     void player.playTrack(playable, 0, queue);
   };
 
-  // Like / Unlike a community track (syncs both with Accueil's likedSocialTracks AND /api/social)
   const handleToggleLikeTrack = async (track: SocialTrackItem) => {
     const currentlyLiked = likedIdSet.has(track.id) || Boolean(track.likedByMe);
     const nextLiked = !currentlyLiked;
-    toggleLikeSocialTrack(
-      {
-        ...track,
-        likedByMe: nextLiked,
-        likesCount: Math.max(0, (track.likesCount || 0) + (nextLiked ? 1 : -1)),
-      },
-      nextLiked
-    );
+    const updatedTrack: SocialTrackItem = {
+      ...track,
+      likedByMe: nextLiked,
+      likesCount: Math.max(0, (track.likesCount || 0) + (nextLiked ? 1 : -1)),
+    };
+    toggleLikeSocialTrack(updatedTrack, nextLiked);
+    if (fallbackSocialTrack?.id === track.id) {
+      setFallbackSocialTrack(updatedTrack);
+    }
 
-    // Optimistic UI update
     setSocialProjects((prev) =>
       prev.map((proj) => ({
         ...proj,
-        tracks: proj.tracks.map((t) =>
-          t.id === track.id
-            ? {
-                ...t,
-                likedByMe: nextLiked,
-                likesCount: Math.max(0, (t.likesCount || 0) + (nextLiked ? 1 : -1)),
-              }
-            : t
-        ),
+        tracks: proj.tracks.map((t) => (t.id === track.id ? updatedTrack : t)),
       }))
     );
 
@@ -350,6 +386,9 @@ export function SocialHubView({
   const handleRateTrack = async (track: SocialTrackItem, rating: number) => {
     setRatingTargetTrack(null);
     updateLikedSocialTrackMeta(track.id, { myRating: rating });
+    if (fallbackSocialTrack?.id === track.id) {
+      setFallbackSocialTrack({ ...fallbackSocialTrack, myRating: rating });
+    }
     setSocialProjects((prev) =>
       prev.map((proj) => ({
         ...proj,
@@ -552,18 +591,27 @@ export function SocialHubView({
   };
 
   const openArtistPortfolio = (uid: string) => {
+    setViewingSocialTrackId(null);
     setViewingSocialProjectId(null);
+    onClearInitialSocialTrack?.();
     setViewingArtistUid(uid);
     setMode('profile');
   };
 
   const openDirectMessageWith = (uid: string) => {
+    setViewingSocialTrackId(null);
     setViewingSocialProjectId(null);
+    onClearInitialSocialTrack?.();
     setActiveChatUid(uid);
     setMode('messages');
   };
 
-  // Render a single community track row (used inside Project cards, Album view, and Artist Portfolio)
+  const openSocialTrackPage = (trk: SocialTrackItem) => {
+    setFallbackSocialTrack(trk);
+    setViewingSocialTrackId(trk.id);
+  };
+
+  // Studio Track Row (Clicking ▶ plays; clicking the row opens the Community Song Page, identical to TrackCard!)
   const renderSocialTrackRow = (
     trk: SocialTrackItem,
     _idx: number,
@@ -577,56 +625,71 @@ export function SocialHubView({
     return (
       <div
         key={trk.id}
-        onClick={() => handlePlaySocialTrack(trk, queueList)}
-        className={`group flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-2xl transition cursor-pointer ${
+        onClick={() => openSocialTrackPage(trk)}
+        title="Clic sur la ligne pour ouvrir la fiche du son · Clic sur ▶ pour écouter"
+        className={`group flex items-center justify-between gap-3 rounded-2xl border p-3 transition cursor-pointer ${
           isCurrent
-            ? 'bg-[#8C271E]/8 dark:bg-[#8C271E]/12'
-            : 'hover:bg-slate-100/80 dark:hover:bg-zinc-800/50'
+            ? 'border-[#8C271E]/65 bg-[#8C271E]/[0.05] dark:bg-[#8C271E]/[0.12]'
+            : 'border-slate-200/75 dark:border-zinc-800/80 bg-slate-50/40 dark:bg-zinc-900/40 hover:border-[#8C271E]/35'
         }`}
       >
         <div className="flex items-center gap-3 min-w-0">
+          {/* Playable Cover Thumbnail (identical to TrackCard) */}
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               handlePlaySocialTrack(trk, queueList);
             }}
-            className={`h-8 w-8 rounded-xl inline-flex items-center justify-center shrink-0 transition cursor-pointer ${
-              isCurrent
-                ? 'bg-[#8C271E] text-white shadow-sm'
-                : 'bg-slate-100 dark:bg-zinc-800/90 text-slate-600 dark:text-zinc-300 group-hover:bg-slate-900 group-hover:text-white dark:group-hover:bg-zinc-100 dark:group-hover:text-zinc-950'
-            }`}
+            title={isPlayingThis ? 'Pause' : 'Écouter ce son'}
+            className="relative h-11 w-11 rounded-xl overflow-hidden shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-xs cursor-pointer"
+            style={getCoverGradientStyle(trk.coverGradient)}
           >
-            {isPlayingThis ? (
-              <Pause size={13} fill="currentColor" />
+            {trk.coverUrl ? (
+              <img
+                src={trk.coverUrl}
+                alt={trk.title}
+                className="h-full w-full object-cover"
+              />
             ) : (
-              <Play size={13} fill="currentColor" className="ml-0.5" />
+              trk.title.slice(0, 2).toUpperCase()
             )}
+            <span
+              className={`absolute inset-0 bg-black/45 text-white flex items-center justify-center transition ${
+                isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              }`}
+            >
+              {isPlayingThis ? (
+                <Pause size={15} fill="currentColor" />
+              ) : (
+                <Play size={15} fill="currentColor" className="ml-0.5" />
+              )}
+            </span>
           </button>
 
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <p
                 className={`text-xs sm:text-sm font-semibold truncate ${
-                  isCurrent ? 'text-[#8C271E]' : 'text-slate-900 dark:text-zinc-100'
+                  isCurrent ? 'text-[#8C271E] dark:text-[#E56B5F]' : 'text-slate-900 dark:text-zinc-100'
                 }`}
               >
                 {trk.title}
               </p>
               {trk.versionLabel && (
-                <span className="rounded-md bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-500 dark:text-zinc-400 shrink-0">
+                <span className="rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 font-mono text-[10px] text-slate-500 dark:text-zinc-400 shrink-0">
                   {trk.versionLabel}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-zinc-500 truncate">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-zinc-500 truncate mt-0.5">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   openArtistPortfolio(trk.ownerUid);
                 }}
-                className="hover:text-[#8C271E] hover:underline truncate cursor-pointer"
+                className="hover:text-[#8C271E] dark:hover:text-[#E56B5F] hover:underline truncate cursor-pointer"
               >
                 {trk.artist}
               </button>
@@ -651,14 +714,13 @@ export function SocialHubView({
           className="flex items-center gap-1.5 sm:gap-2 shrink-0"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Rate /10 Button */}
           <button
             type="button"
             onClick={() => setRatingTargetTrack(trk)}
             title="Noter ce morceau sur 10"
             className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-mono text-[11px] font-semibold transition cursor-pointer ${
               trk.myRating
-                ? 'bg-[#8C271E]/15 text-[#8C271E]'
+                ? 'bg-[#8C271E]/15 text-[#8C271E] dark:text-[#E56B5F]'
                 : (trk.ratingAvg || 0) > 0
                   ? 'bg-slate-100 dark:bg-zinc-800/90 text-slate-700 dark:text-zinc-200 hover:bg-slate-200 dark:hover:bg-zinc-700'
                   : 'border border-slate-200/80 dark:border-zinc-800 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200'
@@ -667,7 +729,9 @@ export function SocialHubView({
             <Star
               size={11}
               className={
-                trk.myRating || (trk.ratingAvg || 0) > 0 ? 'text-[#8C271E]' : 'text-slate-400'
+                trk.myRating || (trk.ratingAvg || 0) > 0
+                  ? 'text-[#8C271E] dark:text-[#E56B5F]'
+                  : 'text-slate-400'
               }
               fill={trk.myRating || (trk.ratingAvg || 0) > 0 ? 'currentColor' : 'none'}
             />
@@ -680,7 +744,6 @@ export function SocialHubView({
             </span>
           </button>
 
-          {/* Like ♥ Button */}
           <button
             type="button"
             onClick={() => void handleToggleLikeTrack(trk)}
@@ -695,11 +758,9 @@ export function SocialHubView({
             <span className="font-mono">{trk.likesCount || 0}</span>
           </button>
 
-          {/* Add to Playlist + Button */}
           <button
             type="button"
             onClick={() => {
-              // Ensure track is in likedSocialTracks so playlist can resolve its metadata
               if (!likedIdSet.has(trk.id)) {
                 toggleLikeSocialTrack(trk, true);
               }
@@ -723,16 +784,18 @@ export function SocialHubView({
     <div className="space-y-6 pb-12">
       {/* Top Sub-Navigation Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#111114] p-1">
+        <div className="inline-flex items-center rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#141010] p-1">
           <button
             type="button"
             onClick={() => {
+              setViewingSocialTrackId(null);
               setViewingSocialProjectId(null);
+              onClearInitialSocialTrack?.();
               setMode('discover');
             }}
             className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              mode === 'discover'
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 shadow-xs'
+              mode === 'discover' && !activeSocialTrack && !activeSocialProject
+                ? 'bg-[#8C271E] text-white shadow-xs'
                 : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
             }`}
           >
@@ -742,13 +805,15 @@ export function SocialHubView({
           <button
             type="button"
             onClick={() => {
+              setViewingSocialTrackId(null);
               setViewingSocialProjectId(null);
+              onClearInitialSocialTrack?.();
               setViewingArtistUid(myUid);
               setMode('profile');
             }}
             className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              mode === 'profile' && isViewingOwnProfile
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 shadow-xs'
+              mode === 'profile' && isViewingOwnProfile && !activeSocialTrack && !activeSocialProject
+                ? 'bg-[#8C271E] text-white shadow-xs'
                 : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
             }`}
           >
@@ -758,12 +823,14 @@ export function SocialHubView({
           <button
             type="button"
             onClick={() => {
+              setViewingSocialTrackId(null);
               setViewingSocialProjectId(null);
+              onClearInitialSocialTrack?.();
               setMode('messages');
             }}
             className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition cursor-pointer ${
-              mode === 'messages'
-                ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 shadow-xs'
+              mode === 'messages' && !activeSocialTrack && !activeSocialProject
+                ? 'bg-[#8C271E] text-white shadow-xs'
                 : 'text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
             }`}
           >
@@ -795,25 +862,327 @@ export function SocialHubView({
         </div>
       </div>
 
-      {/* ================= SUB-VIEW: SPOTIFY SOCIAL ALBUM DETAIL ================= */}
-      {activeSocialProject ? (
-        <div className="space-y-6">
-          <button
-            type="button"
-            onClick={() => setViewingSocialProjectId(null)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
-          >
-            <ChevronLeft size={14} /> Retour
-          </button>
+      {/* ================= SUB-VIEW A: UNIFIED COMMUNITY SONG PAGE (identical layout to TrackDetailModal!) ================= */}
+      {activeSocialTrack ? (
+        (() => {
+          const isCurrent = player.currentTrack?.id === activeSocialTrack.id;
+          const isPlayingThis = isCurrent && player.isPlaying;
+          const isLiked = likedIdSet.has(activeSocialTrack.id) || Boolean(activeSocialTrack.likedByMe);
+          const dur =
+            (isCurrent && player.duration > 0
+              ? player.duration
+              : activeSocialTrack.durationSec) || 160;
+          const curTime = isCurrent ? player.currentTime : 0;
+          const progress = dur > 0 ? Math.max(0, Math.min(1, curTime / dur)) : 0;
+          const translatePx = progress * TOTAL_TAPE_PX;
+          const parentProject = socialProjects.find((p) => p.id === activeSocialTrack.projectId);
 
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#111114] p-6 sm:p-8">
-            <div
-              className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full opacity-20 blur-3xl"
-              style={getCoverGradientStyle(activeSocialProject.coverGradient)}
-            />
+          return (
+            <div className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
+              {/* Minimalist In-App Top Bar (identical to TrackDetailModal) */}
+              <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewingSocialTrackId(null);
+                        onClearInitialSocialTrack?.();
+                      }}
+                      aria-label="Retour"
+                      className="h-9 px-3 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+                    >
+                      <ChevronLeft size={16} /> Retour
+                    </button>
+                    {activeSocialTrack.versionLabel && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
+                        <GitBranch size={11} className="text-[#8C271E] shrink-0" />
+                        {activeSocialTrack.versionLabel}
+                      </span>
+                    )}
+                    {activeSocialTrack.projectTitle && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (parentProject) {
+                            setViewingSocialTrackId(null);
+                            setViewingSocialProjectId(parentProject.id);
+                          }
+                        }}
+                        className="hidden sm:inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 px-2.5 py-1 text-[10px] font-semibold hover:text-[#8C271E] transition cursor-pointer shrink-0"
+                      >
+                        <Disc3 size={11} /> {activeSocialTrack.projectTitle}
+                      </button>
+                    )}
+                  </div>
 
-            <div className="relative flex flex-col sm:flex-row items-center sm:items-end gap-6">
-              <div className="h-44 w-44 sm:h-52 sm:w-52 rounded-2xl overflow-hidden shadow-xl border border-black/10 dark:border-white/10 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleLikeTrack(activeSocialTrack)}
+                      title={isLiked ? 'Retirer des sons likés' : 'Liker ce son'}
+                      className={`h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-xs font-semibold transition cursor-pointer ${
+                        isLiked
+                          ? 'bg-rose-500/14 text-rose-500'
+                          : 'bg-slate-100 dark:bg-zinc-900 text-slate-500 hover:text-rose-500'
+                      }`}
+                    >
+                      <Heart size={15} fill={isLiked ? 'currentColor' : 'none'} />
+                      <span className="font-mono">{activeSocialTrack.likesCount || 0}</span>
+                    </button>
+                  </div>
+                </div>
+              </header>
+
+              {/* In-App Song Page Body (identical structure to TrackDetailModal) */}
+              <div className="px-4 sm:px-7 py-6 space-y-6">
+                {/* Horizontal Studio Hero */}
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+                  <div
+                    className="h-40 w-40 sm:h-36 sm:w-36 rounded-[24px] overflow-hidden shadow-xl border border-slate-200/70 dark:border-zinc-800 shrink-0 flex items-center justify-center text-white font-extrabold text-2xl"
+                    style={getCoverGradientStyle(activeSocialTrack.coverGradient)}
+                  >
+                    {activeSocialTrack.coverUrl ? (
+                      <img
+                        src={activeSocialTrack.coverUrl}
+                        alt={activeSocialTrack.title}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <Disc3 size={34} className="text-white/85" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0 w-full space-y-2.5 text-center sm:text-left">
+                    <div>
+                      <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
+                        {activeSocialTrack.title}
+                      </h1>
+                      <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 flex flex-wrap items-center justify-center sm:justify-start gap-x-1.5 gap-y-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openArtistPortfolio(activeSocialTrack.ownerUid)}
+                          className="font-semibold text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
+                        >
+                          {activeSocialTrack.artist}
+                        </button>
+                        {activeSocialTrack.versionLabel && (
+                          <span className="font-mono">· {activeSocialTrack.versionLabel}</span>
+                        )}
+                        {activeSocialTrack.bpm && (
+                          <span className="font-mono">· {activeSocialTrack.bpm} BPM</span>
+                        )}
+                        <span>· {formatDuration(activeSocialTrack.durationSec)}</span>
+                      </p>
+                    </div>
+
+                    {/* Action Pills (identical to TrackDetailModal) */}
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handlePlaySocialTrack(
+                            activeSocialTrack,
+                            parentProject?.tracks || [activeSocialTrack]
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-4 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 active:scale-95 transition cursor-pointer"
+                      >
+                        {isPlayingThis ? (
+                          <>
+                            <Pause size={13} fill="currentColor" /> Pause
+                          </>
+                        ) : (
+                          <>
+                            <Play size={13} fill="currentColor" className="ml-0.5" /> Écouter
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!likedIdSet.has(activeSocialTrack.id)) {
+                            toggleLikeSocialTrack(activeSocialTrack, true);
+                          }
+                          setPlaylistTargetTrack(activeSocialTrack);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+                      >
+                        <Plus size={13} /> Ajouter à une playlist
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openArtistPortfolio(activeSocialTrack.ownerUid)}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+                      >
+                        Profil de {activeSocialTrack.ownerName}
+                      </button>
+
+                      {activeSocialTrack.ownerUid !== myUid && (
+                        <button
+                          type="button"
+                          onClick={() => openDirectMessageWith(activeSocialTrack.ownerUid)}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+                        >
+                          <MessageCircle size={13} /> Message
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Studio Tape Waveform with #8C271E Playhead Needle (identical to TrackDetailModal!) */}
+                <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/70 dark:bg-zinc-900/50 p-4 space-y-2">
+                  <div
+                    onClick={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const ratio = Math.max(
+                        0,
+                        Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width))
+                      );
+                      if (!isCurrent) {
+                        const playable = socialTrackToMusicTrack(activeSocialTrack);
+                        void player.playTrack(playable, ratio * dur, [playable]);
+                      } else {
+                        player.seek(ratio * dur);
+                      }
+                    }}
+                    className="relative h-14 w-full overflow-hidden select-none cursor-pointer"
+                    title="Cliquer pour naviguer dans le morceau"
+                  >
+                    {/* Playhead Needle at 28% */}
+                    <div
+                      className="pointer-events-none absolute top-1 bottom-1 w-[2.5px] -translate-x-1/2 rounded-full bg-[#8C271E] z-20 shadow-[0_0_8px_rgba(140,39,30,0.45)]"
+                      style={{ left: '28%' }}
+                    />
+                    <div
+                      className="absolute inset-y-0 flex items-center"
+                      style={{
+                        left: '28%',
+                        transform: `translate3d(${-translatePx}px, 0, 0)`,
+                        transition: isPlayingThis ? 'transform 180ms linear' : 'transform 120ms ease-out',
+                      }}
+                    >
+                      {activeTrackWaveformBars.map((amp, i) => {
+                        const barPosRatio = i / BAR_COUNT;
+                        const played = barPosRatio <= progress;
+                        const hPct = Math.round(amp * 82);
+                        return (
+                          <div
+                            key={i}
+                            style={{
+                              width: '2.2px',
+                              marginRight: `${BAR_STEP_PX - 2.2}px`,
+                              height: `${Math.max(16, hPct)}%`,
+                            }}
+                            className={`rounded-full shrink-0 transition-colors ${
+                              played
+                                ? 'bg-[#8C271E]'
+                                : 'bg-slate-300 dark:bg-zinc-700'
+                            }`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between font-mono text-[11px] text-slate-400">
+                    <span>{formatDuration(curTime)}</span>
+                    <span>{formatDuration(dur)}</span>
+                  </div>
+                </div>
+
+                {/* Studio Rating Card (/10) — identical interaction to TrackDetailModal's rating section */}
+                <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/40 dark:bg-zinc-900/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Star size={14} className="text-[#8C271E]" fill="currentColor" />
+                      <span className="text-xs font-bold text-slate-900 dark:text-zinc-100">
+                        Noter ce morceau sur 10
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 font-mono text-xs">
+                      {activeSocialTrack.myRating && (
+                        <span className="rounded-full bg-[#8C271E]/15 text-[#8C271E] dark:text-[#E56B5F] px-2.5 py-0.5 font-bold">
+                          Ma note : {activeSocialTrack.myRating}/10
+                        </span>
+                      )}
+                      <span className="text-slate-400">
+                        Moyenne :{' '}
+                        <strong className="text-slate-800 dark:text-zinc-200">
+                          {(activeSocialTrack.ratingAvg || 0) > 0
+                            ? `★ ${activeSocialTrack.ratingAvg}/10 (${activeSocialTrack.ratingCount || 1})`
+                            : '—/10'}
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                      const active = activeSocialTrack.myRating === num;
+                      return (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => void handleRateTrack(activeSocialTrack, num)}
+                          className={`py-2 rounded-xl font-mono text-xs font-bold transition cursor-pointer ${
+                            active
+                              ? 'bg-[#8C271E] text-white shadow-sm'
+                              : 'bg-white dark:bg-zinc-900 border border-slate-200/70 dark:border-zinc-800 text-slate-700 dark:text-zinc-300 hover:border-[#8C271E]'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()
+      ) : activeSocialProject ? (
+        /* ================= SUB-VIEW B: UNIFIED COMMUNITY PROJECT PAGE (coherent with TrackDetailModal & ProjectAlbumModal) ================= */
+        <div className="max-w-3xl mx-auto tempo-card rounded-3xl text-slate-900 dark:text-zinc-100 overflow-hidden">
+          <header className="px-4 sm:px-6 py-3.5 border-b border-slate-100 dark:border-zinc-800/80">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => setViewingSocialProjectId(null)}
+                  className="h-9 px-3 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 inline-flex items-center gap-1 text-xs font-semibold hover:bg-slate-200/80 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+                >
+                  <ChevronLeft size={16} /> Retour
+                </button>
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 font-mono text-[11px] font-semibold uppercase text-slate-700 dark:text-zinc-200">
+                  <Disc3 size={11} className="text-[#8C271E]" />
+                  {activeSocialProject.kind} · {activeSocialProject.tracks.length} titres
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleToggleLikeProject(activeSocialProject)}
+                className={`h-9 px-3 rounded-full inline-flex items-center gap-1.5 text-xs font-semibold transition cursor-pointer ${
+                  activeSocialProject.likedByMe
+                    ? 'bg-rose-500/14 text-rose-500'
+                    : 'bg-slate-100 dark:bg-zinc-900 text-slate-500 hover:text-rose-500'
+                }`}
+              >
+                <Heart
+                  size={15}
+                  fill={activeSocialProject.likedByMe ? 'currentColor' : 'none'}
+                />
+                <span className="font-mono">{activeSocialProject.likesCount || 0}</span>
+              </button>
+            </div>
+          </header>
+
+          <div className="px-4 sm:px-7 py-6 space-y-6">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+              <div className="h-40 w-40 sm:h-36 sm:w-36 rounded-[24px] overflow-hidden shadow-xl border border-slate-200/70 dark:border-zinc-800 shrink-0">
                 <ProjectCoverArtwork
                   title={activeSocialProject.title}
                   projectCoverUrl={activeSocialProject.coverUrl}
@@ -821,100 +1190,88 @@ export function SocialHubView({
                 />
               </div>
 
-              <div className="flex-1 text-center sm:text-left space-y-2 min-w-0">
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
-                  {activeSocialProject.kind} · Rowav Social
-                </span>
-                <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
-                  {activeSocialProject.title}
-                </h1>
-                {activeSocialProject.description && (
-                  <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-xl">
-                    {activeSocialProject.description}
+              <div className="flex-1 min-w-0 w-full space-y-2.5 text-center sm:text-left">
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
+                    {activeSocialProject.title}
+                  </h1>
+                  {activeSocialProject.description && (
+                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 max-w-xl">
+                      {activeSocialProject.description}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1 flex flex-wrap items-center justify-center sm:justify-start gap-x-1.5 gap-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => openArtistPortfolio(activeSocialProject.ownerUid)}
+                      className="font-semibold text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
+                    >
+                      {activeSocialProject.ownerName}
+                    </button>
+                    <span>·</span>
+                    <span className="font-mono">{activeSocialProject.tracks.length} titres</span>
+                    {activeSocialProject.releaseDate && (
+                      <>
+                        <span>·</span>
+                        <span className="font-mono">{activeSocialProject.releaseDate}</span>
+                      </>
+                    )}
                   </p>
-                )}
-                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-slate-500 dark:text-zinc-400 pt-1">
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={activeSocialProject.tracks.length === 0}
+                    onClick={() => {
+                      if (activeSocialProject.tracks.length > 0) {
+                        handlePlaySocialTrack(
+                          activeSocialProject.tracks[0],
+                          activeSocialProject.tracks
+                        );
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-4 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
+                  >
+                    <Play size={13} fill="currentColor" className="ml-0.5" /> Écouter
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={activeSocialProject.tracks.length === 0}
+                    onClick={() => {
+                      const q = activeSocialProject.tracks.map(socialTrackToMusicTrack);
+                      if (q.length > 0) void player.playShuffled(q);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+                  >
+                    <Shuffle size={13} /> Aléatoire
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => openArtistPortfolio(activeSocialProject.ownerUid)}
-                    className="font-bold text-slate-900 dark:text-zinc-100 hover:text-[#8C271E] hover:underline cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
                   >
-                    {activeSocialProject.ownerName}
+                    Profil de {activeSocialProject.ownerName}
                   </button>
-                  <span>·</span>
-                  <span className="font-mono">{activeSocialProject.tracks.length} titres</span>
-                  {activeSocialProject.releaseDate && (
-                    <>
-                      <span>·</span>
-                      <span className="font-mono">{activeSocialProject.releaseDate}</span>
-                    </>
-                  )}
                 </div>
               </div>
             </div>
 
-            <div className="relative mt-6 pt-5 border-t border-slate-100 dark:border-zinc-800/80 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleToggleLikeProject(activeSocialProject)}
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer ${
-                    activeSocialProject.likedByMe
-                      ? 'bg-rose-500/12 text-rose-500'
-                      : 'border border-slate-200 dark:border-zinc-800 text-slate-600 dark:text-zinc-300'
-                  }`}
-                >
-                  <Heart
-                    size={14}
-                    fill={activeSocialProject.likedByMe ? 'currentColor' : 'none'}
-                  />
-                  <span>{activeSocialProject.likesCount || 0}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openArtistPortfolio(activeSocialProject.ownerUid)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 transition cursor-pointer"
-                >
-                  Voir le profil de {activeSocialProject.ownerName}
-                </button>
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-zinc-800/80">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 dark:text-zinc-400">
+                  Tracklist du projet ({activeSocialProject.tracks.length})
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Clic sur ▶ pour lire · Clic sur un morceau pour ouvrir sa fiche son
+                </p>
               </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  disabled={activeSocialProject.tracks.length === 0}
-                  onClick={() => {
-                    const q = activeSocialProject.tracks.map(socialTrackToMusicTrack);
-                    if (q.length > 0) void player.playShuffled(q);
-                  }}
-                  className="h-10 w-10 rounded-full border border-slate-200 dark:border-zinc-800 inline-flex items-center justify-center text-slate-600 dark:text-zinc-300 cursor-pointer"
-                >
-                  <Shuffle size={16} />
-                </button>
-                <button
-                  type="button"
-                  disabled={activeSocialProject.tracks.length === 0}
-                  onClick={() => {
-                    if (activeSocialProject.tracks.length > 0) {
-                      handlePlaySocialTrack(
-                        activeSocialProject.tracks[0],
-                        activeSocialProject.tracks
-                      );
-                    }
-                  }}
-                  className="h-12 w-12 rounded-full bg-[#8C271E] text-white shadow-lg shadow-[#8C271E]/25 inline-flex items-center justify-center hover:scale-105 transition cursor-pointer"
-                >
-                  <Play size={20} fill="currentColor" className="ml-0.5" />
-                </button>
-              </div>
+              {activeSocialProject.tracks.map((trk, idx) =>
+                renderSocialTrackRow(trk, idx, activeSocialProject.tracks)
+              )}
             </div>
-          </div>
-
-          <div className="tempo-card rounded-3xl p-3 space-y-1">
-            {activeSocialProject.tracks.map((trk, idx) =>
-              renderSocialTrackRow(trk, idx, activeSocialProject.tracks)
-            )}
           </div>
         </div>
       ) : mode === 'discover' ? (
@@ -941,7 +1298,7 @@ export function SocialHubView({
                   <div
                     key={artist.uid}
                     onClick={() => openArtistPortfolio(artist.uid)}
-                    className="tempo-card rounded-2xl p-4 flex flex-col justify-between gap-3 hover:border-slate-300 dark:hover:border-zinc-700 transition cursor-pointer"
+                    className="tempo-card rounded-2xl p-4 flex flex-col justify-between gap-3 hover:border-[#8C271E]/40 transition cursor-pointer"
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -964,7 +1321,7 @@ export function SocialHubView({
                             {artist.name}
                           </p>
                           {isMe && (
-                            <span className="rounded-md bg-[#8C271E]/12 text-[#8C271E] px-1.5 py-0.5 text-[9px] font-semibold">
+                            <span className="rounded-md bg-[#8C271E]/12 text-[#8C271E] dark:text-[#E56B5F] px-1.5 py-0.5 text-[9px] font-semibold">
                               Moi
                             </span>
                           )}
@@ -982,7 +1339,9 @@ export function SocialHubView({
                         <span>{artist.followersCount} abonnés</span>
                         <span>·</span>
                         <span>
-                          {artist.averageRating > 0 ? `★ ${artist.averageRating}/10` : `${artist.projectsCount} proj.`}
+                          {artist.averageRating > 0
+                            ? `★ ${artist.averageRating}/10`
+                            : `${artist.projectsCount} proj.`}
                         </span>
                       </div>
 
@@ -1005,7 +1364,7 @@ export function SocialHubView({
                             className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition cursor-pointer ${
                               artist.isFollowedByMe
                                 ? 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200'
-                                : 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                                : 'bg-[#8C271E] text-white'
                             }`}
                           >
                             {artist.isFollowedByMe ? 'Abonné ✓' : 'S’abonner'}
@@ -1038,7 +1397,7 @@ export function SocialHubView({
                   onClick={() => setFeedFilter(id)}
                   className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
                     feedFilter === id
-                      ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-2xs'
+                      ? 'bg-[#8C271E] text-white shadow-2xs'
                       : 'text-slate-500 dark:text-zinc-400'
                   }`}
                 >
@@ -1091,7 +1450,7 @@ export function SocialHubView({
                             <button
                               type="button"
                               onClick={() => openArtistPortfolio(proj.ownerUid)}
-                              className="text-xs font-semibold text-[#8C271E] hover:underline cursor-pointer"
+                              className="text-xs font-semibold text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
                             >
                               {proj.ownerName}
                             </button>
@@ -1102,7 +1461,7 @@ export function SocialHubView({
 
                           <h3
                             onClick={() => setViewingSocialProjectId(proj.id)}
-                            className="text-base sm:text-lg font-bold text-slate-900 dark:text-zinc-100 hover:text-[#8C271E] transition cursor-pointer truncate"
+                            className="text-base sm:text-lg font-bold text-slate-900 dark:text-zinc-100 hover:text-[#8C271E] dark:hover:text-[#E56B5F] transition cursor-pointer truncate"
                           >
                             {proj.title}
                           </h3>
@@ -1132,9 +1491,9 @@ export function SocialHubView({
                         <button
                           type="button"
                           onClick={() => setViewingSocialProjectId(proj.id)}
-                          className="rounded-full border border-slate-200 dark:border-zinc-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 transition cursor-pointer"
+                          className="rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 px-3.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-zinc-100 transition cursor-pointer"
                         >
-                          Ouvrir l’album
+                          Fiche projet
                         </button>
 
                         <button
@@ -1144,19 +1503,23 @@ export function SocialHubView({
                               handlePlaySocialTrack(proj.tracks[0], proj.tracks);
                             }
                           }}
-                          className="h-10 w-10 rounded-full bg-[#8C271E] text-white shadow-md shadow-[#8C271E]/20 inline-flex items-center justify-center hover:scale-105 transition cursor-pointer"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
                         >
                           {isPlayingProj ? (
-                            <Pause size={16} fill="currentColor" />
+                            <>
+                              <Pause size={13} fill="currentColor" /> Pause
+                            </>
                           ) : (
-                            <Play size={16} fill="currentColor" className="ml-0.5" />
+                            <>
+                              <Play size={13} fill="currentColor" className="ml-0.5" /> Écouter
+                            </>
                           )}
                         </button>
                       </div>
                     </div>
 
                     {/* Tracklist inside Project Card */}
-                    <div className="divide-y divide-slate-100 dark:divide-zinc-800/60 pt-2 border-t border-slate-100 dark:border-zinc-800/80">
+                    <div className="space-y-2 pt-3 border-t border-slate-100 dark:border-zinc-800/80">
                       {proj.tracks.map((trk, idx) =>
                         renderSocialTrackRow(trk, idx, proj.tracks)
                       )}
@@ -1168,7 +1531,7 @@ export function SocialHubView({
           )}
         </div>
       ) : mode === 'profile' ? (
-        /* ================= SUB-VIEW 2: SPOTIFY ARTIST PROFILE & PORTFOLIO ================= */
+        /* ================= SUB-VIEW 2: ARTIST PROFILE & PORTFOLIO (ROWAV STUDIO COHERENT) ================= */
         <div className="space-y-6">
           {!isViewingOwnProfile && (
             <button
@@ -1177,23 +1540,18 @@ export function SocialHubView({
                 setViewingArtistUid(null);
                 setMode('discover');
               }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-zinc-200 cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 px-3.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-zinc-100 cursor-pointer"
             >
               <ChevronLeft size={14} /> Tous les artistes
             </button>
           )}
 
-          {/* Spotify Artist Banner & Stats Hero */}
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-[#111114] p-6 sm:p-8">
-            <div
-              className="pointer-events-none absolute -top-28 -right-24 h-80 w-80 rounded-full opacity-25 blur-3xl"
-              style={getCoverGradientStyle(activeArtistProfile.coverGradient)}
-            />
-
-            <div className="relative flex flex-col sm:flex-row items-center sm:items-end justify-between gap-6">
-              <div className="flex flex-col sm:flex-row items-center sm:items-end gap-5 text-center sm:text-left">
+          {/* Artist Banner & Stats Hero */}
+          <div className="tempo-card rounded-3xl p-6 sm:p-7 space-y-6">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-5">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
                 <div
-                  className="h-28 w-28 sm:h-36 sm:w-36 rounded-full flex items-center justify-center text-white font-extrabold text-3xl shadow-xl border-4 border-white dark:border-zinc-900 overflow-hidden shrink-0"
+                  className="h-28 w-28 sm:h-32 sm:w-32 rounded-[24px] flex items-center justify-center text-white font-extrabold text-3xl shadow-xl border border-slate-200/70 dark:border-zinc-800 overflow-hidden shrink-0"
                   style={getCoverGradientStyle(activeArtistProfile.coverGradient)}
                 >
                   {activeArtistProfile.avatarUrl ? (
@@ -1208,10 +1566,10 @@ export function SocialHubView({
                 </div>
 
                 <div className="space-y-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 text-[#8C271E] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 text-[#8C271E] dark:text-[#E56B5F] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
                     <Sparkles size={11} /> Artiste Vérifié · Portfolio Rowav
                   </div>
-                  <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
+                  <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
                     {activeArtistProfile.name}
                   </h1>
                   <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-xl">
@@ -1239,8 +1597,8 @@ export function SocialHubView({
                 </div>
               </div>
 
-              {/* Profile Action Buttons */}
-              <div className="flex items-center gap-2 shrink-0">
+              {/* Profile Action Pills */}
+              <div className="flex flex-wrap items-center justify-center gap-2 shrink-0">
                 {isViewingOwnProfile ? (
                   <>
                     <button
@@ -1253,14 +1611,14 @@ export function SocialHubView({
                         setEditGradient(myProfile.coverGradient || 'sunset');
                         setEditingProfile(true);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-zinc-100 transition cursor-pointer"
                     >
                       <Pencil size={12} /> Modifier le profil
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowPublishSheet(true)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-4 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
                     >
                       <Plus size={14} /> Publier au portfolio
                     </button>
@@ -1272,8 +1630,8 @@ export function SocialHubView({
                       onClick={() => void handleToggleFollow(activeArtistProfile)}
                       className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition cursor-pointer ${
                         activeArtistProfile.isFollowedByMe
-                          ? 'border border-slate-300 dark:border-zinc-700 bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-zinc-100'
-                          : 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                          ? 'bg-slate-100 dark:bg-zinc-900 text-slate-900 dark:text-zinc-100'
+                          : 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
                       }`}
                     >
                       {activeArtistProfile.isFollowedByMe ? (
@@ -1289,7 +1647,7 @@ export function SocialHubView({
                     <button
                       type="button"
                       onClick={() => openDirectMessageWith(activeArtistProfile.uid)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold shadow-sm hover:opacity-95 transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-4 py-2 text-xs font-semibold transition cursor-pointer"
                     >
                       <MessageCircle size={14} /> Message
                     </button>
@@ -1298,8 +1656,8 @@ export function SocialHubView({
               </div>
             </div>
 
-            {/* Artist Stats Grid (Spotify / Apple Studio Stats) */}
-            <div className="relative mt-6 pt-5 border-t border-slate-100 dark:border-zinc-800/80 grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {/* Artist Stats Grid */}
+            <div className="pt-5 border-t border-slate-100 dark:border-zinc-800/80 grid grid-cols-2 sm:grid-cols-5 gap-3">
               <div className="rounded-2xl bg-slate-50/80 dark:bg-zinc-900/60 p-3">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Abonnés
@@ -1340,7 +1698,7 @@ export function SocialHubView({
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   Note moyenne
                 </p>
-                <p className="font-mono text-lg font-bold text-[#8C271E] mt-0.5">
+                <p className="font-mono text-lg font-bold text-[#8C271E] dark:text-[#E56B5F] mt-0.5">
                   {activeArtistProfile.averageRating > 0
                     ? `★ ${activeArtistProfile.averageRating}/10`
                     : '— /10'}
@@ -1385,14 +1743,14 @@ export function SocialHubView({
                         <button
                           type="button"
                           onClick={() => setShowPublishSheet(true)}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950 px-4 py-2 text-xs font-semibold cursor-pointer"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold cursor-pointer"
                         >
                           <Share2 size={13} /> Publier un projet
                         </button>
                       )}
                     </div>
                   ) : (
-                    <div className="tempo-card rounded-3xl p-2.5 divide-y divide-slate-100 dark:divide-zinc-800/60">
+                    <div className="space-y-2">
                       {artistTracks.map((trk, idx) =>
                         renderSocialTrackRow(trk, idx, artistTracks, true)
                       )}
@@ -1400,7 +1758,7 @@ export function SocialHubView({
                   )}
                 </section>
 
-                {/* Artist Portfolio / Discography (Published Projects + Own Studio Projects if viewing my profile) */}
+                {/* Artist Portfolio / Discography */}
                 <section className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
@@ -1410,7 +1768,7 @@ export function SocialHubView({
                       <button
                         type="button"
                         onClick={() => setShowPublishSheet(true)}
-                        className="text-xs font-semibold text-[#8C271E] hover:underline cursor-pointer"
+                        className="text-xs font-semibold text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
                       >
                         + Ajouter un projet au portfolio
                       </button>
@@ -1448,7 +1806,7 @@ export function SocialHubView({
                                   handlePlaySocialTrack(proj.tracks[0], proj.tracks);
                                 }
                               }}
-                              className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-full bg-[#8C271E] text-white flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer"
+                              className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-slate-950/80 text-white flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer"
                             >
                               <Play size={16} fill="currentColor" className="ml-0.5" />
                             </button>
@@ -1485,7 +1843,6 @@ export function SocialHubView({
                   )}
                 </section>
 
-                {/* If viewing Own Profile, also show Studio Projects & Playlists quick access */}
                 {isViewingOwnProfile && playlists.length > 0 && (
                   <section className="space-y-3">
                     <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
@@ -1496,7 +1853,7 @@ export function SocialHubView({
                         <div
                           key={pl.id}
                           onClick={() => onOpenPlaylist?.(pl.id)}
-                          className="tempo-card rounded-2xl p-3.5 flex items-center gap-3 hover:border-slate-300 dark:hover:border-zinc-700 transition cursor-pointer"
+                          className="tempo-card rounded-2xl p-3.5 flex items-center gap-3 hover:border-[#8C271E]/40 transition cursor-pointer"
                         >
                           <div
                             className="h-12 w-12 rounded-xl flex items-center justify-center text-white font-bold text-xs shrink-0 overflow-hidden"
@@ -1532,7 +1889,6 @@ export function SocialHubView({
       ) : (
         /* ================= SUB-VIEW 3: MESSAGES DIRECTS (DM) ================= */
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-h-[480px]">
-          {/* Left: Artists Conversation List */}
           <div className="tempo-card rounded-3xl p-3 space-y-2">
             <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Conversations Studio
@@ -1553,7 +1909,7 @@ export function SocialHubView({
                       onClick={() => setActiveChatUid(artist.uid)}
                       className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition cursor-pointer ${
                         isSelected
-                          ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                          ? 'bg-[#8C271E] text-white'
                           : 'hover:bg-slate-100 dark:hover:bg-zinc-900 text-slate-900 dark:text-zinc-100'
                       }`}
                     >
@@ -1578,7 +1934,6 @@ export function SocialHubView({
             </div>
           </div>
 
-          {/* Right: Active Chat Thread */}
           <div className="md:col-span-2 tempo-card rounded-3xl flex flex-col justify-between overflow-hidden">
             {(() => {
               const partner =
@@ -1597,7 +1952,6 @@ export function SocialHubView({
 
               return (
                 <>
-                  {/* Chat Header */}
                   <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-100 dark:border-zinc-800">
                     <div
                       onClick={() => openArtistPortfolio(partner.uid)}
@@ -1625,14 +1979,13 @@ export function SocialHubView({
                       className={`rounded-full px-3 py-1 text-[11px] font-semibold transition cursor-pointer ${
                         partner.isFollowedByMe
                           ? 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200'
-                          : 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-950'
+                          : 'bg-[#8C271E] text-white'
                       }`}
                     >
                       {partner.isFollowedByMe ? 'Abonné ✓' : 'S’abonner'}
                     </button>
                   </div>
 
-                  {/* Messages List */}
                   <div className="flex-1 p-5 space-y-3 overflow-y-auto max-h-[340px]">
                     {thread.length === 0 ? (
                       <div className="py-12 text-center space-y-1.5">
@@ -1676,7 +2029,6 @@ export function SocialHubView({
                     )}
                   </div>
 
-                  {/* Message Input */}
                   <form
                     onSubmit={handleSendMessage}
                     className="p-3.5 border-t border-slate-100 dark:border-zinc-800 flex items-center gap-2"
@@ -1711,7 +2063,7 @@ export function SocialHubView({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-sm rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#141010] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
               <div>
@@ -1762,7 +2114,7 @@ export function SocialHubView({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#141010] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
               <div>
@@ -1823,7 +2175,6 @@ export function SocialHubView({
               </div>
             )}
 
-            {/* Quick Create New Playlist with this track */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1855,7 +2206,7 @@ export function SocialHubView({
         </div>
       )}
 
-      {/* ================= MODAL: PUBLISH A PROJECT TO KORA SOCIAL ================= */}
+      {/* ================= MODAL: PUBLISH A PROJECT TO ROWAV SOCIAL ================= */}
       {showPublishSheet && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
@@ -1863,7 +2214,7 @@ export function SocialHubView({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-lg rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#141010] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
               <div>
@@ -1969,7 +2320,7 @@ export function SocialHubView({
           <form
             onClick={(e) => e.stopPropagation()}
             onSubmit={handleSaveMyProfile}
-            className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#111114] p-5 shadow-2xl space-y-4"
+            className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-[#141010] p-5 shadow-2xl space-y-4"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-900 dark:text-zinc-100">

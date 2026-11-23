@@ -144,16 +144,27 @@ export function ProjectAlbumModal({
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('kora_project_tracklist_details') === '1';
   });
+  const project: MusicProject | null = useMemo(
+    () => (projectId ? state.musicProjects.find((p) => p.id === projectId) || null : null),
+    [projectId, state.musicProjects]
+  );
+
   const toggleTracklistDetails = () => {
     setShowTracklistDetails((prev) => {
       const next = !prev;
       if (typeof window !== 'undefined') {
         window.localStorage.setItem('kora_project_tracklist_details', next ? '1' : '0');
       }
+      const hasActiveSprint = (project?.sprints || []).some((s) => !s.completedAt);
       if (!next) {
+        // Hidden details mode -> main page is Tracklist
+        setProjectTab('tracklist');
         setShowAddTrack(false);
         setOpenTrackMenuId(null);
         setVersionPickerTrackId(null);
+      } else {
+        // Details / Studio mode active -> main page is active Sprint if present, else Tracklist
+        setProjectTab(hasActiveSprint ? 'sprint' : 'tracklist');
       }
       return next;
     });
@@ -187,15 +198,12 @@ export function ProjectAlbumModal({
     timerId: number | null;
   } | null>(null);
 
-  const project: MusicProject | null = useMemo(
-    () => (projectId ? state.musicProjects.find((p) => p.id === projectId) || null : null),
-    [projectId, state.musicProjects]
-  );
-
-  // Always default to "Tracklist" first and scroll to top when opening a project
+  // When hidden-details mode is ON (!showTracklistDetails), main page is Tracklist.
+  // When hidden-details mode is OFF (showTracklistDetails), main page is Sprint if present!
   useEffect(() => {
     if (!project) return;
-    setProjectTab('tracklist');
+    const hasActiveSprint = (project.sprints || []).some((s) => !s.completedAt);
+    setProjectTab(showTracklistDetails && hasActiveSprint ? 'sprint' : 'tracklist');
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [project?.id]);
 
@@ -1099,28 +1107,40 @@ export function ProjectAlbumModal({
               </div>
             </div>
 
-            {/* Studio Sub-Tabs (visible in Studio/Details mode, hidden in pure Spotify listening mode!) */}
+            {/* Studio Sub-Tabs (visible in Studio/Details mode, hidden in pure listening mode!) */}
             {showTracklistDetails && (
             <nav
               aria-label="Vues du projet"
               className="flex items-center gap-5 border-b border-slate-200/80 dark:border-zinc-800/80 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             >
               {(
-                [
-                  ['tracklist', 'Tracklist', String(projectTracks.length)],
-                  [
-                    'sprint',
-                    'Sprint actif',
-                    activeSprint ? `${activeSprint.trackIds.length}/3` : null,
-                  ],
-                  [
-                    'harmonization',
-                    'Harmonisation',
-                    projectTracks.length > 0
-                      ? `${harmonizationReadyCount}/${projectTracks.length}`
-                      : null,
-                  ],
-                ] as const
+                activeSprint
+                  ? ([
+                      [
+                        'sprint',
+                        'Sprint actif',
+                        `${activeSprint.trackIds.length}/3`,
+                      ],
+                      ['tracklist', 'Tracklist', String(projectTracks.length)],
+                      [
+                        'harmonization',
+                        'Harmonisation',
+                        projectTracks.length > 0
+                          ? `${harmonizationReadyCount}/${projectTracks.length}`
+                          : null,
+                      ],
+                    ] as const)
+                  : ([
+                      ['tracklist', 'Tracklist', String(projectTracks.length)],
+                      ['sprint', 'Sprint actif', null],
+                      [
+                        'harmonization',
+                        'Harmonisation',
+                        projectTracks.length > 0
+                          ? `${harmonizationReadyCount}/${projectTracks.length}`
+                          : null,
+                      ],
+                    ] as const)
               ).map(([id, label, badge]) => {
                 const active = projectTab === id;
                 return (

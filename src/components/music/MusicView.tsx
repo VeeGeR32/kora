@@ -17,7 +17,7 @@ import {
   Star,
   Users,
 } from 'lucide-react';
-import type { MusicTrack } from '../../types';
+import type { MusicTrack, SocialTrackItem } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { DrivePermanentSetupModal, DriveSourcesManager } from './DrivePermanentSetupModal';
@@ -181,6 +181,7 @@ export function MusicView({
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
   const [socialTargetArtistUid, setSocialTargetArtistUid] = useState<string | null>(null);
+  const [socialTargetTrack, setSocialTargetTrack] = useState<SocialTrackItem | null>(null);
   const [openProjectId, setOpenProjectIdState] = useState<string | null>(
     () => state.preferences.lastSession?.openMusicProjectId || null
   );
@@ -746,6 +747,11 @@ export function MusicView({
               setDetailTarget({ groupKey: grp.groupKey, trackId });
             }
           }}
+          onOpenSocialTrack={(soc) => {
+            setOpenPlaylistId(null);
+            setSocialTargetTrack(soc);
+            setSubTab('social');
+          }}
           onOpenArtistProfile={(artistUid) => {
             setOpenPlaylistId(null);
             setSocialTargetArtistUid(artistUid);
@@ -1131,12 +1137,10 @@ export function MusicView({
                     <div
                       key={soc.id}
                       onClick={() => {
-                        if (isCurrent) {
-                          player.togglePlay();
-                        } else {
-                          void player.playTrack(playable, 0, queue);
-                        }
+                        setSocialTargetTrack(soc);
+                        setSubTab('social');
                       }}
+                      title="Clic sur la carte pour ouvrir la fiche du son · Clic sur ▶ pour écouter"
                       className={`tempo-card rounded-2xl p-3.5 flex items-center justify-between gap-3 transition cursor-pointer ${
                         isCurrent
                           ? 'ring-1 ring-[#8C271E] bg-[#8C271E]/8'
@@ -1144,8 +1148,18 @@ export function MusicView({
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className="relative h-12 w-12 rounded-xl overflow-hidden shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-xs"
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isCurrent) {
+                              player.togglePlay();
+                            } else {
+                              void player.playTrack(playable, 0, queue);
+                            }
+                          }}
+                          title={isPlayingThis ? 'Pause' : 'Écouter ce son'}
+                          className="relative h-12 w-12 rounded-xl overflow-hidden shrink-0 flex items-center justify-center text-white font-bold text-xs shadow-xs cursor-pointer"
                           style={getCoverGradientStyle(soc.coverGradient)}
                         >
                           {soc.coverUrl ? (
@@ -1157,14 +1171,14 @@ export function MusicView({
                           ) : (
                             soc.title.slice(0, 2).toUpperCase()
                           )}
-                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white">
+                          <span className="absolute inset-0 bg-black/35 flex items-center justify-center text-white">
                             {isPlayingThis ? (
                               <Pause size={15} fill="currentColor" />
                             ) : (
                               <Play size={15} fill="currentColor" className="ml-0.5" />
                             )}
-                          </div>
-                        </div>
+                          </span>
+                        </button>
 
                         <div className="min-w-0">
                           <p
@@ -1561,13 +1575,15 @@ export function MusicView({
         />
       )}
 
-      {/* ================= TAB 4 & 5: KORA SOCIAL & PROFIL ARTISTE PORTFOLIO ================= */}
+      {/* ================= TAB 4 & 5: ROWAV SOCIAL & PROFIL ARTISTE PORTFOLIO ================= */}
       {(subTab === 'social' || subTab === 'profile') && (
         <SocialHubView
           initialMode={subTab === 'profile' ? 'profile' : 'discover'}
           initialArtistUid={
             subTab === 'profile' ? null : socialTargetArtistUid
           }
+          initialSocialTrack={subTab === 'profile' ? null : socialTargetTrack}
+          onClearInitialSocialTrack={() => setSocialTargetTrack(null)}
           onOpenOwnProject={(projId) => setOpenProjectId(projId)}
           onOpenPlaylist={(plId) => setOpenPlaylistId(plId)}
         />
