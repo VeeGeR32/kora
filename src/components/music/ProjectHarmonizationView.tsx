@@ -292,7 +292,7 @@ export function ProjectHarmonizationView({
             </h3>
           </div>
           <span className="font-mono text-xs font-semibold tabular-nums text-slate-600 dark:text-zinc-300">
-            {readiness.pct}% (≥ Pré-mix v3)
+            {readiness.pct}% (≥ v4 - Pré-mix)
           </span>
         </div>
 
@@ -307,7 +307,7 @@ export function ProjectHarmonizationView({
 
         {!readiness.unlocked && readiness.total > 0 && (
           <p className="text-[11px] text-slate-400">
-            Fais avancer tous tes titres au moins jusqu’à <strong>Pré-mix (v3)</strong> pour débloquer la phase de finition globale.
+            Fais avancer tous tes titres au moins jusqu’à <strong>v4 - Pré-mix</strong> pour débloquer la phase de finition globale.
           </p>
         )}
       </div>

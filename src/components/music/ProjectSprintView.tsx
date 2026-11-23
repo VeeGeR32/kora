@@ -271,7 +271,7 @@ export function ProjectSprintView({
                 <p className="text-[11px] text-slate-400 mt-1">
                   Focus sur {activeSprintTracks.length}/{MAX_SPRINT_TRACKS} titre
                   {activeSprintTracks.length > 1 ? 's' : ''} · objectif :{' '}
-                  <strong className="text-slate-600 dark:text-zinc-300">Pré-mix (v3)</strong>
+                  <strong className="text-slate-600 dark:text-zinc-300">v4 - Pré-mix</strong>
                   {activeSprint.targetDate ? ` · échéance ${fmtTargetDate(activeSprint.targetDate)}` : ''}
                 </p>
               </div>
@@ -284,7 +284,7 @@ export function ProjectSprintView({
                   title={
                     canValidateSprint
                       ? 'Valider ce sprint'
-                      : `Tous les titres doivent atteindre au moins Pré-mix (v3) (${readyCount}/${activeSprintTracks.length})`
+                      : `Tous les titres doivent atteindre au moins v4 - Pré-mix (${readyCount}/${activeSprintTracks.length})`
                   }
                   className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                     canValidateSprint
@@ -477,7 +477,7 @@ export function ProjectSprintView({
             Aucun sprint actif sur ce projet
           </p>
           <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-            Découpe ta tracklist en sprints de <strong>3 titres max</strong> pour avancer en micro-batch jusqu’à <strong>Pré-mix (v3)</strong>.
+            Découpe ta tracklist en sprints de <strong>3 titres max</strong> pour avancer en micro-batch jusqu’à <strong>v4 - Pré-mix</strong>.
           </p>
           <button
             type="button"

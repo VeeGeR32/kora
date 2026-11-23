@@ -307,7 +307,7 @@ export function DocumentationPage({
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-zinc-50">
-                3. Pipeline de production (v0 → v4) & Notation analytique
+                3. Pipeline de production (v0 → v5) & Notation analytique
               </h2>
               <p className="text-xs text-slate-400">
                 Un système conçu pour savoir immédiatement quels morceaux finir en priorité
@@ -320,32 +320,32 @@ export function DocumentationPage({
             {[
               {
                 step: '0/5',
-                title: 'Brouillon (v0)',
+                title: 'v0 - Brouillon',
                 desc: 'Idée brute, toplines ou structure pas encore complète.',
               },
               {
                 step: '1/5',
-                title: 'Squelette',
+                title: 'v1 - Squelette',
                 desc: 'Structure écrite à 100 %. Les lignes à revoir utilisent la balise [FIX].',
               },
               {
                 step: '2/5',
-                title: 'Maquette (v1)',
+                title: 'v2 - Maquette',
                 desc: 'Prise témoin enregistrée pour valider le placement, le flow et les respirations.',
               },
               {
                 step: '3/5',
-                title: 'Rec final (v2)',
+                title: 'v3 - Rec',
                 desc: 'Prises voix définitives verrouillées, zéro balise [FIX] restante.',
               },
               {
                 step: '4/5',
-                title: 'Pré-mix (v3)',
+                title: 'v4 - Pré-mix',
                 desc: 'Balance et nettoyage prêts. Débloque la phase d’Harmonisation du projet.',
               },
               {
                 step: '5/5',
-                title: 'Masterisé (v4)',
+                title: 'v5 - Master',
                 desc: 'Mix & Master finalisés, prêt pour la sortie.',
               },
             ].map((st) => (
@@ -424,7 +424,7 @@ export function DocumentationPage({
                 Sprints (Micro-batch de 3 titres max)
               </p>
               <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
-                Dans le mode Studio d’un projet, l’onglet <strong>Sprint actif</strong> te permet de sélectionner <strong>maximum 3 titres à la fois</strong> (et de planifier les sprints suivants à l’avance) pour les amener jusqu’à <strong>Pré-mix (v3)</strong> sans t’éparpiller sur 15 morceaux en même temps.
+                Dans le mode Studio d’un projet, l’onglet <strong>Sprint actif</strong> te permet de sélectionner <strong>maximum 3 titres à la fois</strong> (et de planifier les sprints suivants à l’avance) pour les amener jusqu’à <strong>v4 - Pré-mix</strong> sans t’éparpiller sur 15 morceaux en même temps.
               </p>
             </div>
 
@@ -434,7 +434,7 @@ export function DocumentationPage({
                 Harmonisation & Séquençage
               </p>
               <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
-                L’onglet <strong>Harmonisation</strong> affiche ta jauge de préparation globale (<code className="font-mono">≥ Pré-mix v3</code>), un tableau de séquençage rapide pour alterner les ambiances (<em>⚡ Énergique</em>, <em>🌊 Chill</em>, <em>🧪 Expé</em>) et la checklist finale (chaîne vocale, LUFS, transitions, export).
+                L’onglet <strong>Harmonisation</strong> affiche ta jauge de préparation globale (<code className="font-mono">≥ v4 - Pré-mix</code>), un tableau de séquençage rapide pour alterner les ambiances (<em>⚡ Énergique</em>, <em>🌊 Chill</em>, <em>🧪 Expé</em>) et la checklist finale (chaîne vocale, LUFS, transitions, export).
               </p>
             </div>
 
@@ -487,7 +487,7 @@ export function DocumentationPage({
                 Balises de réécriture [FIX]
               </p>
               <p className="text-slate-500 dark:text-zinc-400 leading-relaxed">
-                Quand une rime ou une mesure est provisoire, clique sur <strong>+ [FIX]</strong> dans l’éditeur. Kora affiche un badge <code className="font-mono text-rose-500">[FIX] ×N</code> sur la carte du morceau et t’avertit avant de passer en <em>Rec final (v2)</em>.
+                Quand une rime ou une mesure est provisoire, clique sur <strong>+ [FIX]</strong> dans l’éditeur. Kora affiche un badge <code className="font-mono text-rose-500">[FIX] ×N</code> sur la carte du morceau et t’avertit avant de passer en <em>v3 - Rec</em>.
               </p>
             </div>
 
