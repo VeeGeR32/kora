@@ -76,6 +76,9 @@ interface AudioPlayerContextValue {
   pendingOpenTrackId: string | null;
   requestOpenTrackPage: (trackId: string) => void;
   clearPendingOpenTrackPage: () => void;
+  pendingOpenLyricsDocId: string | null;
+  requestOpenLyricsDoc: (docId: string) => void;
+  clearPendingOpenLyricsDoc: () => void;
   // Rowav Connect (Spotify Connect-style cross-device live playback & remote control)
   localDevice: LocalDeviceInfo;
   remoteDevice: { id: string; name: string; type: 'mobile' | 'tablet' | 'desktop' } | null;
@@ -115,6 +118,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   const [expanded, setExpanded] = useState(false);
   const [overlayCount, setOverlayCount] = useState(0);
   const [pendingOpenTrackId, setPendingOpenTrackId] = useState<string | null>(null);
+  const [pendingOpenLyricsDocId, setPendingOpenLyricsDocId] = useState<string | null>(null);
   const [remoteSession, setRemoteSession] = useState<LivePlaybackState | null>(null);
   const [abLoop, setAbLoop] = useState<{ start: number | null; end: number | null }>({
     start: null,
@@ -204,6 +208,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   }, []);
   const clearPendingOpenTrackPage = useCallback(() => {
     setPendingOpenTrackId(null);
+  }, []);
+  const requestOpenLyricsDoc = useCallback((docId: string) => {
+    setPendingOpenLyricsDocId(docId);
+  }, []);
+  const clearPendingOpenLyricsDoc = useCallback(() => {
+    setPendingOpenLyricsDocId(null);
   }, []);
 
   const repeatModeRef = useRef<RepeatMode>(repeatMode);
@@ -1732,6 +1742,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       pendingOpenTrackId,
       requestOpenTrackPage,
       clearPendingOpenTrackPage,
+      pendingOpenLyricsDocId,
+      requestOpenLyricsDoc,
+      clearPendingOpenLyricsDoc,
       localDevice,
       remoteDevice,
       isRemotePlayback,
@@ -1773,6 +1786,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       pendingOpenTrackId,
       requestOpenTrackPage,
       clearPendingOpenTrackPage,
+      pendingOpenLyricsDocId,
+      requestOpenLyricsDoc,
+      clearPendingOpenLyricsDoc,
       localDevice,
       remoteDevice,
       isRemotePlayback,

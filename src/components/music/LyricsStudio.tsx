@@ -265,24 +265,19 @@ export function LyricsStudio({
     }
   }, [activeDoc?.id, linkedTrack?.id, effectiveGrid.length]);
 
-  const isPlayingEitherLinked = Boolean(
-    player.isPlaying &&
-      player.currentTrack &&
-      ((linkedTrack && player.currentTrack.id === linkedTrack.id) ||
+  // Recognize playback of ANY version or prod belonging to the linked song (even if started from Sons / Projets / Accueil!)
+  const isCurrentTrackInLinkedSong = Boolean(
+    player.currentTrack &&
+      ((linkedGroup && linkedGroup.allTrackIds.includes(player.currentTrack.id)) ||
+        (linkedTrack && player.currentTrack.id === linkedTrack.id) ||
         (linkedProdTrack && player.currentTrack.id === linkedProdTrack.id))
   );
 
-  // Smooth ~5Hz playhead tracker for active 4-bar block & live M1..M4 bar pulse
+  const isPlayingEitherLinked = Boolean(player.isPlaying && isCurrentTrackInLinkedSong);
+
+  // Smooth ~12Hz playhead tracker for active 4-bar block & live M1..M4 bar pulse
   useEffect(() => {
-    if (!activeDoc || !linkedTrack) {
-      setLivePlaySec(0);
-      return;
-    }
-    const isLoaded =
-      player.currentTrack &&
-      (player.currentTrack.id === linkedTrack.id ||
-        (linkedProdTrack && player.currentTrack.id === linkedProdTrack.id));
-    if (!isLoaded) {
+    if (!activeDoc || !linkedTrack || !isCurrentTrackInLinkedSong) {
       setLivePlaySec(0);
       return;
     }
@@ -292,7 +287,7 @@ export function LyricsStudio({
       setLivePlaySec(player.getLiveTime());
     }, 80);
     return () => window.clearInterval(id);
-  }, [activeDoc?.id, linkedTrack?.id, linkedProdTrack?.id, player.currentTrack?.id, player.isPlaying, player.currentTime]);
+  }, [activeDoc?.id, linkedTrack?.id, isCurrentTrackInLinkedSong, player.currentTrack?.id, player.isPlaying, player.currentTime]);
 
   const handleBarBlocksChange = (nextBlocks: LyricsBarBlock[]) => {
     if (!activeDoc) return;
@@ -332,17 +327,15 @@ export function LyricsStudio({
   };
 
   const handleJumpToBarSec = (startSec: number) => {
-    const targetTrack =
-      player.currentTrack && linkedProdTrack && player.currentTrack.id === linkedProdTrack.id
-        ? linkedProdTrack
-        : linkedTrack || linkedProdTrack;
-    if (!targetTrack) return;
-    if (player.currentTrack?.id === targetTrack.id) {
+    // If ANY version/prod of this song is already loaded in the player, seek right inside THAT active version!
+    if (isCurrentTrackInLinkedSong && player.currentTrack) {
       player.seek(startSec);
       if (!player.isPlaying) player.togglePlay();
-    } else {
-      void player.playTrack(targetTrack, startSec);
+      return;
     }
+    const targetTrack = linkedTrack || linkedProdTrack;
+    if (!targetTrack) return;
+    void player.playTrack(targetTrack, startSec);
   };
 
   const handleToggleBlockLoop = (startSec: number, endSec: number) => {
@@ -523,9 +516,7 @@ export function LyricsStudio({
     return activeDoc.content.split('\n').filter((l) => l.trim().length > 0).length;
   }, [activeDoc?.content]);
 
-  const isPlayingLinked = Boolean(
-    linkedTrack && player.currentTrack?.id === linkedTrack.id && player.isPlaying
-  );
+  const isPlayingLinked = isPlayingEitherLinked;
 
   const activeIdx = activeDoc ? visibleDocs.findIndex((d) => d.id === activeDoc.id) : -1;
 
@@ -1136,7 +1127,7 @@ export function LyricsStudio({
                         disabled={!linkedTrack}
                         onClick={() => {
                           if (!linkedTrack) return;
-                          if (player.currentTrack?.id === linkedTrack.id) player.togglePlay();
+                          if (isCurrentTrackInLinkedSong) player.togglePlay();
                           else void player.playTrack(linkedTrack);
                         }}
                         className="h-8 w-8 rounded-full bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0 hover:opacity-90 disabled:opacity-25 transition cursor-pointer"

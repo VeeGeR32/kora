@@ -388,6 +388,17 @@ export function MusicView({
     player.clearPendingOpenTrackPage();
   }, [player.pendingOpenTrackId, trackGroups]);
 
+  // Open Lyrics Editor automatically when user taps "Éditer" from the player's Lyrics sheet
+  useEffect(() => {
+    if (!player.pendingOpenLyricsDocId) return;
+    const docId = player.pendingOpenLyricsDocId;
+    setDetailTarget(null);
+    setOpenProjectId(null);
+    setLyricsOpenRequest({ docId, nonce: Date.now() });
+    setSubTab('lyrics');
+    player.clearPendingOpenLyricsDoc();
+  }, [player.pendingOpenLyricsDocId]);
+
   const openLinkedLyrics = (track: MusicTrack) => {
     // Remember exact place the user came from so "Retour" in Textes brings them right back!
     setLyricsReturnContext({

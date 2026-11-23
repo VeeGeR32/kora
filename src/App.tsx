@@ -85,12 +85,15 @@ function KoraMusicApp() {
     state.musicTracks.length,
   ]);
 
-  // If user taps cover art inside the full-screen player while on Settings or Docs, switch back to MusicView so the Song Page opens!
+  // If user taps cover art or "Éditer les paroles" inside the player while on Settings or Docs, switch back to MusicView!
   useEffect(() => {
-    if (player.pendingOpenTrackId && (activePage === 'settings' || activePage === 'docs')) {
-      setActivePageState('dashboard');
+    if (
+      (player.pendingOpenTrackId || player.pendingOpenLyricsDocId) &&
+      (activePage === 'settings' || activePage === 'docs')
+    ) {
+      setActivePageState(player.pendingOpenLyricsDocId ? 'lyrics' : 'dashboard');
     }
-  }, [player.pendingOpenTrackId, activePage]);
+  }, [player.pendingOpenTrackId, player.pendingOpenLyricsDocId, activePage]);
 
   // Persist exact scroll position when leaving / closing the app on any device
   useEffect(() => {
