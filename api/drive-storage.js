@@ -238,65 +238,67 @@ async function resolveTrueSharedMusicFolderId(saToken, requestedFolderId) {
 }
 
 /**
- * Ensures ONE single `_Rowav_Data` folder owned by the user (using non-sensitive `drive.file` scope),
- * shares it with the Service Account as Editor, and automatically places it at the root of the user's
- * shared music folder (e.g. `musique/_Rowav_Data`) whenever possible (never in a subfolder!).
+ * Ensures ONE single `_Rowav_Data` folder directly at the root of the user's shared music folder
+ * (e.g. `musique/_Rowav_Data`), owned by the user (using their personal 15 Go / 5 To quota).
+ * NEVER creates `_Rowav_Data` in a subfolder or inside another `_Rowav_Data`.
  */
 async function ensureUserRowavDataFolder(userToken, saToken, saEmail, requestedFolderId) {
   const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId);
+  const targetParentId = musicRootId || 'root';
 
-  // 1. Check ALL `_Rowav_Data` folders created by Rowav (`drive.file` only sees Rowav-created folders!),
-  // so wherever the user moves `_Rowav_Data` (e.g. into `musique/_Rowav_Data`), we ALWAYS reuse it!
+  // 1. Search ONLY directly inside `targetParentId` (e.g. `musique/`)
   let folderId = null;
-  const userSearchQ = encodeURIComponent(
-    "name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+  const q = encodeURIComponent(
+    `'${targetParentId}' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false`
   );
-  const userSearchRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${userSearchQ}&fields=files(id,name,parents)&orderBy=createdTime%20asc&pageSize=10`,
+  const searchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=createdTime%20asc&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${userToken}` } }
   );
-  if (userSearchRes.status === 401) {
-    const txt = await userSearchRes.text().catch(() => '');
+  if (searchRes.status === 401) {
+    const txt = await searchRes.text().catch(() => '');
     return classifyDriveError(401, txt);
   }
-  if (userSearchRes.ok) {
-    const userSearchData = await userSearchRes.json();
-    const candidates = Array.isArray(userSearchData.files) ? userSearchData.files : [];
-    const inMusic = musicRootId
-      ? candidates.find((c) => Array.isArray(c.parents) && c.parents.includes(musicRootId))
-      : null;
-    folderId = inMusic?.id || candidates[0]?.id || null;
+  if (searchRes.ok) {
+    const searchData = await searchRes.json();
+    folderId = searchData.files?.[0]?.id || null;
   }
 
-  // 3. Create ONE `_Rowav_Data` folder if none exists yet
+  // 2. Create ONE `_Rowav_Data` directly inside `musique/` if not found
   if (!folderId) {
-    const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id,parents', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${userToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: '_Rowav_Data',
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: ['root'],
-      }),
-    });
+    const createRes = await fetch(
+      'https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: '_Rowav_Data',
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [targetParentId],
+        }),
+      }
+    );
     if (!createRes.ok) {
       const txt = await createRes.text().catch(() => '');
-      console.error(`[drive-storage] create root _Rowav_Data failed (${createRes.status}):`, txt.slice(0, 300));
+      console.error(
+        `[drive-storage] create _Rowav_Data inside ${targetParentId} failed (${createRes.status}):`,
+        txt.slice(0, 300)
+      );
       return classifyDriveError(createRes.status, txt);
     }
     const created = await createRes.json();
     folderId = created.id;
   }
 
-  // 4. Share `_Rowav_Data` with the Service Account (writer) so future PATCHes & cover GETs work silently
+  // 3. Ensure Service Account has Editor permission on `_Rowav_Data` for permanent silent PATCHes & cover GETs
   if (folderId && saEmail) {
     await fetch(
       `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
         folderId
-      )}/permissions?sendNotificationEmail=false`,
+      )}/permissions?sendNotificationEmail=false&supportsAllDrives=true`,
       {
         method: 'POST',
         headers: {
@@ -310,92 +312,31 @@ async function ensureUserRowavDataFolder(userToken, saToken, saEmail, requestedF
         }),
       }
     ).catch(() => {
-      // Non-fatal if permission already exists
+      // Non-fatal if permission already inherited/present
     });
   }
 
-  // 5. Try moving `_Rowav_Data` directly into the root of `musique/` (e.g. `musique/_Rowav_Data`)
-  // using the Service Account (which has Editor on both `musique` and `_Rowav_Data`).
-  let placedInMusicRoot = false;
-  if (folderId && musicRootId && folderId !== musicRootId) {
-    try {
-      const metaRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
-          folderId
-        )}?fields=parents&supportsAllDrives=true`,
-        { headers: { Authorization: `Bearer ${userToken}` } }
-      );
-      if (metaRes.ok) {
-        const meta = await metaRes.json();
-        const currentParents = Array.isArray(meta.parents) ? meta.parents : [];
-        if (currentParents.includes(musicRootId)) {
-          placedInMusicRoot = true;
-        } else {
-          const removeParam =
-            currentParents.length > 0
-              ? `&removeParents=${encodeURIComponent(currentParents.join(','))}`
-              : '';
-          const moveRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(
-              folderId
-            )}?addParents=${encodeURIComponent(musicRootId)}${removeParam}&fields=id,parents&supportsAllDrives=true`,
-            {
-              method: 'PATCH',
-              headers: {
-                Authorization: `Bearer ${saToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({}),
-            }
-          );
-          if (moveRes.ok) {
-            placedInMusicRoot = true;
-          }
-        }
-      }
-    } catch {
-      // Non-fatal: stays cleanly at Mon Drive/_Rowav_Data if Google disallows SA move
-    }
-  }
-
-  return { ok: true, id: folderId, placedInMusicRoot };
+  return { ok: true, id: folderId };
 }
 
 /**
- * Finds an EXISTING user-owned `_Rowav_Data` folder — checking `musique/_Rowav_Data` first,
- * then fallback to `Mon Drive/_Rowav_Data` shared with the Service Account.
- * NEVER creates a Service-Account-owned `_Rowav_Data` folder.
+ * Finds an EXISTING user-owned `_Rowav_Data` folder directly inside the user's shared music folder
+ * (e.g. `musique/_Rowav_Data`). NEVER creates a Service-Account-owned `_Rowav_Data` folder.
  */
 async function findExistingSharedUserRowavFolder(saToken, requestedFolderId) {
-  // 1. Prefer `_Rowav_Data` directly at the root of the user's shared music folder (e.g. `musique/_Rowav_Data`)
   const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId);
-  if (musicRootId) {
-    const inMusicQ = encodeURIComponent(
-      `'${musicRootId}' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners`
-    );
-    const inMusicRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${inMusicQ}&fields=files(id,name)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-      { headers: { Authorization: `Bearer ${saToken}` } }
-    );
-    if (inMusicRes.ok) {
-      const inMusicData = await inMusicRes.json();
-      if (inMusicData.files?.[0]?.id) {
-        return inMusicData.files[0].id;
-      }
-    }
-  }
+  if (!musicRootId) return null;
 
-  // 2. Fallback: ANY user-owned `_Rowav_Data` visible to the Service Account (whether moved into `musique/` or at root)
-  const q = encodeURIComponent(
-    "name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners"
+  const inMusicQ = encodeURIComponent(
+    `'${musicRootId}' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners`
   );
-  const searchRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=createdTime%20asc&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+  const inMusicRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${inMusicQ}&fields=files(id,name)&orderBy=createdTime%20asc&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${saToken}` } }
   );
-  if (!searchRes.ok) return null;
-  const data = await searchRes.json();
-  return data.files?.[0]?.id || null;
+  if (!inMusicRes.ok) return null;
+  const inMusicData = await inMusicRes.json();
+  return inMusicData.files?.[0]?.id || null;
 }
 
 async function ensureSubFolder(token, parentId, name) {

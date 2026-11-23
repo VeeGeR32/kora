@@ -190,10 +190,9 @@ export async function requestGoogleDriveAccessToken(
 }
 
 /**
- * Requests a non-sensitive `drive.file` Google Drive OAuth access token from the user's Google account.
- * Creates ONE clean `_Rowav_Data` folder directly at the root of the user's "Mon Drive"
- * (zero red Google CASA warning screen, zero access to the rest of the user's Drive,
- * uses the user's own 15 Go / 5 To Google Drive quota).
+ * Requests a read/write Google Drive OAuth access token from the user's Google account
+ * so `_Rowav_Data/` is created directly at the root of their shared music folder (e.g. `musique/_Rowav_Data`)
+ * using their personal Google Drive quota (15 Go / 5 To).
  */
 export async function requestGoogleDriveWriteAccessToken(
   config?: FirebaseUserConfig | null
@@ -201,7 +200,7 @@ export async function requestGoogleDriveWriteAccessToken(
   const bundle = initFirebaseClient(config);
   if (!bundle) throw new Error('Configuration Firebase manquante');
   const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/drive.file');
+  provider.addScope('https://www.googleapis.com/auth/drive');
   provider.setCustomParameters({ prompt: 'consent' });
   const res = await signInWithPopup(bundle.auth, provider, browserPopupRedirectResolver);
   const credential = GoogleAuthProvider.credentialFromResult(res);
