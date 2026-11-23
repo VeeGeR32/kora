@@ -488,11 +488,11 @@ export function syncBarBlocksWithGrid(
   return grid.map((g, idx) => {
     const pIdx = idx - startInsertIdx;
     const rawPara = pIdx >= 0 && pIdx < paragraphs.length ? paragraphs[pIdx] : '';
-    // Extract optional leading [Section] header from legacy paragraph
+    // Extract optional leading [Section] header from legacy paragraph (NEVER treat [FIX] tags as a section name!)
     let sectionLabel = g.suggestedSection;
     let text = rawPara;
     const headerMatch = rawPara.match(/^\[([^\]]+)\]\s*\n?([\s\S]*)$/);
-    if (headerMatch) {
+    if (headerMatch && !/^FIX(?::|$)/i.test(headerMatch[1].trim())) {
       sectionLabel = headerMatch[1].trim() || sectionLabel;
       text = (headerMatch[2] || '').trim();
     }

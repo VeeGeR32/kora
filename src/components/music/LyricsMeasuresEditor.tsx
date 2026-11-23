@@ -1,55 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
-  Clock,
   Crosshair,
   Loader2,
   Music,
+  Navigation,
   Pause,
-  PenLine,
   Play,
   Plus,
   RefreshCw,
   Repeat,
-  Sparkles,
 } from 'lucide-react';
 import type { LyricsBarBlock, LyricsBlockStatus, MusicTrack } from '../../types';
 import { computeFourBarGrid, type ComputedBarBlock } from '../../lib/audioAnalyzer';
 import { LyricLinesEditor } from './LyricLinesEditor';
 
 const SECTION_PRESETS = ['Intro', 'Couplet', 'Pré-refrain', 'Refrain', 'Pont', 'Outro'] as const;
+const STATUS_ORDER: LyricsBlockStatus[] = ['empty', 'planned', 'draft', 'done'];
 
-const STATUS_STYLE: Record<
+const STATUS_META: Record<
   LyricsBlockStatus,
-  { label: string; shortLabel: string; pill: string; border: string; bg: string }
+  { label: string; dot: string; pill: string; spine: string }
 > = {
   empty: {
     label: 'Instru',
-    shortLabel: 'Instru',
-    pill: 'bg-slate-100 dark:bg-zinc-800/80 text-slate-500 dark:text-zinc-400',
-    border: 'border-slate-200/70 dark:border-zinc-800/80',
-    bg: 'bg-slate-50/40 dark:bg-zinc-900/25',
+    dot: 'bg-slate-300 dark:bg-zinc-600',
+    pill: 'text-slate-400 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300',
+    spine: 'bg-transparent',
   },
   planned: {
     label: 'À écrire',
-    shortLabel: 'À écrire',
-    pill: 'bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82] border border-[#8C271E]/25',
-    border: 'border-dashed border-[#8C271E]/45 dark:border-[#8C271E]/55',
-    bg: 'bg-[#8C271E]/[0.03] dark:bg-[#8C271E]/[0.06]',
+    dot: 'bg-[#8C271E]',
+    pill: 'bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82]',
+    spine: 'bg-[#8C271E]/45',
   },
   draft: {
     label: 'Provisoire',
-    shortLabel: 'Provisoire',
-    pill: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-    border: 'border-amber-400/40 dark:border-amber-500/30',
-    bg: 'bg-white dark:bg-zinc-900/50',
+    dot: 'bg-amber-400',
+    pill: 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
+    spine: 'bg-amber-400/60',
   },
   done: {
     label: 'Validé',
-    shortLabel: 'Validé',
-    pill: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-    border: 'border-emerald-500/35 dark:border-emerald-500/30',
-    bg: 'bg-white dark:bg-zinc-900/55',
+    dot: 'bg-emerald-500',
+    pill: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
+    spine: 'bg-emerald-500/65',
   },
 };
 
@@ -109,10 +104,12 @@ export function LyricsMeasuresEditor({
   const [editingSectionIdx, setEditingSectionIdx] = useState<number | null>(null);
   const [followLive, setFollowLive] = useState(true);
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const blockFocusApisRef = useRef<
     Map<number, { focusStart: () => void; focusEnd: () => void }>
   >(new Map());
-  const blockCardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const blockRowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const userManualScrollUntilRef = useRef<number>(0);
 
   useEffect(() => {
     setBpmDraft(String(bpm));
@@ -122,28 +119,61 @@ export function LyricsMeasuresEditor({
     setKeyDraft(musicalKey);
   }, [musicalKey]);
 
-  // Compute active 4-bar block & exact bar (1..4 inside that block) in real time
+  // Pause auto-scroll briefly when the user scrolls manually so the view never fights their finger!
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const scrollParent = el.closest('.overflow-y-auto') as HTMLElement | null;
+    if (!scrollParent) return;
+    const onUserScroll = () => {
+      userManualScrollUntilRef.current = Date.now() + 3500;
+    };
+    scrollParent.addEventListener('wheel', onUserScroll, { passive: true });
+    scrollParent.addEventListener('touchstart', onUserScroll, { passive: true });
+    return () => {
+      scrollParent.removeEventListener('wheel', onUserScroll);
+      scrollParent.removeEventListener('touchstart', onUserScroll);
+    };
+  }, []);
+
+  // Real-time active block, exact bar (0..3) AND continuous progress ratio (0..1) inside the active 4 bars!
   const activeLocation = useMemo(() => {
-    if (!isPlayingThisSong && liveTimeSec <= 0) return { blockIdx: -1, barInBlock: -1 };
+    if (!isPlayingThisSong && liveTimeSec <= 0) {
+      return { blockIdx: -1, barInBlock: -1, progress: 0 };
+    }
     const idx = grid.findIndex((g) => liveTimeSec >= g.startSec - 0.05 && liveTimeSec < g.endSec);
-    if (idx < 0) return { blockIdx: -1, barInBlock: -1 };
+    if (idx < 0) return { blockIdx: -1, barInBlock: -1, progress: 0 };
     const g = grid[idx];
-    const barDur = Math.max(0.25, (g.endSec - g.startSec) / 4);
-    const barInBlock = Math.min(3, Math.max(0, Math.floor((liveTimeSec - g.startSec) / barDur)));
-    return { blockIdx: idx, barInBlock };
+    const span = Math.max(0.5, g.endSec - g.startSec);
+    const progress = Math.min(1, Math.max(0, (liveTimeSec - g.startSec) / span));
+    const barInBlock = Math.min(3, Math.max(0, Math.floor(progress * 4)));
+    return { blockIdx: idx, barInBlock, progress };
   }, [grid, isPlayingThisSong, liveTimeSec]);
 
-  // Smooth auto-scroll to active playing block when followLive is enabled
+  // Smooth Spotify-Lyrics-style centered auto-scroll following the active 4-bar block!
   const lastScrolledBlockRef = useRef<number>(-1);
   useEffect(() => {
     if (!followLive || !isPlayingThisSong || activeLocation.blockIdx < 0) return;
+    if (Date.now() < userManualScrollUntilRef.current) return;
     if (activeLocation.blockIdx === lastScrolledBlockRef.current) return;
     lastScrolledBlockRef.current = activeLocation.blockIdx;
-    const el = blockCardRefs.current.get(activeLocation.blockIdx);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const rowEl = blockRowRefs.current.get(activeLocation.blockIdx);
+    if (rowEl) {
+      rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [followLive, isPlayingThisSong, activeLocation.blockIdx]);
+
+  // Reset scroll tracker when user toggles Follow ON so it immediately glides to the active block
+  useEffect(() => {
+    if (followLive && isPlayingThisSong && activeLocation.blockIdx >= 0) {
+      userManualScrollUntilRef.current = 0;
+      lastScrolledBlockRef.current = activeLocation.blockIdx;
+      blockRowRefs.current.get(activeLocation.blockIdx)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  }, [followLive]);
 
   const updateBlock = (index: number, patch: Partial<LyricsBarBlock>) => {
     const next = blocks.map((b) => (b.index === index ? { ...b, ...patch } : b));
@@ -176,12 +206,12 @@ export function LyricsMeasuresEditor({
     updateBlock(index, { sectionLabel: nextLabel });
   };
 
-  const handleSetStatus = (index: number, nextStatus: LyricsBlockStatus) => {
-    const cur = blocks.find((b) => b.index === index);
-    if (!cur) return;
+  const handleCycleStatus = (index: number, current: LyricsBlockStatus) => {
+    const curIdx = STATUS_ORDER.indexOf(current);
+    const nextStatus = STATUS_ORDER[(curIdx + 1) % STATUS_ORDER.length];
     updateBlock(index, { status: nextStatus });
     if (nextStatus === 'draft' || nextStatus === 'done') {
-      window.setTimeout(() => blockFocusApisRef.current.get(index)?.focusStart(), 30);
+      window.setTimeout(() => blockFocusApisRef.current.get(index)?.focusStart(), 25);
     }
   };
 
@@ -196,33 +226,20 @@ export function LyricsMeasuresEditor({
     setEditingKey(false);
   };
 
-  // Summary counts for quick skeleton progress overview
-  const stats = useMemo(() => {
-    let planned = 0;
-    let draft = 0;
-    let done = 0;
-    for (const b of blocks) {
-      if (b.status === 'planned') planned++;
-      else if (b.status === 'draft') draft++;
-      else if (b.status === 'done') done++;
-    }
-    return { planned, draft, done, totalBars: grid.length * 4 };
-  }, [blocks, grid.length]);
-
   return (
-    <div className="space-y-3 pb-10">
-      {/* Compact Musical Structure Header (BPM, ÷2/×2, Key, Align M1, Auto-follow) */}
-      <div className="rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/75 dark:bg-zinc-900/50 px-3.5 py-2.5 flex items-center justify-between gap-2 flex-wrap">
+    <div ref={containerRef} className="pb-24">
+      {/* Ultra-Compact Single-Row Musical Controls Strip */}
+      <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 flex-wrap">
           {analyzing ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82] px-2.5 py-1 text-[11px] font-semibold">
               <Loader2 size={11} className="animate-spin" />
-              Analyse BPM · Key · Mesures…
+              Analyse…
             </span>
           ) : (
             <>
-              {/* BPM badge + ÷2 / ×2 */}
-              <div className="inline-flex items-center rounded-xl border border-slate-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-950 overflow-hidden">
+              {/* BPM + ÷2 / ×2 */}
+              <div className="inline-flex items-center rounded-lg border border-slate-200/80 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/70 overflow-hidden">
                 {editingBpm ? (
                   <input
                     autoFocus
@@ -236,14 +253,14 @@ export function LyricsMeasuresEditor({
                       if (e.key === 'Enter') commitBpm(Number(bpmDraft) || bpm);
                       if (e.key === 'Escape') setEditingBpm(false);
                     }}
-                    className="w-14 px-2 py-1 text-[11px] font-mono font-bold text-slate-900 dark:text-zinc-100 bg-transparent outline-none"
+                    className="w-12 px-2 py-0.5 text-[11px] font-mono font-bold text-slate-900 dark:text-zinc-100 bg-transparent outline-none"
                   />
                 ) : (
                   <button
                     type="button"
                     onClick={() => setEditingBpm(true)}
-                    title="Cliquer pour ajuster le BPM"
-                    className="px-2.5 py-1 text-[11px] font-mono font-bold text-slate-900 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                    title="Modifier le BPM"
+                    className="px-2 py-0.5 text-[11px] font-mono font-semibold text-slate-700 dark:text-zinc-200 hover:text-[#8C271E] cursor-pointer"
                   >
                     {bpm} BPM
                   </button>
@@ -251,119 +268,101 @@ export function LyricsMeasuresEditor({
                 <button
                   type="button"
                   onClick={() => commitBpm(Math.max(55, Math.round(bpm / 2)))}
-                  title="Diviser le BPM par 2 (half-time)"
-                  className="px-1.5 py-1 text-[10px] font-mono font-semibold text-slate-500 hover:text-[#8C271E] hover:bg-slate-100 dark:hover:bg-zinc-800 border-l border-slate-200/70 dark:border-zinc-800 transition cursor-pointer"
+                  className="px-1.5 py-0.5 text-[10px] font-mono text-slate-400 hover:text-[#8C271E] border-l border-slate-200/70 dark:border-zinc-800 cursor-pointer"
+                  title="Half-time (÷2)"
                 >
                   ÷2
                 </button>
                 <button
                   type="button"
                   onClick={() => commitBpm(Math.min(220, Math.round(bpm * 2)))}
-                  title="Multiplier le BPM par 2 (double-time)"
-                  className="px-1.5 py-1 text-[10px] font-mono font-semibold text-slate-500 hover:text-[#8C271E] hover:bg-slate-100 dark:hover:bg-zinc-800 border-l border-slate-200/70 dark:border-zinc-800 transition cursor-pointer"
+                  className="px-1.5 py-0.5 text-[10px] font-mono text-slate-400 hover:text-[#8C271E] border-l border-slate-200/70 dark:border-zinc-800 cursor-pointer"
+                  title="Double-time (×2)"
                 >
                   ×2
                 </button>
               </div>
 
-              {/* Musical Key badge */}
+              {/* Musical Key */}
               {editingKey ? (
                 <input
                   autoFocus
                   type="text"
                   value={keyDraft}
-                  placeholder="ex. F#m"
+                  placeholder="F#m"
                   onChange={(e) => setKeyDraft(e.target.value)}
                   onBlur={commitKey}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') commitKey();
                     if (e.key === 'Escape') setEditingKey(false);
                   }}
-                  className="w-16 rounded-xl border border-[#8C271E]/40 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px] font-mono font-bold text-slate-900 dark:text-zinc-100 outline-none"
+                  className="w-14 rounded-lg border border-[#8C271E]/40 bg-white dark:bg-zinc-950 px-2 py-0.5 text-[11px] font-mono font-semibold outline-none"
                 />
               ) : (
                 <button
                   type="button"
                   onClick={() => setEditingKey(true)}
-                  title="Tonalité détectée (cliquer pour modifier)"
-                  className="inline-flex items-center gap-1 rounded-xl border border-slate-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-950 px-2.5 py-1 text-[11px] font-mono font-bold text-slate-800 dark:text-zinc-100 hover:border-[#8C271E]/40 transition cursor-pointer"
+                  title="Tonalité (cliquer pour modifier)"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 dark:border-zinc-800 bg-slate-50/80 dark:bg-zinc-900/70 px-2 py-0.5 text-[11px] font-mono font-semibold text-slate-700 dark:text-zinc-200 hover:border-[#8C271E]/40 cursor-pointer"
                 >
                   <Music size={10} className="text-[#8C271E]" />
-                  {musicalKey || 'Key ?'}
+                  {musicalKey || 'Key'}
                 </button>
               )}
 
-              {/* Grid summary */}
-              <span className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 px-1">
-                {grid.length} blocs · {stats.totalBars} mes.
-              </span>
+              {liveTimeSec > 0.1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateTrackMeta({
+                      barOffsetSec: Math.round(liveTimeSec * 100) / 100,
+                    })
+                  }
+                  title="Caler la Mesure 1 sur la position actuelle"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 dark:border-zinc-800 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-zinc-400 hover:text-[#8C271E] hover:border-[#8C271E]/40 cursor-pointer"
+                >
+                  <Crosshair size={10} />
+                  M1 ({fmtTime(liveTimeSec)})
+                </button>
+              )}
             </>
           )}
         </div>
 
-        {/* Right Quick Controls */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {stats.planned > 0 && (
-            <span className="rounded-full bg-[#8C271E]/10 text-[#8C271E] dark:text-[#f08b82] px-2 py-0.5 text-[10px] font-semibold">
-              {stats.planned} à écrire
-            </span>
-          )}
-          {stats.draft > 0 && (
-            <span className="rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-[10px] font-semibold">
-              {stats.draft} prov.
-            </span>
-          )}
-          {stats.done > 0 && (
-            <span className="rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 text-[10px] font-semibold">
-              {stats.done} validé{stats.done > 1 ? 's' : ''}
-            </span>
-          )}
-
-          {/* Align Bar 1 to current playhead (useful if prod has a producer tag before Bar 1) */}
-          {liveTimeSec > 0.1 && (
-            <button
-              type="button"
-              onClick={() =>
-                onUpdateTrackMeta({
-                  barOffsetSec: Math.round(liveTimeSec * 100) / 100,
-                })
-              }
-              title="Caler le début de la Mesure 1 pile sur la position actuelle du lecteur"
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 dark:border-zinc-700/80 bg-white dark:bg-zinc-950 px-2 py-1 text-[10px] font-medium text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50 hover:text-[#8C271E] transition cursor-pointer"
-            >
-              <Crosshair size={10} />
-              Caler M1 ({fmtTime(liveTimeSec)})
-            </button>
-          )}
-
+        {/* Right: Smooth Live Follow Toggle + Reanalyze */}
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setFollowLive((v) => !v)}
-            title="Suivre automatiquement le bloc en cours pendant l’écoute"
-            className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold transition cursor-pointer ${
+            title={
               followLive
-                ? 'bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82]'
-                : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200'
+                ? 'Suivi fluide activé : le texte défile avec les mesures en lecture (cliquer pour désactiver)'
+                : 'Activer le suivi fluide des mesures pendant la lecture'
+            }
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
+              followLive
+                ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                : 'border border-slate-200/80 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
             }`}
           >
-            <Clock size={10} />
-            Suivi
+            <Navigation size={10} className={followLive && isPlayingThisSong ? 'animate-pulse' : ''} />
+            <span>Suivi live</span>
           </button>
 
           <button
             type="button"
             disabled={analyzing}
             onClick={onReanalyze}
-            title="Relancer la détection automatique BPM / Key / Mesures"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-800 disabled:opacity-40 transition cursor-pointer"
+            title="Relancer l’analyse BPM / Key"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 disabled:opacity-40 cursor-pointer"
           >
             <RefreshCw size={11} className={analyzing ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
-      {/* Seamless Continuous Vertical Flow of 4-Bar "Folders" */}
-      <div className="space-y-2">
+      {/* CLEAN CONTINUOUS EDITORIAL LYRICS STREAM (Zero Heavy Boxes — Reads Like One Fluid Page!) */}
+      <div className="divide-y divide-slate-100/80 dark:divide-zinc-800/45">
         {grid.map((g) => {
           const blk: LyricsBarBlock = blocks.find((b) => b.index === g.index) || {
             id: `blk_${g.index}`,
@@ -372,7 +371,7 @@ export function LyricsMeasuresEditor({
             status: 'empty',
             text: '',
           };
-          const style = STATUS_STYLE[blk.status];
+          const meta = STATUS_META[blk.status];
           const isCurrentBlock = activeLocation.blockIdx === g.index;
           const isLoopingThisBlock =
             activeAbLoop.start !== null &&
@@ -380,81 +379,64 @@ export function LyricsMeasuresEditor({
             Math.abs(activeAbLoop.start - g.startSec) < 0.35 &&
             Math.abs(activeAbLoop.end - g.endSec) < 0.35;
 
-          const energyBars = Math.max(1, Math.min(5, Math.round((g.energy / 100) * 5)));
           const isEmptyCompact = blk.status === 'empty' && !blk.text.trim();
+          const sectionDisplay =
+            blk.sectionLabel && !/^FIX(?::|$)/i.test(blk.sectionLabel.trim())
+              ? blk.sectionLabel
+              : g.suggestedSection;
 
           return (
             <div
               key={blk.id}
               ref={(el) => {
-                if (el) blockCardRefs.current.set(g.index, el);
-                else blockCardRefs.current.delete(g.index);
+                if (el) blockRowRefs.current.set(g.index, el);
+                else blockRowRefs.current.delete(g.index);
               }}
-              className={`group relative rounded-2xl border transition-all duration-150 ${
+              className={`relative pl-3 transition-colors duration-200 ${
                 isCurrentBlock
-                  ? 'border-[#8C271E] ring-1 ring-[#8C271E]/25 bg-[#8C271E]/[0.035] dark:bg-[#8C271E]/[0.09] shadow-xs'
-                  : `${style.border} ${style.bg} hover:border-slate-300 dark:hover:border-zinc-700`
-              }`}
+                  ? 'bg-[#8C271E]/[0.045] dark:bg-[#8C271E]/[0.10] rounded-xl my-0.5'
+                  : ''
+              } ${isEmptyCompact ? 'py-1.5' : 'py-2.5'}`}
             >
-              {/* Left crimson spine on active playing block */}
-              <div
-                className={`absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full transition-opacity ${
-                  isCurrentBlock
-                    ? 'bg-[#8C271E] opacity-100'
-                    : blk.status === 'planned'
-                    ? 'bg-[#8C271E]/45 opacity-80'
-                    : blk.status === 'done'
-                    ? 'bg-emerald-500/60 opacity-70'
-                    : blk.status === 'draft'
-                    ? 'bg-amber-400/70 opacity-70'
-                    : 'opacity-0'
-                }`}
-              />
+              {/* Subtle Left Status / Live Progress Spine */}
+              <div className="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-full overflow-hidden bg-slate-200/50 dark:bg-zinc-800/70">
+                {isCurrentBlock ? (
+                  <div
+                    style={{
+                      transform: `scaleY(${Math.max(0.06, activeLocation.progress).toFixed(3)})`,
+                    }}
+                    className="w-full h-full origin-top bg-[#8C271E] dark:bg-[#E04F42] transition-transform duration-150 ease-linear"
+                  />
+                ) : (
+                  <div className={`w-full h-full ${meta.spine}`} />
+                )}
+              </div>
 
-              {/* Block Header Row */}
-              <div className="px-3.5 py-2 flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2 min-w-0">
-                  {/* Play / Jump to exact start of these 4 bars */}
+              {/* SINGLE ULTRA-SLIM INLINE MEASURE HEADER (1 line only, zero clutter!) */}
+              <div className="flex items-center justify-between gap-2 min-h-[22px]">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {/* Compact Play/Jump Measure Pill */}
                   <button
                     type="button"
                     onClick={() => onJumpToSec(g.startSec)}
                     title={`Écouter M${g.startBar}–M${g.endBar} (${fmtTime(g.startSec)})`}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-mono font-semibold transition cursor-pointer shrink-0 ${
+                    className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-mono font-semibold transition cursor-pointer shrink-0 ${
                       isCurrentBlock && isPlayingThisSong
-                        ? 'bg-[#8C271E] text-white shadow-xs'
-                        : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-[#8C271E] hover:text-white'
+                        ? 'bg-[#8C271E] text-white'
+                        : 'text-slate-400 dark:text-zinc-500 hover:text-[#8C271E] dark:hover:text-[#f08b82] hover:bg-slate-100 dark:hover:bg-zinc-800/70'
                     }`}
                   >
                     {isCurrentBlock && isPlayingThisSong ? (
-                      <Pause size={10} fill="currentColor" />
+                      <Pause size={8} fill="currentColor" />
                     ) : (
-                      <Play size={10} fill="currentColor" />
+                      <Play size={8} fill="currentColor" />
                     )}
                     <span>
                       M{g.startBar}–{g.endBar}
                     </span>
-                    <span className="opacity-70 text-[10px]">{fmtTime(g.startSec)}</span>
                   </button>
 
-                  {/* Loop this exact 4-bar block */}
-                  <button
-                    type="button"
-                    onClick={() => onToggleBlockLoop(g.startSec, g.endSec)}
-                    title={
-                      isLoopingThisBlock
-                        ? 'Arrêter la boucle sur ce bloc'
-                        : 'Boucler ces 4 mesures pour écrire dessus'
-                    }
-                    className={`h-6 w-6 rounded-lg inline-flex items-center justify-center transition cursor-pointer shrink-0 ${
-                      isLoopingThisBlock
-                        ? 'bg-[#8C271E] text-white shadow-xs'
-                        : 'text-slate-400 hover:text-[#8C271E] hover:bg-slate-200/60 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    <Repeat size={11} />
-                  </button>
-
-                  {/* Section Tag (click to cycle, double-click to type custom) */}
+                  {/* Section Name (subtle uppercase) */}
                   {editingSectionIdx === g.index ? (
                     <input
                       autoFocus
@@ -465,50 +447,32 @@ export function LyricsMeasuresEditor({
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === 'Escape') setEditingSectionIdx(null);
                       }}
-                      className="w-24 rounded-md border border-[#8C271E]/40 bg-white dark:bg-zinc-950 px-1.5 py-0.5 text-[11px] font-semibold text-slate-900 dark:text-zinc-100 outline-none"
+                      className="w-20 rounded border border-[#8C271E]/40 bg-transparent px-1 text-[10px] font-semibold uppercase text-slate-900 dark:text-zinc-100 outline-none"
                     />
                   ) : (
                     <button
                       type="button"
-                      onClick={() => handleCycleSection(g.index, blk.sectionLabel)}
+                      onClick={() => handleCycleSection(g.index, sectionDisplay)}
                       onDoubleClick={() => setEditingSectionIdx(g.index)}
-                      title="Cliquer pour changer de section · Double-clic pour nom personnalisé"
-                      className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400 hover:text-[#8C271E] dark:hover:text-[#f08b82] transition cursor-pointer truncate"
+                      title="Cliquer pour changer la section · Double-clic pour renommer"
+                      className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 hover:text-slate-800 dark:hover:text-zinc-200 transition cursor-pointer truncate"
                     >
-                      {blk.sectionLabel || g.suggestedSection}
+                      {sectionDisplay}
                     </button>
                   )}
 
-                  {/* Mini 5-bar beat energy indicator */}
-                  <div
-                    className="hidden sm:flex items-end gap-[2px] h-3 px-1 opacity-60"
-                    title={`Énergie instru sur ce bloc : ${g.energy}%`}
-                  >
-                    {[1, 2, 3, 4, 5].map((lvl) => (
-                      <span
-                        key={lvl}
-                        style={{ height: `${lvl * 20}%` }}
-                        className={`w-[2.5px] rounded-full ${
-                          lvl <= energyBars
-                            ? isCurrentBlock
-                              ? 'bg-[#8C271E]'
-                              : 'bg-slate-400 dark:bg-zinc-500'
-                            : 'bg-slate-200 dark:bg-zinc-800'
-                        }`}
-                      />
-                    ))}
-                  </div>
-
-                  {/* Live 4-bar pulse dots (M1 · M2 · M3 · M4 inside the active block!) */}
+                  {/* Live 4-bar fluid tracker ONLY on the active playing block */}
                   {isCurrentBlock && (
-                    <div className="flex items-center gap-1 ml-1">
+                    <div className="flex items-center gap-0.5 ml-1">
                       {[0, 1, 2, 3].map((bIdx) => (
                         <span
                           key={bIdx}
-                          className={`inline-flex items-center justify-center h-4 min-w-[16px] px-1 rounded text-[9px] font-mono font-bold transition ${
+                          className={`inline-flex items-center justify-center h-3.5 min-w-[14px] px-0.5 rounded text-[8.5px] font-mono font-bold transition-all duration-150 ${
                             activeLocation.barInBlock === bIdx
-                              ? 'bg-[#8C271E] text-white scale-105'
-                              : 'bg-[#8C271E]/12 text-[#8C271E] dark:text-[#f08b82]'
+                              ? 'bg-[#8C271E] text-white'
+                              : bIdx < activeLocation.barInBlock
+                              ? 'bg-[#8C271E]/25 text-[#8C271E] dark:text-[#f08b82]'
+                              : 'bg-slate-200/70 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500'
                           }`}
                         >
                           {g.startBar + bIdx}
@@ -516,100 +480,116 @@ export function LyricsMeasuresEditor({
                       ))}
                     </div>
                   )}
+
+                  {/* Quick inline trigger on empty Instru blocks (single subtle button, zero clutter!) */}
+                  {isEmptyCompact && (
+                    <div className="flex items-center gap-1 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => updateBlock(g.index, { status: 'planned' })}
+                        className="text-[10px] font-medium text-slate-400 dark:text-zinc-500 hover:text-[#8C271E] dark:hover:text-[#f08b82] px-1.5 py-0.5 rounded hover:bg-[#8C271E]/10 transition cursor-pointer"
+                      >
+                        + À écrire
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => focusBlockTextarea(g.index)}
+                        className="text-[10px] font-medium text-slate-400 dark:text-zinc-500 hover:text-slate-800 dark:hover:text-zinc-200 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                      >
+                        Écrire…
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {/* Status Switcher (Instru | À écrire | Provisoire | Validé) */}
+                {/* Right: Single 1-Tap Status Pill + Loop Icon */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {(['empty', 'planned', 'draft', 'done'] as LyricsBlockStatus[]).map((st) => {
-                    const active = blk.status === st;
-                    return (
-                      <button
-                        key={st}
-                        type="button"
-                        onClick={() => handleSetStatus(g.index, st)}
-                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer ${
-                          active
-                            ? STATUS_STYLE[st].pill
-                            : 'text-slate-400 dark:text-zinc-500 opacity-60 hover:opacity-100 hover:bg-slate-200/50 dark:hover:bg-zinc-800/70'
-                        }`}
-                      >
-                        {st === 'done' && active && <Check size={9} className="inline mr-0.5 -mt-0.5" />}
-                        {STATUS_STYLE[st].shortLabel}
-                      </button>
-                    );
-                  })}
+                  {!isEmptyCompact && (
+                    <button
+                      type="button"
+                      onClick={() => handleCycleStatus(g.index, blk.status)}
+                      title="Cliquer pour changer l’état (Instru → À écrire → Provisoire → Validé)"
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-semibold transition cursor-pointer ${meta.pill}`}
+                    >
+                      {blk.status === 'done' ? (
+                        <Check size={9} />
+                      ) : (
+                        <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                      )}
+                      {meta.label}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => onToggleBlockLoop(g.startSec, g.endSec)}
+                    title={isLoopingThisBlock ? 'Arrêter la boucle' : 'Boucler ces 4 mesures'}
+                    className={`h-5 w-5 rounded inline-flex items-center justify-center transition cursor-pointer ${
+                      isLoopingThisBlock
+                        ? 'bg-[#8C271E] text-white'
+                        : 'text-slate-300 dark:text-zinc-600 hover:text-[#8C271E]'
+                    }`}
+                  >
+                    <Repeat size={10} />
+                  </button>
                 </div>
               </div>
 
-              {/* Block Body: Compact when empty Instru, Skeleton Placeholder when 'planned', Fluid Textarea when writing */}
-              {isEmptyCompact ? (
-                <div className="px-3.5 pb-2.5 pt-0 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleSetStatus(g.index, 'planned')}
-                    className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 dark:border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:text-zinc-400 hover:border-[#8C271E] hover:text-[#8C271E] transition cursor-pointer"
-                  >
-                    <Sparkles size={10} />
-                    Marquer « À écrire ici »
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => focusBlockTextarea(g.index)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-800 dark:hover:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800/70 transition cursor-pointer"
-                  >
-                    <PenLine size={10} />
-                    Écrire dans ces 4 mesures…
-                  </button>
-                </div>
-              ) : (
-                <div className="px-4 pb-3 pt-0.5 space-y-1.5">
-                  {/* Skeleton Cue / Placeholder Note bar when 'planned' (or if note exists) */}
+              {/* Clean Lyrics Body (directly beneath the slim divider — reads seamlessly top to bottom!) */}
+              {!isEmptyCompact && (
+                <div className="mt-1 space-y-1">
+                  {/* Optional Skeleton Cue Line when 'planned' or note present */}
                   {(blk.status === 'planned' || Boolean(blk.note)) && (
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#8C271E] dark:text-[#f08b82] shrink-0">
-                        <Plus size={10} />
-                        Repère squelette :
-                      </span>
+                    <div className="flex items-center gap-1.5 pl-6">
+                      <Plus size={9} className="text-[#8C271E] shrink-0" />
                       <input
                         type="text"
                         value={blk.note || ''}
                         onChange={(e) => updateBlock(g.index, { note: e.target.value })}
-                        placeholder="ex. flow rapide, topline aiguë, yaourt provisoire, montée…"
-                        className="flex-1 min-w-0 bg-transparent text-[11.5px] italic text-slate-600 dark:text-zinc-300 placeholder:text-slate-400/70 dark:placeholder:text-zinc-500 outline-none border-b border-transparent focus:border-[#8C271E]/35 py-0.5"
+                        placeholder="Repère squelette (ex. flow rapide, topline, yaourt…)"
+                        className="flex-1 min-w-0 bg-transparent text-[11.5px] italic text-[#8C271E]/85 dark:text-[#f08b82]/85 placeholder:text-slate-400/60 dark:placeholder:text-zinc-600 outline-none"
                       />
+                      {blk.status === 'planned' && !blk.text.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateBlock(g.index, { status: 'draft' });
+                            window.setTimeout(() => blockFocusApisRef.current.get(g.index)?.focusStart(), 25);
+                          }}
+                          className="text-[10px] font-medium text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 px-1.5 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-zinc-800 shrink-0 cursor-pointer"
+                        >
+                          Écrire
+                        </button>
+                      )}
                     </div>
                   )}
 
-                  {/* Fluid continuous per-line lyrics editor with 1-click FIX toggle on every line */}
-                  <LyricLinesEditor
-                    value={blk.text}
-                    compact
-                    placeholder={
-                      blk.status === 'planned'
-                        ? 'Zone réservée (laisse vide pour le squelette ou pose un premier jet ici)…'
-                        : `Écris tes 4 mesures (M${g.startBar}–M${g.endBar})…`
-                    }
-                    registerFocusApi={(api) => {
-                      if (api) blockFocusApisRef.current.set(g.index, api);
-                      else blockFocusApisRef.current.delete(g.index);
-                    }}
-                    onFocusLine={() => onActiveBlockFocus?.(g.index)}
-                    onChange={(val) => {
-                      const nextStatus: LyricsBlockStatus =
-                        blk.status === 'planned' && val.trim().length > 0
-                          ? 'draft'
-                          : blk.status === 'empty' && val.trim().length > 0
-                          ? 'draft'
-                          : blk.status;
-                      updateBlock(g.index, { text: val, status: nextStatus });
-                    }}
-                    onNavigateEdge={(dir) => {
-                      const target = dir === 'next' ? g.index + 1 : g.index - 1;
-                      if (target >= 0 && target < grid.length) {
-                        focusBlockTextarea(target, dir === 'prev' ? 'end' : 'start');
-                      }
-                    }}
-                  />
+                  {/* Per-line lyric editor (only rendered when writing/draft/done OR when user wants to type in a planned slot) */}
+                  {(blk.status !== 'planned' || blk.text.trim().length > 0) && (
+                    <LyricLinesEditor
+                      value={blk.text}
+                      compact
+                      placeholder={`Écris M${g.startBar}–M${g.endBar}…`}
+                      registerFocusApi={(api) => {
+                        if (api) blockFocusApisRef.current.set(g.index, api);
+                        else blockFocusApisRef.current.delete(g.index);
+                      }}
+                      onFocusLine={() => onActiveBlockFocus?.(g.index)}
+                      onChange={(val) => {
+                        const nextStatus: LyricsBlockStatus =
+                          (blk.status === 'planned' || blk.status === 'empty') && val.trim().length > 0
+                            ? 'draft'
+                            : blk.status;
+                        updateBlock(g.index, { text: val, status: nextStatus });
+                      }}
+                      onNavigateEdge={(dir) => {
+                        const target = dir === 'next' ? g.index + 1 : g.index - 1;
+                        if (target >= 0 && target < grid.length) {
+                          focusBlockTextarea(target, dir === 'prev' ? 'end' : 'start');
+                        }
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </div>

@@ -289,7 +289,7 @@ export function LyricsStudio({
     if (!player.isPlaying) return;
     const id = window.setInterval(() => {
       setLivePlaySec(player.getLiveTime());
-    }, 180);
+    }, 80);
     return () => window.clearInterval(id);
   }, [activeDoc?.id, linkedTrack?.id, linkedProdTrack?.id, player.currentTrack?.id, player.isPlaying, player.currentTime]);
 
