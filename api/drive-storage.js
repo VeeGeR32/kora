@@ -245,53 +245,27 @@ async function resolveTrueSharedMusicFolderId(saToken, requestedFolderId) {
 async function ensureUserRowavDataFolder(userToken, saToken, saEmail, requestedFolderId) {
   const musicRootId = await resolveTrueSharedMusicFolderId(saToken, requestedFolderId);
 
-  // 1. First check if a user-owned `_Rowav_Data` already exists directly inside `musique/`
+  // 1. Check ALL `_Rowav_Data` folders created by Rowav (`drive.file` only sees Rowav-created folders!),
+  // so wherever the user moves `_Rowav_Data` (e.g. into `musique/_Rowav_Data`), we ALWAYS reuse it!
   let folderId = null;
-  if (musicRootId) {
-    const inMusicQ = encodeURIComponent(
-      `'${musicRootId}' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners`
-    );
-    const inMusicRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${inMusicQ}&fields=files(id,name)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-      { headers: { Authorization: `Bearer ${saToken}` } }
-    );
-    if (inMusicRes.ok) {
-      const inMusicData = await inMusicRes.json();
-      const candidateId = inMusicData.files?.[0]?.id || null;
-      if (candidateId) {
-        // Verify our `drive.file` token has access to this folder (i.e. created by Rowav)
-        const checkUserAccess = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(candidateId)}?fields=id`,
-          { headers: { Authorization: `Bearer ${userToken}` } }
-        );
-        if (checkUserAccess.status === 401) {
-          const txt = await checkUserAccess.text().catch(() => '');
-          return classifyDriveError(401, txt);
-        }
-        if (checkUserAccess.ok) {
-          folderId = candidateId;
-        }
-      }
-    }
+  const userSearchQ = encodeURIComponent(
+    "name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+  );
+  const userSearchRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${userSearchQ}&fields=files(id,name,parents)&orderBy=createdTime%20asc&pageSize=10`,
+    { headers: { Authorization: `Bearer ${userToken}` } }
+  );
+  if (userSearchRes.status === 401) {
+    const txt = await userSearchRes.text().catch(() => '');
+    return classifyDriveError(401, txt);
   }
-
-  // 2. Otherwise check at the user's "Mon Drive" root ('root' in parents)
-  if (!folderId) {
-    const rootQ = encodeURIComponent(
-      "'root' in parents and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    );
-    const searchRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${rootQ}&fields=files(id,name,parents)&pageSize=5`,
-      { headers: { Authorization: `Bearer ${userToken}` } }
-    );
-    if (searchRes.status === 401) {
-      const txt = await searchRes.text().catch(() => '');
-      return classifyDriveError(401, txt);
-    }
-    if (searchRes.ok) {
-      const searchData = await searchRes.json();
-      folderId = searchData.files?.[0]?.id || null;
-    }
+  if (userSearchRes.ok) {
+    const userSearchData = await userSearchRes.json();
+    const candidates = Array.isArray(userSearchData.files) ? userSearchData.files : [];
+    const inMusic = musicRootId
+      ? candidates.find((c) => Array.isArray(c.parents) && c.parents.includes(musicRootId))
+      : null;
+    folderId = inMusic?.id || candidates[0]?.id || null;
   }
 
   // 3. Create ONE `_Rowav_Data` folder if none exists yet
@@ -411,12 +385,12 @@ async function findExistingSharedUserRowavFolder(saToken, requestedFolderId) {
     }
   }
 
-  // 2. Fallback: `_Rowav_Data` shared directly from the root of "Mon Drive"
+  // 2. Fallback: ANY user-owned `_Rowav_Data` visible to the Service Account (whether moved into `musique/` or at root)
   const q = encodeURIComponent(
-    "sharedWithMe=true and name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners"
+    "name='_Rowav_Data' and mimeType='application/vnd.google-apps.folder' and trashed=false and not 'me' in owners"
   );
   const searchRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&orderBy=createdTime%20asc&pageSize=5&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${saToken}` } }
   );
   if (!searchRes.ok) return null;
