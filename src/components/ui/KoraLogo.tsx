@@ -1,73 +1,33 @@
 export function KoraLogo({ size = 32 }: { size?: number }) {
-  const radius = Math.max(8, Math.round(size * 0.28));
-  const svgSize = Math.round(size * 0.66);
+  const radius = Math.max(8, Math.round(size * 0.26));
   return (
     <div
       style={{
         width: size,
         height: size,
         borderRadius: radius,
-        background: 'linear-gradient(145deg, #A32E24 0%, #8C271E 55%, #661A13 100%)',
+        background: 'linear-gradient(135deg, #180d0d 0%, #0d0909 50%, #070505 100%)',
       }}
-      className="text-white flex items-center justify-center shadow-sm shadow-[#8C271E]/30 border border-white/15 shrink-0 select-none"
+      className="flex items-center justify-center shadow-sm shadow-[#8C271E]/25 border border-[#8C271E]/35 shrink-0 select-none overflow-hidden"
       aria-label="Rowav"
     >
-      <svg
-        viewBox="0 0 32 32"
-        width={svgSize}
-        height={svgSize}
-        fill="none"
-      >
-        {/* Minimalist 5-bar sculpted .WAV acoustic wave (SoundCloud x Apple aesthetic) */}
-        <line
-          x1="5.5"
-          y1="13"
-          x2="5.5"
-          y2="19"
+      <svg viewBox="0 0 1024 1024" width={size} height={size} fill="none">
+        <defs>
+          <linearGradient id="rowavRecDot" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#CA362A" />
+            <stop offset="100%" stopColor="#761913" />
+          </linearGradient>
+        </defs>
+        {/* Minimalist geometric white lowercase "r" (3A Obsidienne Pure) */}
+        <rect x="265" y="255" width="128" height="515" rx="24" fill="#FFFFFF" />
+        <path
+          d="M328 504 A186 186 0 0 1 514 318"
           stroke="#FFFFFF"
-          strokeOpacity="0.72"
-          strokeWidth="2.6"
+          strokeWidth="128"
           strokeLinecap="round"
         />
-        <line
-          x1="10.75"
-          y1="8.5"
-          x2="10.75"
-          y2="23.5"
-          stroke="#FFFFFF"
-          strokeOpacity="0.92"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-        />
-        <line
-          x1="16"
-          y1="5"
-          x2="16"
-          y2="27"
-          stroke="#FFFFFF"
-          strokeWidth="2.8"
-          strokeLinecap="round"
-        />
-        <line
-          x1="21.25"
-          y1="9.5"
-          x2="21.25"
-          y2="22.5"
-          stroke="#FFFFFF"
-          strokeOpacity="0.92"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-        />
-        <line
-          x1="26.5"
-          y1="12.5"
-          x2="26.5"
-          y2="19.5"
-          stroke="#FFFFFF"
-          strokeOpacity="0.72"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-        />
+        {/* Signature Rowav #8C271E Crimson REC Dot */}
+        <circle cx="652" cy="683" r="87" fill="url(#rowavRecDot)" />
       </svg>
     </div>
   );
