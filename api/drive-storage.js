@@ -4,15 +4,20 @@ let cachedDriveRwToken = null;
 let cachedDriveRwExpiryMs = 0;
 
 function parseServiceAccount() {
-  const rawJson = process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
+  const rawJson =
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON;
   if (rawJson && rawJson.trim()) {
     try {
-      const parsed = JSON.parse(rawJson.trim());
+      const trimmed = rawJson.trim();
+      const parsed = trimmed.startsWith('{')
+        ? JSON.parse(trimmed)
+        : JSON.parse(Buffer.from(trimmed, 'base64').toString('utf8'));
       if (parsed.client_email && parsed.private_key) {
         return {
           client_email: parsed.client_email,
           private_key: String(parsed.private_key).replace(/\\n/g, '\n'),
-          project_id: parsed.project_id || process.env.VITE_FIREBASE_PROJECT_ID || 'kora-4859d',
+          project_id: parsed.project_id || process.env.VITE_FIREBASE_PROJECT_ID || 'kora-d6019',
         };
       }
     } catch {
@@ -25,7 +30,7 @@ function parseServiceAccount() {
     return {
       client_email: email.trim(),
       private_key: key.replace(/\\n/g, '\n'),
-      project_id: process.env.VITE_FIREBASE_PROJECT_ID || 'kora-4859d',
+      project_id: process.env.VITE_FIREBASE_PROJECT_ID || 'kora-d6019',
     };
   }
   return null;
