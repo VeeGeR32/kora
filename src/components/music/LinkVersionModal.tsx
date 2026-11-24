@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Disc3, GitBranch, Link2, Search, X } from 'lucide-react';
+import { Disc3, GitBranch, Link2, Music2, Search, X } from 'lucide-react';
 import type { TrackGroup } from '../../lib/musicVersioning';
 
 export interface LinkVersionModalState {
@@ -9,6 +9,8 @@ export interface LinkVersionModalState {
    *  When mode === 'pull-into-group': the destination group receiving another MP3. */
   sourceGroup: TrackGroup;
   sourceTrackId: string;
+  /** Pre-select "Prod / Instru" mode when opened from "+ Ajouter une prod" */
+  defaultAsProd?: boolean;
 }
 
 interface LinkVersionModalProps {
@@ -19,7 +21,8 @@ interface LinkVersionModalProps {
     movingTrackIds: string[],
     targetGroupKey: string,
     targetGroupTitle: string,
-    customVersionLabel?: string
+    customVersionLabel?: string,
+    asProd?: boolean
   ) => void;
 }
 
@@ -31,6 +34,15 @@ export function LinkVersionModal({
 }: LinkVersionModalProps) {
   const [search, setSearch] = useState('');
   const [customLabel, setCustomLabel] = useState('');
+  const [asProd, setAsProd] = useState(false);
+
+  useEffect(() => {
+    if (modal) {
+      setAsProd(Boolean(modal.defaultAsProd));
+      setSearch('');
+      setCustomLabel('');
+    }
+  }, [modal]);
 
   const candidates = useMemo(() => {
     if (!modal) return [];
@@ -45,6 +57,11 @@ export function LinkVersionModal({
             (v) =>
               v.track.title.toLowerCase().includes(q) ||
               (v.track.sourceFilename && v.track.sourceFilename.toLowerCase().includes(q))
+          ) ||
+          g.prodTracks.some(
+            (p) =>
+              p.track.title.toLowerCase().includes(q) ||
+              (p.track.sourceFilename && p.track.sourceFilename.toLowerCase().includes(q))
           )
         );
       });
@@ -55,24 +72,36 @@ export function LinkVersionModal({
   const isAttachMode = modal.mode === 'attach-to-target';
   const sourceTrack =
     modal.sourceGroup.versions.find((v) => v.track.id === modal.sourceTrackId)?.track ||
+    modal.sourceGroup.prodTracks.find((p) => p.track.id === modal.sourceTrackId)?.track ||
     modal.sourceGroup.latestTrack;
 
+  const computeSuggestedProdLabel = (targetGroup: TrackGroup, explicitLabel: string): string | undefined => {
+    if (explicitLabel) return explicitLabel;
+    if (!asProd) return undefined;
+    const nextNum = targetGroup.prodTracks.length + 1;
+    return nextNum === 1 ? 'Prod' : `Prod v${nextNum}`;
+  };
+
   const handlePickCandidate = (candidate: TrackGroup) => {
+    const trimmed = customLabel.trim();
     if (isAttachMode) {
-      // Attach source track (or entire source group if single) into candidate group
+      // Attach source track into candidate group
       onConfirmLink(
         [sourceTrack.id],
         candidate.groupKey,
         candidate.baseTitle,
-        customLabel.trim() || undefined
+        computeSuggestedProdLabel(candidate, trimmed),
+        asProd
       );
     } else {
-      // Pull all tracks from candidate group into modal.sourceGroup
+      // Pull tracks from candidate group into modal.sourceGroup
+      const targetIds = asProd ? [candidate.latestTrack.id] : candidate.versions.map((v) => v.track.id);
       onConfirmLink(
-        candidate.versions.map((v) => v.track.id),
+        targetIds,
         modal.sourceGroup.groupKey,
         modal.sourceGroup.baseTitle,
-        customLabel.trim() || undefined
+        computeSuggestedProdLabel(modal.sourceGroup, trimmed),
+        asProd
       );
     }
     setSearch('');
@@ -100,18 +129,32 @@ export function LinkVersionModal({
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-zinc-800">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="h-8 w-8 rounded-xl bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 flex items-center justify-center shrink-0">
-                <Link2 size={15} />
+              <div
+                className={`h-8 w-8 rounded-xl text-white shadow-xs flex items-center justify-center shrink-0 ${
+                  asProd
+                    ? 'bg-emerald-600 shadow-emerald-600/25'
+                    : 'bg-[#8C271E] shadow-[#8C271E]/25'
+                }`}
+              >
+                {asProd ? <Music2 size={15} /> : <Link2 size={15} />}
               </div>
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold truncate">
                   {isAttachMode
-                    ? `Associer « ${sourceTrack.title} » à un son`
+                    ? asProd
+                      ? `Associer « ${sourceTrack.title} » comme prod`
+                      : `Associer « ${sourceTrack.title} » à un son`
+                    : asProd
+                    ? `Ajouter une prod à « ${modal.sourceGroup.baseTitle} »`
                     : `Ajouter une version dans « ${modal.sourceGroup.baseTitle} »`}
                 </h2>
                 <p className="text-[11px] text-slate-400 truncate">
                   {isAttachMode
-                    ? 'Choisis le son principal dont ce MP3 est une version'
+                    ? asProd
+                      ? 'Choisis le son auquel rattacher cette version de prod'
+                      : 'Choisis le son principal dont ce MP3 est une version'
+                    : asProd
+                    ? 'Choisis un MP3 à ajouter comme version de prod / instru'
                     : 'Choisis un MP3 existant à regrouper ici'}
                 </p>
               </div>
@@ -126,6 +169,34 @@ export function LinkVersionModal({
           </div>
 
           <div className="p-4 space-y-3 flex-1 overflow-y-auto">
+            {/* Segmented Type Toggle: Version du son vs Prod / Instru */}
+            <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 dark:bg-zinc-900 p-1">
+              <button
+                type="button"
+                onClick={() => setAsProd(false)}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                  !asProd
+                    ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs'
+                    : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                <GitBranch size={12} />
+                Version du son
+              </button>
+              <button
+                type="button"
+                onClick={() => setAsProd(true)}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition cursor-pointer ${
+                  asProd
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-500 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400'
+                }`}
+              >
+                <Music2 size={12} />
+                Version de prod
+              </button>
+            </div>
+
             {/* Search Target Song */}
             <div className="relative">
               <Search
@@ -145,13 +216,17 @@ export function LinkVersionModal({
             {/* Optional Custom Version Name */}
             <div>
               <label className="block text-[10px] font-medium text-slate-400 mb-1">
-                Nom de version personnalisé (optionnel)
+                {asProd ? 'Nom de cette prod (optionnel)' : 'Nom de version personnalisé (optionnel)'}
               </label>
               <input
                 type="text"
                 value={customLabel}
                 onChange={(e) => setCustomLabel(e.target.value)}
-                placeholder="Ex. Mix final, v2, Acoustique, Instru… (sinon auto)"
+                placeholder={
+                  asProd
+                    ? `Ex. Prod v${modal.sourceGroup.prodTracks.length + 1}, Prod guitare, Instru final…`
+                    : 'Ex. Mix final, v2, Acoustique… (sinon auto)'
+                }
                 className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-1.5 text-xs outline-none focus:border-slate-400 dark:focus:border-zinc-600"
               />
             </div>
@@ -179,11 +254,21 @@ export function LinkVersionModal({
                         <p className="text-[10px] font-mono text-slate-400 truncate">
                           {cand.latestVersionLabel}
                           {cand.hasMultipleVersions ? ` · ${cand.versions.length} versions` : ''}
+                          {cand.prodTracks.length > 0
+                            ? ` · ${cand.prodTracks.length} prod${cand.prodTracks.length > 1 ? 's' : ''}`
+                            : ''}
                         </p>
                       </div>
                     </div>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-zinc-300 shrink-0">
-                      <GitBranch size={10} /> Associer
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 ${
+                        asProd
+                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300'
+                      }`}
+                    >
+                      {asProd ? <Music2 size={10} /> : <GitBranch size={10} />}
+                      {asProd ? 'Prod' : 'Associer'}
                     </span>
                   </button>
                 ))}

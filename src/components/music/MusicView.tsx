@@ -170,12 +170,11 @@ export function MusicView({
   const [syncingDrive, setSyncingDrive] = useState(false);
   const [permanentSetupOpen, setPermanentSetupOpen] = useState(false);
 
-  // Library search / filter / sort / grouping / year filter / project filter
+  // Library search / filter / sort / grouping / project filter
   const [libSearch, setLibSearch] = useState('');
   const [libFilter, setLibFilter] = useState<LibraryFilter>('all');
   const [libSort, setLibSort] = useState<LibrarySort>('recent');
   const [groupVersions, setGroupVersions] = useState(true);
-  const [yearFilter, setYearFilter] = useState<string>('all');
   const [projectStatusFilter, setProjectStatusFilter] = useState<
     'all' | 'active' | 'playlists' | 'archived'
   >('all');
@@ -206,19 +205,6 @@ export function MusicView({
 
   // Grouped tracks (deduplicated by project/base name, latest version promoted to front!)
   const trackGroups = useMemo(() => groupMusicTracks(state.musicTracks), [state.musicTracks]);
-
-  // Available Drive year/season folders (e.g. 2026/2027, 2025/2026, 2024/2025, 2023/2024) sorted newest first
-  const availableYears = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const g of trackGroups) {
-      if (g.yearFolder) {
-        counts.set(g.yearFolder, (counts.get(g.yearFolder) || 0) + 1);
-      }
-    }
-    return Array.from(counts.entries())
-      .sort((a, b) => b[0].localeCompare(a[0], 'fr', { numeric: true }))
-      .map(([year, count]) => ({ year, count }));
-  }, [trackGroups]);
 
   // Flat individual pseudo-groups when user toggles "Toutes les versions" in library
   const flatTrackGroups = useMemo<TrackGroup[]>(() => {
@@ -260,27 +246,18 @@ export function MusicView({
       });
   }, [state.musicTracks]);
 
-  const yearFilteredGroups = useMemo(
-    () =>
-      yearFilter === 'all'
-        ? trackGroups
-        : trackGroups.filter((g) => g.yearFolder === yearFilter),
-    [trackGroups, yearFilter]
-  );
-
   const favoriteGroups = useMemo(
-    () => yearFilteredGroups.filter((g) => g.isFavorite),
-    [yearFilteredGroups]
+    () => trackGroups.filter((g) => g.isFavorite),
+    [trackGroups]
   );
 
-  const recentGroups = useMemo(() => yearFilteredGroups.slice(0, 12), [yearFilteredGroups]);
+  const recentGroups = useMemo(() => trackGroups.slice(0, 12), [trackGroups]);
 
   const filteredLibraryGroups = useMemo(() => {
     const baseList = groupVersions ? trackGroups : flatTrackGroups;
     const q = libSearch.trim().toLowerCase();
 
     const filtered = baseList.filter((g) => {
-      if (yearFilter !== 'all' && g.yearFolder !== yearFilter) return false;
       if (libFilter === 'favorites' && !g.isFavorite) return false;
       if (libFilter === 'todo' && g.todoTotal === 0) return false;
       if (libFilter === 'archived') {
@@ -339,7 +316,7 @@ export function MusicView({
       }
       return b.latestTimestampMs - a.latestTimestampMs;
     });
-  }, [groupVersions, trackGroups, flatTrackGroups, libSearch, libFilter, libSort, yearFilter]);
+  }, [groupVersions, trackGroups, flatTrackGroups, libSearch, libFilter, libSort]);
 
   const getActiveTrackForGroup = (group: TrackGroup): MusicTrack => {
     const overrideId = selectedVersionByGroup[group.groupKey];
@@ -448,10 +425,15 @@ export function MusicView({
   };
 
   const handlePlayProd = (prodTrack: MusicTrack, parentTrack: MusicTrack) => {
-    if (player.currentTrack?.id === prodTrack.id) {
+    const grp = trackGroups.find((g) => g.allTrackIds.includes(prodTrack.id));
+    const currentIsOneOfProds = Boolean(
+      grp && player.currentTrack && grp.prodTracks.some((p) => p.track.id === player.currentTrack!.id)
+    );
+    if (player.currentTrack?.id === prodTrack.id || currentIsOneOfProds) {
       player.togglePlay();
     } else {
-      void player.playTrack(prodTrack, 0, [parentTrack, prodTrack]);
+      const q = grp ? [parentTrack, ...grp.prodTracks.map((p) => p.track)] : [parentTrack, prodTrack];
+      void player.playTrack(prodTrack, 0, q);
     }
   };
 
@@ -511,16 +493,22 @@ export function MusicView({
     movingTrackIds: string[],
     targetGroupKey: string,
     targetGroupTitle: string,
-    customVersionLabel?: string
+    customVersionLabel?: string,
+    asProd?: boolean
   ) => {
     for (const id of movingTrackIds) {
       updateMusicTrack(id, {
         manualGroupKey: targetGroupKey,
         manualGroupTitle: targetGroupTitle,
         ...(customVersionLabel ? { manualVersionLabel: customVersionLabel } : {}),
+        ...(asProd ? { isProdOverride: true } : {}),
       });
     }
-    notify(`Associé comme version de « ${targetGroupTitle} » ✓`);
+    notify(
+      asProd
+        ? `Ajouté comme prod de « ${targetGroupTitle} » ✓`
+        : `Associé comme version de « ${targetGroupTitle} » ✓`
+    );
   };
 
   const handleDetachVersion = (trackId: string) => {
@@ -530,6 +518,7 @@ export function MusicView({
       manualGroupKey: `solo_${trackId}`,
       manualGroupTitle: target.title,
       manualVersionLabel: 'Original',
+      isProdOverride: undefined,
     });
     notify(`« ${target.title} » détaché en son indépendant ✓`);
   };
@@ -934,6 +923,14 @@ export function MusicView({
           onRequestPullVersion={(g, tid) =>
             setLinkModal({ mode: 'pull-into-group', sourceGroup: g, sourceTrackId: tid })
           }
+          onRequestPullProd={(g, tid) =>
+            setLinkModal({
+              mode: 'pull-into-group',
+              sourceGroup: g,
+              sourceTrackId: tid,
+              defaultAsProd: true,
+            })
+          }
           onRequestAttachToOther={(g, tid) =>
             setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
           }
@@ -1004,40 +1001,6 @@ export function MusicView({
       {/* ================= TAB 1: DASHBOARD MUSIC (MISE EN AVANT) ================= */}
       {subTab === 'dashboard' && (
         <div className="space-y-6">
-
-          {/* Year / Saison Filter Bar (automatically detected from Drive folders 23/24, 24/25, 25/26, 26/27!) */}
-          {availableYears.length > 0 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 mr-1 shrink-0">
-                <Calendar size={12} /> Année :
-              </span>
-              <button
-                type="button"
-                onClick={() => setYearFilter('all')}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition cursor-pointer shrink-0 ${
-                  yearFilter === 'all'
-                    ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
-                    : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50'
-                }`}
-              >
-                Toutes ({trackGroups.length})
-              </button>
-              {availableYears.map(({ year, count }) => (
-                <button
-                  key={year}
-                  type="button"
-                  onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
-                  className={`rounded-full px-3 py-1 font-mono text-xs font-semibold transition cursor-pointer shrink-0 ${
-                    yearFilter === year
-                      ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
-                      : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/50'
-                  }`}
-                >
-                  {year} <span className="opacity-75">({count})</span>
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Compact Minimalist Stats Strip */}
           <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-slate-400 dark:text-zinc-500 px-0.5">
@@ -1114,8 +1077,7 @@ export function MusicView({
                     const activeTrack = getActiveTrackForGroup(group);
                     const isCurrent = player.currentTrack?.id === activeTrack.id;
                     const isPlayingProd = Boolean(
-                      group.prodTrack &&
-                        player.currentTrack?.id === group.prodTrack.id &&
+                      group.prodTracks.some((p) => p.track.id === player.currentTrack?.id) &&
                         player.isPlaying
                     );
                     const favQueue = favoriteGroups.map(getActiveTrackForGroup);
@@ -1212,8 +1174,7 @@ export function MusicView({
                   const activeTrack = getActiveTrackForGroup(group);
                   const isCurrent = player.currentTrack?.id === activeTrack.id;
                   const isPlayingProd = Boolean(
-                    group.prodTrack &&
-                      player.currentTrack?.id === group.prodTrack.id &&
+                    group.prodTracks.some((p) => p.track.id === player.currentTrack?.id) &&
                       player.isPlaying
                   );
                   const recentQueue = recentGroups.map(getActiveTrackForGroup);
@@ -1566,39 +1527,6 @@ export function MusicView({
                 </button>
               </div>
             </div>
-            {/* Year / Saison Filter Strip inside Library */}
-            {availableYears.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100 dark:border-zinc-800/70">
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 mr-0.5">
-                  <Calendar size={11} /> Année :
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setYearFilter('all')}
-                  className={`rounded-lg px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
-                    yearFilter === 'all'
-                      ? 'bg-[#8C271E] text-white'
-                      : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
-                  }`}
-                >
-                  Toutes
-                </button>
-                {availableYears.map(({ year, count }) => (
-                  <button
-                    key={year}
-                    type="button"
-                    onClick={() => setYearFilter((cur) => (cur === year ? 'all' : year))}
-                    className={`rounded-lg px-2.5 py-1 font-mono text-[11px] font-semibold transition cursor-pointer ${
-                      yearFilter === year
-                        ? 'bg-[#8C271E] text-white'
-                        : 'bg-slate-100 dark:bg-zinc-800/80 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    {year} <span className="opacity-65">({count})</span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* Clickable Cards Grid (with shimmer skeleton while syncing Drive!) */}
@@ -1707,6 +1635,14 @@ export function MusicView({
         onOpenLyrics={openLinkedLyrics}
         onRequestLinkVersion={(g, tid) =>
           setLinkModal({ mode: 'attach-to-target', sourceGroup: g, sourceTrackId: tid })
+        }
+        onRequestPullProd={(g, tid) =>
+          setLinkModal({
+            mode: 'pull-into-group',
+            sourceGroup: g,
+            sourceTrackId: tid,
+            defaultAsProd: true,
+          })
         }
         onDetachVersion={handleDetachVersion}
       />

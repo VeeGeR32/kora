@@ -93,10 +93,18 @@ const ATTACHED_NUM_RE = /^(.+?[a-zA-ZÀ-ÿ]{2,})(\d{1,2}(?:\.\d+)?)$/;
 const ATTACHED_NUM_IGNORE = /(?:mp3|mp4|wav|m4a|3d|4k|808|909)$/i;
 
 const SONG_PROD_SUFFIX_RE =
-  /(?:^|[\s_-])(?:prod|instru|instrumental)(?:[\s._-]*(?:v?\d+(?:\.\d+)?))?$|[\(\[]\s*(?:prod|instru|instrumental)\s*[\)\]]$/i;
+  /(?:^|[\s_-])(?:prod|instru|instrumental)(?:$|[\s._-]*(?:v?\d+(?:\.\d+)*|[a-zA-ZÀ-ÿ0-9]{1,20}))|[\(\[]\s*(?:prod|instru|instrumental)(?:[\s._-]*[\w.+-]+){0,2}\s*[\)\]]$/i;
+
+const PROD_DASH_SUFFIX_RE =
+  /(?:[\s]*[-_][\s]*|\s+)((?:prod|instru|instrumental)(?:[\s._-]+(?:v?\d+(?:\.\d+)*|[a-zA-ZÀ-ÿ0-9]{1,18}))?)$/i;
 
 export function isProdSuffixText(text: string): boolean {
-  return SONG_PROD_SUFFIX_RE.test((text || '').trim());
+  const cleaned = (text || '').trim();
+  if (!cleaned) return false;
+  return (
+    /^(?:prod|instru|instrumental)(?:\b|\d)/i.test(cleaned) ||
+    SONG_PROD_SUFFIX_RE.test(cleaned)
+  );
 }
 
 function stripAudioExtension(raw: string): string {
@@ -148,7 +156,12 @@ function tupleToFloat(parts: number[]): number {
 export function parseTrackVersion(
   track: Pick<
     MusicTrack,
-    'title' | 'sourceFilename' | 'manualGroupKey' | 'manualGroupTitle' | 'manualVersionLabel'
+    | 'title'
+    | 'sourceFilename'
+    | 'manualGroupKey'
+    | 'manualGroupTitle'
+    | 'manualVersionLabel'
+    | 'isProdOverride'
   >
 ): ParsedTrackVersion {
   const rawOriginal = stripAudioExtension(track.sourceFilename || track.title || 'Sans titre');
@@ -270,6 +283,30 @@ export function parseTrackVersion(
       }
     }
 
+    // 2c-bis. Prod/Instru with custom variant label e.g. "Song - prod guitare", "Song_prod_piano", "Song prod alt"
+    const prodVarMatch = working.match(PROD_DASH_SUFFIX_RE);
+    if (prodVarMatch) {
+      const rest = working.slice(0, prodVarMatch.index).trim();
+      const matchedStr = prodVarMatch[1].trim();
+      // Only trigger this branch when there's a custom qualifier after prod/instru (plain "prod" is handled by 2c)
+      const hasQualifier = /^(?:prod|instru|instrumental)[\s._-]+.+/i.test(matchedStr);
+      if (hasQualifier && rest.replace(/[^a-zA-ZÀ-ÿ0-9]/g, '').length >= 2) {
+        const cleanedProd = normalizeDisplayTitle(matchedStr);
+        const trailingNum = cleanedProd.match(/(\d+(?:\.\d+)*)$/);
+        if (trailingNum) {
+          const tuple = trailingNum[1].split('.').map((n) => parseInt(n, 10));
+          if (!numericParts) numericParts = tuple;
+          scoreAcc += 55 + tupleToFloat(tuple);
+        } else {
+          scoreAcc += 52;
+        }
+        peeledTokens.unshift(cleanedProd);
+        working = rest;
+        matched = true;
+        continue;
+      }
+    }
+
     // 2d. Separated trailing version number e.g. "Song_2", "Song 3.1"
     const sepNumMatch = working.match(SEPARATED_NUM_RE);
     if (sepNumMatch) {
@@ -317,7 +354,7 @@ export function parseTrackVersion(
   }
 
   const isProd = peeledTokens.some((tok) =>
-    /^\(?\s*(?:prod|instru|instrumental)\s*\)?$/i.test(tok.trim())
+    /^\(?\s*(?:prod|instru|instrumental)(?:\b|\d)/i.test(tok.trim())
   );
 
   const versionScore = isBaseOriginal
@@ -338,10 +375,18 @@ export function parseTrackVersion(
 }
 
 function applyManualOverrides(
-  track: Pick<MusicTrack, 'title' | 'manualGroupKey' | 'manualGroupTitle' | 'manualVersionLabel'>,
+  track: Pick<
+    MusicTrack,
+    'title' | 'manualGroupKey' | 'manualGroupTitle' | 'manualVersionLabel' | 'isProdOverride'
+  >,
   parsed: ParsedTrackVersion
 ): ParsedTrackVersion {
-  if (!track.manualGroupKey && !track.manualVersionLabel && !track.manualGroupTitle) {
+  if (
+    !track.manualGroupKey &&
+    !track.manualVersionLabel &&
+    !track.manualGroupTitle &&
+    typeof track.isProdOverride !== 'boolean'
+  ) {
     return parsed;
   }
   const overriddenKey = track.manualGroupKey || parsed.groupKey;
@@ -352,12 +397,20 @@ function applyManualOverrides(
     track.manualGroupKey && track.manualGroupKey !== parsed.groupKey && parsed.isBaseOriginal
       ? track.title
       : parsed.versionLabel;
+  const overriddenLabel = track.manualVersionLabel?.trim() || fallbackLabel;
+  const overriddenIsProd =
+    typeof track.isProdOverride === 'boolean'
+      ? track.isProdOverride
+      : track.manualVersionLabel?.trim()
+      ? isProdSuffixText(track.manualVersionLabel)
+      : parsed.isProd;
 
   return {
     ...parsed,
     groupKey: overriddenKey,
     baseTitle: overriddenTitle,
-    versionLabel: track.manualVersionLabel?.trim() || fallbackLabel,
+    versionLabel: overriddenLabel,
+    isProd: overriddenIsProd,
   };
 }
 
@@ -436,6 +489,9 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
 
     if (activeVersions.length > 0) {
       activeVersions[0].isLatest = true;
+    }
+    if (prodEntries.length > 0) {
+      prodEntries[0].isLatest = true;
     }
 
     const latest = activeVersions[0];

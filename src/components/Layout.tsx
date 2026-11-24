@@ -190,7 +190,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   title={sidebarCollapsed ? item.label : undefined}
                   className={`relative w-full flex items-center ${
                     sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-                  } rounded-xl py-2.5 text-sm font-medium transition cursor-pointer ${
+                  } rounded-xl py-2.5 text-sm font-medium transition-colors duration-100 cursor-pointer ${
                     active
                       ? 'text-white'
                       : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-200 hover:bg-[#8C271E]/6 dark:hover:bg-[#8C271E]/12'
@@ -199,7 +199,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   {active && (
                     <motion.span
                       layoutId="desktopNavPill"
-                      transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                      transition={{ type: 'spring', stiffness: 820, damping: 48, mass: 0.35 }}
                       className="absolute inset-0 rounded-xl bg-[#8C271E] shadow-sm shadow-[#8C271E]/30"
                     />
                   )}
@@ -428,13 +428,14 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               key={item.id}
               type="button"
               onClick={() => onPageChange(item.id)}
-              className={`relative flex-1 flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10px] font-medium transition ${
+              className={`relative flex-1 flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-[10px] font-medium transition-colors duration-100 ${
                 active ? 'text-white' : 'text-slate-400 dark:text-zinc-500'
               }`}
             >
               {active && (
                 <motion.span
                   layoutId="mobileNavPill"
+                  transition={{ type: 'spring', stiffness: 820, damping: 48, mass: 0.35 }}
                   className="absolute inset-x-1 inset-y-0 rounded-xl bg-[#8C271E] shadow-xs shadow-[#8C271E]/25"
                 />
               )}

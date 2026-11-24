@@ -13,6 +13,7 @@ import {
   ListChecks,
   Music2,
   Pause,
+  Pencil,
   Play,
   Plus,
   Search,
@@ -59,6 +60,7 @@ interface TrackDetailModalProps {
   onSelectVersion: (trackId: string) => void;
   onOpenLyrics: (track: MusicTrack) => void;
   onRequestPullVersion: (group: TrackGroup, trackId: string) => void;
+  onRequestPullProd?: (group: TrackGroup, trackId: string) => void;
   onRequestAttachToOther: (group: TrackGroup, trackId: string) => void;
   onDetachVersion: (trackId: string) => void;
   onOpenContextMenu?: (
@@ -93,6 +95,7 @@ export function TrackDetailModal({
   onSelectVersion,
   onOpenLyrics,
   onRequestPullVersion,
+  onRequestPullProd,
   onRequestAttachToOther,
   onDetachVersion,
   onOpenContextMenu,
@@ -128,6 +131,8 @@ export function TrackDetailModal({
   const [lyricsSearch, setLyricsSearch] = useState('');
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [editingProdId, setEditingProdId] = useState<string | null>(null);
+  const [editingProdDraft, setEditingProdDraft] = useState('');
 
   useEffect(() => {
     setSongTitleDraft(group?.baseTitle || '');
@@ -151,7 +156,8 @@ export function TrackDetailModal({
             track,
             state.musicProjects,
             group.groupKey,
-            group.versions.map((v) => v.track)
+            group.versions.map((v) => v.track),
+            { preferIndividual: true }
           )
         : null,
     [track, group, state.musicProjects]
@@ -331,8 +337,16 @@ export function TrackDetailModal({
   );
   const allGroupTrackIds =
     group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
-  const isCurrentProd = Boolean(group.prodTrack && player.currentTrack?.id === group.prodTrack.id);
+  const activeProdEntry =
+    group.prodTracks.find((p) => p.track.id === player.currentTrack?.id) ||
+    group.prodTracks[0] ||
+    null;
+  const activeProdTrack = activeProdEntry?.track || group.prodTrack;
+  const isCurrentProd = Boolean(
+    activeProdTrack && player.currentTrack?.id === activeProdTrack.id
+  );
   const isPlayingProd = isCurrentProd && player.isPlaying;
+  const prodPlaybackQueue = [track, ...group.prodTracks.map((p) => p.track)];
 
   const handleUploadCover = async (file: File | undefined) => {
     if (!file) return;
@@ -630,13 +644,13 @@ export function TrackDetailModal({
                     )}
                   </button>
 
-                  {group.prodTrack && group.prodTrack.id !== track.id && (
+                  {activeProdTrack && activeProdTrack.id !== track.id && (
                     <button
                       type="button"
                       onClick={() =>
                         isCurrentProd
                           ? player.togglePlay()
-                          : void player.playTrack(group.prodTrack!, 0, [track, group.prodTrack!])
+                          : void player.playTrack(activeProdTrack, 0, prodPlaybackQueue)
                       }
                       className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer ${
                         isPlayingProd
@@ -646,11 +660,19 @@ export function TrackDetailModal({
                     >
                       {isPlayingProd ? (
                         <>
-                          <Pause size={13} fill="currentColor" /> Pause Prod
+                          <Pause size={13} fill="currentColor" />
+                          <span>
+                            Pause {group.prodTracks.length > 1 && activeProdEntry ? activeProdEntry.versionLabel : 'Prod'}
+                          </span>
                         </>
                       ) : (
                         <>
-                          <Music2 size={13} /> Lancer la prod
+                          <Music2 size={13} />
+                          <span>
+                            {group.prodTracks.length > 1
+                              ? `Prods (${group.prodTracks.length})`
+                              : 'Lancer la prod'}
+                          </span>
                         </>
                       )}
                     </button>
@@ -1246,6 +1268,157 @@ export function TrackDetailModal({
                   );
                 })}
               </div>
+            </section>
+
+            {/* Multiple Prod / Instrumental Versions Section */}
+            <section className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-600/90 dark:text-emerald-400/90 flex items-center gap-1.5">
+                  <Music2 size={12} /> Versions de prod ({group.prodTracks.length})
+                </h3>
+                {onRequestPullProd && (
+                  <button
+                    type="button"
+                    onClick={() => onRequestPullProd(group, track.id)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 text-white shadow-xs shadow-emerald-600/20 hover:bg-emerald-500 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
+                  >
+                    <Plus size={11} /> Ajouter une prod
+                  </button>
+                )}
+              </div>
+
+              {group.prodTracks.length === 0 ? (
+                <p className="text-[11px] text-slate-400 dark:text-zinc-500">
+                  Aucune prod liée pour l’instant — ajoute une ou plusieurs versions d’instru pour basculer facilement entre elles.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {group.prodTracks.map((p) => {
+                    const isThisProdCurrent = player.currentTrack?.id === p.track.id;
+                    const playingThisProd = isThisProdCurrent && player.isPlaying;
+                    const isEditingThis = editingProdId === p.track.id;
+                    return (
+                      <div
+                        key={p.track.id}
+                        className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
+                          isThisProdCurrent
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs shadow-emerald-600/25'
+                            : 'bg-emerald-500/8 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 border-emerald-500/25 hover:border-emerald-500/50'
+                        }`}
+                      >
+                        {isEditingThis ? (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const clean = editingProdDraft.trim();
+                              if (clean) {
+                                updateMusicTrack(p.track.id, {
+                                  manualVersionLabel: clean,
+                                  isProdOverride: true,
+                                });
+                                notify(`Prod renommée en « ${clean} » ✓`);
+                              }
+                              setEditingProdId(null);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1"
+                          >
+                            <input
+                              autoFocus
+                              type="text"
+                              value={editingProdDraft}
+                              onChange={(e) => setEditingProdDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') setEditingProdId(null);
+                              }}
+                              onBlur={() => setEditingProdId(null)}
+                              placeholder="Ex. Prod v2, Guitare…"
+                              className="w-28 bg-white/90 dark:bg-zinc-900 text-slate-900 dark:text-zinc-100 rounded-md px-1.5 py-0.5 text-xs outline-none"
+                            />
+                            <button
+                              type="submit"
+                              onMouseDown={(e) => e.preventDefault()}
+                              className="p-0.5 rounded bg-emerald-600 text-white cursor-pointer"
+                            >
+                              <Check size={11} />
+                            </button>
+                          </form>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isThisProdCurrent) {
+                                  player.togglePlay();
+                                } else {
+                                  void player.playTrack(p.track, 0, prodPlaybackQueue);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
+                            >
+                              {playingThisProd ? (
+                                <Pause size={11} fill="currentColor" />
+                              ) : (
+                                <Play size={11} fill="currentColor" />
+                              )}
+                              <span className="font-mono font-semibold">{p.versionLabel}</span>
+                              {(p.track.modifiedAt || p.track.addedAt) && (
+                                <span
+                                  className={`font-mono text-[10px] ${
+                                    isThisProdCurrent ? 'opacity-75' : 'text-emerald-700/60 dark:text-emerald-300/60'
+                                  }`}
+                                >
+                                  {fmtDate(p.track.modifiedAt || p.track.addedAt)}
+                                </span>
+                              )}
+                              {p.isLatest && group.prodTracks.length > 1 && (
+                                <span
+                                  className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                                    isThisProdCurrent
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-200'
+                                  }`}
+                                >
+                                  Actuelle
+                                </span>
+                              )}
+                              {playingThisProd && (
+                                <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              title="Renommer cette version de prod"
+                              onClick={() => {
+                                setEditingProdId(p.track.id);
+                                setEditingProdDraft(p.versionLabel);
+                              }}
+                              className={`px-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
+                                isThisProdCurrent ? 'text-white' : 'text-emerald-700 dark:text-emerald-300'
+                              }`}
+                            >
+                              <Pencil size={10} />
+                            </button>
+
+                            {group.allTrackIds.length > 1 && (
+                              <button
+                                type="button"
+                                title="Détacher cette prod en fichier indépendant"
+                                onClick={() => onDetachVersion(p.track.id)}
+                                className={`pr-2 pl-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
+                                  isThisProdCurrent ? 'hover:text-rose-200' : 'hover:text-rose-500'
+                                }`}
+                              >
+                                <Unlink size={11} />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             {/* Description (like a Project!) */}

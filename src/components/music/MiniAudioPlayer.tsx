@@ -112,6 +112,7 @@ export function MiniAudioPlayer() {
 
   // Mini-player text slide direction
   const [slideDir, setSlideDir] = useState<1 | -1>(1);
+  const [showProdPicker, setShowProdPicker] = useState(false);
   const prevTrackIdRef = useRef<string | null>(null);
   const pendingDirRef = useRef<1 | -1 | null>(null);
 
@@ -167,7 +168,10 @@ export function MiniAudioPlayer() {
   }, [currentTrack?.id, allGroups]);
 
   const siblingTracks = useMemo(
-    () => (currentGroup ? currentGroup.versions.map((v) => v.track) : undefined),
+    () =>
+      currentGroup
+        ? [...currentGroup.versions.map((v) => v.track), ...currentGroup.prodTracks.map((p) => p.track)]
+        : undefined,
     [currentGroup]
   );
 
@@ -337,7 +341,7 @@ export function MiniAudioPlayer() {
         trk,
         state.musicProjects,
         grp?.groupKey,
-        grp?.versions.map((v) => v.track)
+        grp ? [...grp.versions.map((v) => v.track), ...grp.prodTracks.map((p) => p.track)] : undefined
       );
       return {
         url: eff.coverDataUrl || eff.cloudCoverUrl || null,
@@ -794,7 +798,7 @@ export function MiniAudioPlayer() {
     if (!vis) return null;
     const inner = (
       <div
-        className={`w-full max-w-[330px] sm:max-w-[355px] lg:max-w-[375px] aspect-square rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200/80 dark:border-white/10 shadow-xl shadow-black/15 dark:shadow-black/60 ${
+        className={`w-full max-w-[min(92vw,420px)] sm:max-w-[440px] lg:max-w-[465px] xl:max-w-[495px] aspect-square rounded-2xl lg:rounded-3xl overflow-hidden border border-slate-200/80 dark:border-white/10 shadow-xl shadow-black/15 dark:shadow-black/60 ${
           vis.url ? '' : `bg-gradient-to-br ${vis.grad}`
         } ${clickable && isLoadingTrack ? 'animate-pulse opacity-80' : ''}`}
       >
@@ -1087,11 +1091,11 @@ export function MiniAudioPlayer() {
                 {/* Main Body */}
                 <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] lg:gap-12 xl:gap-16 lg:items-center lg:px-10 lg:py-4">
                   {/* LEFT COLUMN: True Full-Width 3-Slide Spotify Cover Carousel + Controls */}
-                  <div className="flex-1 min-h-0 flex flex-col justify-between lg:justify-center lg:gap-6 lg:max-w-lg lg:mx-auto lg:w-full">
+                  <div className="flex-1 min-h-0 flex flex-col justify-between lg:justify-center lg:gap-5 lg:max-w-xl lg:mx-auto lg:w-full">
                     {/* FULL-WIDTH 3-SLIDE SPOTIFY CAROUSEL (Zero side slivers at rest · 1:1 finger glide on swipe!) */}
                     <div
                       data-cover-swipe="true"
-                      className="flex-1 lg:flex-none flex items-center justify-center py-3 lg:py-0 min-h-0 w-full overflow-hidden"
+                      className="flex-1 lg:flex-none flex items-center justify-center py-2 lg:py-0 min-h-0 w-full overflow-hidden"
                     >
                       <div
                         ref={coverCarouselTrackRef}
@@ -1101,20 +1105,20 @@ export function MiniAudioPlayer() {
                         {/* Slide -1 (Previous Cover — 100% off-screen left at rest!) */}
                         <div
                           aria-hidden="true"
-                          className="absolute top-0 bottom-0 -left-full w-full px-6 lg:px-0 flex items-center justify-center"
+                          className="absolute top-0 bottom-0 -left-full w-full px-4 sm:px-6 lg:px-0 flex items-center justify-center"
                         >
                           {renderCoverCard(activeCarousel.prev, false)}
                         </div>
 
                         {/* Slide 0 (Current Active Cover — dead center!) */}
-                        <div className="w-full px-6 lg:px-0 flex items-center justify-center">
+                        <div className="w-full px-4 sm:px-6 lg:px-0 flex items-center justify-center">
                           {renderCoverCard(activeCarousel.center, true)}
                         </div>
 
                         {/* Slide +1 (Next Cover — 100% off-screen right at rest!) */}
                         <div
                           aria-hidden="true"
-                          className="absolute top-0 bottom-0 left-full w-full px-6 lg:px-0 flex items-center justify-center"
+                          className="absolute top-0 bottom-0 left-full w-full px-4 sm:px-6 lg:px-0 flex items-center justify-center"
                         >
                           {renderCoverCard(activeCarousel.next, false)}
                         </div>
@@ -1122,7 +1126,7 @@ export function MiniAudioPlayer() {
                     </div>
 
                     {/* Bottom Controls Stack */}
-                    <div className="space-y-4 px-6 lg:px-0">
+                    <div className="space-y-4 px-5 sm:px-6 lg:px-0">
                       {/* Title, Subtitle, Son/Prod Pill & Favorite Star */}
                       <div data-cover-swipe="true" className="flex items-center justify-between gap-2.5">
                         <div className="min-w-0 flex-1 overflow-hidden">
@@ -1149,12 +1153,16 @@ export function MiniAudioPlayer() {
                           </AnimatePresence>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="relative flex items-center gap-1.5 shrink-0">
                           {alternateProdOrSong && (
                             <button
                               type="button"
                               onClick={() => {
-                                void playTrack(alternateProdOrSong.target, 0, queue);
+                                if (currentGroup && currentGroup.prodTracks.length > 1) {
+                                  setShowProdPicker((v) => !v);
+                                } else {
+                                  void playTrack(alternateProdOrSong.target, 0, queue);
+                                }
                                 triggerHapticTick(8);
                               }}
                               className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
@@ -1164,8 +1172,75 @@ export function MiniAudioPlayer() {
                               }`}
                             >
                               <Music2 size={11} />
-                              {alternateProdOrSong.isCurrentlyProd ? 'Son' : 'Prod'}
+                              <span>
+                                {currentGroup && currentGroup.prodTracks.length > 1
+                                  ? alternateProdOrSong.isCurrentlyProd
+                                    ? parsedCurrent?.versionLabel || 'Prod'
+                                    : `Prods (${currentGroup.prodTracks.length})`
+                                  : alternateProdOrSong.isCurrentlyProd
+                                  ? 'Son'
+                                  : 'Prod'}
+                              </span>
+                              {currentGroup && currentGroup.prodTracks.length > 1 && (
+                                <ChevronDown size={10} className="opacity-75" />
+                              )}
                             </button>
+                          )}
+
+                          {/* Multi-Prod Quick Switcher Popover (only when > 1 prod version exists) */}
+                          {showProdPicker && currentGroup && currentGroup.prodTracks.length > 1 && (
+                            <>
+                              <div
+                                className="fixed inset-0 z-20"
+                                onClick={() => setShowProdPicker(false)}
+                              />
+                              <div className="absolute right-0 bottom-full mb-2 z-30 w-48 rounded-2xl bg-white dark:bg-[#1a1a20] border border-slate-200 dark:border-zinc-700 shadow-2xl p-1.5 space-y-0.5">
+                                {currentGroup.latestTrack.id !== currentGroup.prodTrack?.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowProdPicker(false);
+                                      void playTrack(currentGroup.latestTrack, 0, queue);
+                                      triggerHapticTick(8);
+                                    }}
+                                    className={`w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition cursor-pointer ${
+                                      currentTrack.id === currentGroup.latestTrack.id
+                                        ? 'bg-[#8C271E] text-white font-semibold'
+                                        : 'text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                                    }`}
+                                  >
+                                    <span className="truncate">Son ({currentGroup.latestVersionLabel})</span>
+                                  </button>
+                                )}
+                                <p className="px-2 pt-1 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                                  Versions de prod
+                                </p>
+                                {currentGroup.prodTracks.map((p) => {
+                                  const isThis = currentTrack.id === p.track.id;
+                                  return (
+                                    <button
+                                      key={p.track.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setShowProdPicker(false);
+                                        void playTrack(p.track, 0, queue);
+                                        triggerHapticTick(8);
+                                      }}
+                                      className={`w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition cursor-pointer ${
+                                        isThis
+                                          ? 'bg-emerald-600 text-white font-semibold'
+                                          : 'text-slate-700 dark:text-zinc-200 hover:bg-emerald-500/12'
+                                      }`}
+                                    >
+                                      <span className="font-mono truncate">{p.versionLabel}</span>
+                                      {p.isLatest && (
+                                        <span className="text-[9px] opacity-75 shrink-0">Actuelle</span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
                           )}
 
                           <button

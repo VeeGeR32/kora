@@ -327,7 +327,11 @@ export function TrackCard({
                   e.stopPropagation();
                   onPlayProd(group.prodTrack!);
                 }}
-                title="Lancer la prod (instru) de ce morceau"
+                title={
+                  group.prodTracks.length > 1
+                    ? `Lancer la prod (${group.prodTracks.length} versions de prod disponibles)`
+                    : 'Lancer la prod (instru) de ce morceau'
+                }
                 className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer ${
                   isPlayingProd
                     ? 'bg-emerald-600 text-white shadow-xs'
@@ -339,7 +343,9 @@ export function TrackCard({
                 ) : (
                   <Music2 size={9} />
                 )}
-                <span>Prod</span>
+                <span>
+                  {group.prodTracks.length > 1 ? `Prod ×${group.prodTracks.length}` : 'Prod'}
+                </span>
               </button>
             )}
 
@@ -365,11 +371,6 @@ export function TrackCard({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-1.5 min-w-0">
-          {group.yearFolder && (
-            <span className="rounded-md bg-slate-100 dark:bg-zinc-800 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-slate-600 dark:text-zinc-300 shrink-0">
-              {group.yearFolder}
-            </span>
-          )}
           <span className="font-mono text-[10px] text-slate-400 truncate">
             {fmtShortDate(track.modifiedAt || track.addedAt) || 'Drive'}
             {!activeEntry.isLatest && group.hasMultipleVersions ? ' · ancienne ver.' : ''}

@@ -288,7 +288,8 @@ export interface MusicTrack {
   driveYearFolder?: string; // Detected Google Drive year/season folder e.g. "2024/2025"
   manualGroupKey?: string; // User-assigned version group override (e.g. attach track as version of another song)
   manualGroupTitle?: string; // Optional custom display title for the manual group
-  manualVersionLabel?: string; // Optional custom version label (e.g. "Mix final", "Acoustique")
+  manualVersionLabel?: string; // Optional custom version label (e.g. "Mix final", "Acoustique", "Prod v2")
+  isProdOverride?: boolean; // Explicit override marking this track as a prod/instrumental version (or vocal if false)
   modifiedAt?: string; // Drive modifiedTime or last file edit ISO
   durationSec?: number;
   bpm?: number;
@@ -363,6 +364,19 @@ export interface MusicProjectSprint {
   completedAt?: string;
 }
 
+export type ProjectPackColor = 'crimson' | 'emerald' | 'amber' | 'sky' | 'violet' | 'zinc';
+
+export interface MusicProjectPack {
+  id: string;
+  title: string;
+  description?: string;
+  color?: ProjectPackColor;
+  trackIds: string[];
+  doneTrackIds?: string[]; // Optional per-pack checkmark per track (if used as a session/checklist)
+  targetDate?: string; // Optional ISO YYYY-MM-DD
+  createdAt: string;
+}
+
 export interface MusicProject {
   id: string;
   title: string;
@@ -378,12 +392,13 @@ export interface MusicProject {
   pinnedVersionByGroup?: Record<string, string>;
   benchTrackIds?: string[]; // Backlog / Hors-projet (sons mis de côté / en réflexion)
   isTracklistLocked?: boolean; // Gel de la tracklist définitive
-  sprints?: MusicProjectSprint[]; // Phase 1 : Sprints Maquettes (v0 -> v2, 2 à 3 titres)
-  maquettesLockedAt?: string; // Phase 2 : Verrouillage des maquettes v2 après écoute globale
-  recSprints?: MusicProjectSprint[]; // Phase 3 : Sprints Rec Final (v2 -> v3, mêmes divisions que Phase 1)
-  globalMixDoneAt?: string; // Phase 4 : Sprint Global Pré-mix + Master (tous les sons ensemble -> v5)
-  finalSequenceDoneAt?: string; // Phase 5 : Écoute finale & ordre définitif de la mixtape validé
-  harmonizationChecklist?: MusicProjectStep[]; // Checklist d'homogénéité Pré-mix & Master
+  packs?: MusicProjectPack[]; // Dossiers / packs libres personnalisables pour trier & organiser le projet
+  sprints?: MusicProjectSprint[]; // Legacy sprints (migrated transparently into packs)
+  maquettesLockedAt?: string;
+  recSprints?: MusicProjectSprint[];
+  globalMixDoneAt?: string;
+  finalSequenceDoneAt?: string;
+  harmonizationChecklist?: MusicProjectStep[];
   notes?: string;
 }
 

@@ -44,6 +44,7 @@ interface TrackContextMenuProps {
   onOpenDetails: (groupKey: string, trackId: string) => void;
   onOpenLyrics: (track: MusicTrack) => void;
   onRequestLinkVersion: (group: TrackGroup, trackId: string) => void;
+  onRequestPullProd?: (group: TrackGroup, trackId: string) => void;
   onDetachVersion: (trackId: string) => void;
 }
 
@@ -62,6 +63,7 @@ export function TrackContextMenu({
   onOpenDetails,
   onOpenLyrics,
   onRequestLinkVersion,
+  onRequestPullProd,
   onDetachVersion,
 }: TrackContextMenuProps) {
   const {
@@ -81,7 +83,9 @@ export function TrackContextMenu({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const [openSection, setOpenSection] = useState<'versions' | 'projects' | 'playlists' | 'rename' | null>(null);
+  const [openSection, setOpenSection] = useState<
+    'versions' | 'prods' | 'projects' | 'playlists' | 'rename' | null
+  >(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
@@ -135,8 +139,15 @@ export function TrackContextMenu({
 
   const isCurrent = player.currentTrack?.id === track.id;
   const isPlaying = isCurrent && player.isPlaying;
-  const isCurrentProd = Boolean(group.prodTrack && player.currentTrack?.id === group.prodTrack.id);
+  const activeProdEntry =
+    group.prodTracks.find((p) => p.track.id === player.currentTrack?.id) ||
+    group.prodTracks[0] ||
+    null;
+  const isCurrentProd = Boolean(
+    activeProdEntry && player.currentTrack?.id === activeProdEntry.track.id
+  );
   const isPlayingProd = isCurrentProd && player.isPlaying;
+  const prodQueue = [track, ...group.prodTracks.map((p) => p.track)];
   const allIds = group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
   const todos = track.todos || [];
   const todoDone = todos.filter((t) => t.done).length;
@@ -239,13 +250,13 @@ export function TrackContextMenu({
             <span className="font-medium">{isPlaying ? 'Mettre en pause' : 'Écouter'}</span>
           </button>
 
-          {/* Play Linked Prod (when a *_prod file exists for this song!) */}
-          {group.prodTrack && group.prodTrack.id !== track.id && (
+          {/* Play Linked Prod(s) (supports 1 or multiple prod versions!) */}
+          {group.prodTracks.length === 1 && group.prodTrack && group.prodTrack.id !== track.id && (
             <button
               type="button"
               onClick={() => {
                 if (isCurrentProd) player.togglePlay();
-                else void player.playTrack(group.prodTrack!, 0, [track, group.prodTrack!]);
+                else void player.playTrack(group.prodTrack!, 0, prodQueue);
                 onClose();
               }}
               className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
@@ -259,6 +270,58 @@ export function TrackContextMenu({
                 {isPlayingProd ? 'Pause (Prod)' : 'Lancer la prod (instru)'}
               </span>
             </button>
+          )}
+          {group.prodTracks.length > 1 && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setOpenSection((s) => (s === 'prods' ? null : 'prods'))}
+                className="w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Music2 size={14} className="shrink-0" />
+                  <span className="font-semibold">Prods ({group.prodTracks.length})</span>
+                </span>
+                <ChevronRight
+                  size={13}
+                  className={`transition-transform ${openSection === 'prods' ? 'rotate-90' : ''}`}
+                />
+              </button>
+              {openSection === 'prods' && (
+                <div className="mt-0.5 mb-1 mx-1 rounded-xl bg-emerald-500/5 dark:bg-emerald-950/30 border border-emerald-500/20 max-h-40 overflow-y-auto p-1 space-y-0.5">
+                  {group.prodTracks.map((p) => {
+                    const isThisCurrent = player.currentTrack?.id === p.track.id;
+                    const isThisPlaying = isThisCurrent && player.isPlaying;
+                    return (
+                      <button
+                        key={p.track.id}
+                        type="button"
+                        onClick={() => {
+                          if (isThisCurrent) player.togglePlay();
+                          else void player.playTrack(p.track, 0, prodQueue);
+                          onClose();
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition cursor-pointer ${
+                          isThisCurrent
+                            ? 'bg-emerald-600 text-white'
+                            : 'text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/15'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          {isThisPlaying ? <Pause size={11} /> : <Play size={11} />}
+                          <span className="font-mono text-[11px] font-semibold truncate">
+                            {p.versionLabel}
+                          </span>
+                        </span>
+                        <span className="font-mono text-[9px] opacity-70 shrink-0">
+                          {fmtShortDate(p.track.modifiedAt || p.track.addedAt)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Rename Song (without touching version names!) */}
@@ -487,6 +550,20 @@ export function TrackContextMenu({
             <Link2 size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
             <span className="font-medium">Version d’un autre son…</span>
           </button>
+
+          {onRequestPullProd && (
+            <button
+              type="button"
+              onClick={() => {
+                onRequestPullProd(group, track.id);
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
+            >
+              <Music2 size={14} className="shrink-0" />
+              <span className="font-medium">Ajouter une prod…</span>
+            </button>
+          )}
 
           {group.hasMultipleVersions && (
             <button

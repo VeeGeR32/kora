@@ -242,17 +242,22 @@ export function findLinkedProjectForTrack(
 }
 
 /**
- * Unified cover resolution rule (shared by TrackCard, TrackDetailModal, and MiniAudioPlayer):
- * 1. If the song has its own individual cover (on the track or any sibling version) -> ALWAYS display it immediately.
- * 2. Otherwise, if the song belongs to a project that HAS a cover -> inherit the project's cover.
- * 3. Otherwise -> deterministic gradient fallback.
- * (Inside ProjectAlbumModal, the project's own cover still overrides tracklist items when set.)
+ * Unified cover resolution rule:
+ * - Default (`preferIndividual = false`, used in MiniAudioPlayer, TrackCard, Playlists, Tabs, etc.):
+ *   1. If the song belongs to a project that HAS a cover -> ALWAYS display the project's cover (even if the song has an individual cover).
+ *   2. Otherwise, if the song has its own individual cover -> display it.
+ *   3. Otherwise -> deterministic gradient fallback.
+ * - Song page (`preferIndividual = true`, used ONLY in TrackDetailModal):
+ *   1. If the song has its own individual cover -> display it.
+ *   2. Otherwise, if the song belongs to a project that HAS a cover -> inherit the project's cover.
+ *   3. Otherwise -> deterministic gradient fallback.
  */
 export function resolveEffectiveTrackCover(
   track: MusicTrack,
   projects: MusicProject[],
   groupKey?: string,
-  siblingTracks?: MusicTrack[]
+  siblingTracks?: MusicTrack[],
+  options?: { preferIndividual?: boolean }
 ): {
   coverDataUrl: string | null;
   coverMediaId: string | null;
@@ -261,8 +266,14 @@ export function resolveEffectiveTrackCover(
   inheritedFromProject: boolean;
 } {
   const linkedProject = findLinkedProjectForTrack(track, projects, siblingTracks);
+  const preferIndividual = Boolean(options?.preferIndividual);
 
-  // 1. Individual song cover (checked across active track + sibling versions)
+  // Project cover lookup
+  const hasProjectCover = Boolean(
+    linkedProject && (linkedProject.coverDataUrl || linkedProject.coverMediaId)
+  );
+
+  // Individual song cover (checked across active track + sibling versions)
   const ownDataUrl =
     track.coverDataUrl ||
     siblingTracks?.find((s) => Boolean(s.coverDataUrl))?.coverDataUrl ||
@@ -275,40 +286,45 @@ export function resolveEffectiveTrackCover(
     track.cloudCoverUrl ||
     siblingTracks?.find((s) => Boolean(s.cloudCoverUrl))?.cloudCoverUrl ||
     null;
+  const hasIndividualCover = Boolean(ownDataUrl || ownMediaId || ownCloudUrl);
 
-  if (ownDataUrl || ownMediaId || ownCloudUrl) {
-    return {
-      coverDataUrl: ownDataUrl,
-      coverMediaId: ownMediaId,
-      cloudCoverUrl: ownCloudUrl,
-      gradientId:
-        track.coverGradient ||
-        siblingTracks?.find((s) => Boolean(s.coverGradient))?.coverGradient ||
-        (groupKey ? getDeterministicGradientId(groupKey) : linkedProject?.coverGradient || 'pink'),
-      inheritedFromProject: false,
-    };
+  const projectResult = () => ({
+    coverDataUrl: linkedProject?.coverDataUrl || null,
+    coverMediaId: linkedProject?.coverMediaId || null,
+    cloudCoverUrl: null,
+    gradientId: linkedProject?.coverGradient || track.coverGradient || 'pink',
+    inheritedFromProject: true,
+  });
+
+  const individualResult = () => ({
+    coverDataUrl: ownDataUrl,
+    coverMediaId: ownMediaId,
+    cloudCoverUrl: ownCloudUrl,
+    gradientId:
+      track.coverGradient ||
+      siblingTracks?.find((s) => Boolean(s.coverGradient))?.coverGradient ||
+      (groupKey ? getDeterministicGradientId(groupKey) : linkedProject?.coverGradient || 'pink'),
+    inheritedFromProject: false,
+  });
+
+  if (preferIndividual) {
+    if (hasIndividualCover) return individualResult();
+    if (hasProjectCover) return projectResult();
+  } else {
+    if (hasProjectCover) return projectResult();
+    if (hasIndividualCover) return individualResult();
   }
 
-  // 2. Project cover fallback when song has no individual cover
-  if (linkedProject && (linkedProject.coverDataUrl || linkedProject.coverMediaId)) {
-    return {
-      coverDataUrl: linkedProject.coverDataUrl || null,
-      coverMediaId: linkedProject.coverMediaId || null,
-      cloudCoverUrl: null,
-      gradientId: linkedProject.coverGradient || track.coverGradient || 'pink',
-      inheritedFromProject: true,
-    };
-  }
-
-  // 3. Deterministic gradient fallback
+  // Deterministic gradient fallback
   return {
     coverDataUrl: null,
     coverMediaId: null,
     cloudCoverUrl: null,
     gradientId:
+      linkedProject?.coverGradient ||
       track.coverGradient ||
       siblingTracks?.find((s) => Boolean(s.coverGradient))?.coverGradient ||
-      (groupKey ? getDeterministicGradientId(groupKey) : linkedProject?.coverGradient || 'pink'),
+      (groupKey ? getDeterministicGradientId(groupKey) : 'pink'),
     inheritedFromProject: false,
   };
 }

@@ -199,6 +199,7 @@ export function LyricsStudio({
   const [analyzingTrackId, setAnalyzingTrackId] = useState<string | null>(null);
   const [focusedBlockIndex, setFocusedBlockIndex] = useState<number>(0);
   const [livePlaySec, setLivePlaySec] = useState<number>(0);
+  const [prodPickerOpen, setProdPickerOpen] = useState(false);
 
   // 100% AUTOMATIC BPM, Key & 4-bar structure analysis whenever a track is attached or opened!
   useEffect(() => {
@@ -1165,28 +1166,122 @@ export function LyricsStudio({
                         <ChevronDown size={12} className="text-slate-400 shrink-0 ml-auto" />
                       </button>
 
-                      {/* 1-Tap Linked Prod Playback Button (when a *_prod exists for this song!) */}
+                      {/* 1-Tap Linked Prod Playback Button (+ Multi-Prod Switcher when > 1 prod exists!) */}
                       {linkedProdTrack && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (player.currentTrack?.id === linkedProdTrack.id) player.togglePlay();
-                            else void player.playTrack(linkedProdTrack);
-                          }}
-                          title={`Lire la prod (${linkedProdTrack.title})`}
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer shrink-0 ${
-                            player.currentTrack?.id === linkedProdTrack.id && player.isPlaying
-                              ? 'bg-emerald-500 text-white'
-                              : 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
-                          }`}
-                        >
-                          {player.currentTrack?.id === linkedProdTrack.id && player.isPlaying ? (
-                            <Pause size={10} fill="currentColor" />
-                          ) : (
-                            <Play size={10} fill="currentColor" />
-                          )}
-                          <span>Prod</span>
-                        </button>
+                        <div className="relative flex items-center shrink-0">
+                          {(() => {
+                            const prods = linkedGroup?.prodTracks || [];
+                            const activeProd =
+                              prods.find((p) => p.track.id === player.currentTrack?.id) ||
+                              prods[0] ||
+                              null;
+                            const targetProd = activeProd?.track || linkedProdTrack;
+                            const isProdPlaying = Boolean(
+                              prods.some((p) => p.track.id === player.currentTrack?.id) &&
+                                player.isPlaying
+                            );
+                            const prodQueue = [
+                              ...(linkedTrack ? [linkedTrack] : []),
+                              ...prods.map((p) => p.track),
+                            ];
+                            return (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (player.currentTrack?.id === targetProd.id) {
+                                      player.togglePlay();
+                                    } else {
+                                      void player.playTrack(
+                                        targetProd,
+                                        0,
+                                        prodQueue.length > 0 ? prodQueue : undefined
+                                      );
+                                    }
+                                  }}
+                                  title={`Lire la prod (${activeProd?.versionLabel || targetProd.title})`}
+                                  className={`inline-flex items-center gap-1 ${
+                                    prods.length > 1 ? 'rounded-l-full pl-2.5 pr-1.5' : 'rounded-full px-2.5'
+                                  } py-1 text-[11px] font-semibold transition cursor-pointer ${
+                                    isProdPlaying
+                                      ? 'bg-emerald-500 text-white'
+                                      : 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                                  }`}
+                                >
+                                  {isProdPlaying ? (
+                                    <Pause size={10} fill="currentColor" />
+                                  ) : (
+                                    <Play size={10} fill="currentColor" />
+                                  )}
+                                  <span>
+                                    {prods.length > 1
+                                      ? activeProd?.versionLabel || 'Prod'
+                                      : 'Prod'}
+                                  </span>
+                                </button>
+                                {prods.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setProdPickerOpen((v) => !v)}
+                                    title="Choisir la version de prod"
+                                    className={`rounded-r-full pr-2 pl-1 py-1 text-[11px] font-semibold border-l transition cursor-pointer ${
+                                      isProdPlaying
+                                        ? 'bg-emerald-500 text-white border-white/25'
+                                        : 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                                    }`}
+                                  >
+                                    <ChevronDown size={10} />
+                                  </button>
+                                )}
+                                {prodPickerOpen && prods.length > 1 && (
+                                  <>
+                                    <div
+                                      className="fixed inset-0 z-20"
+                                      onClick={() => setProdPickerOpen(false)}
+                                    />
+                                    <div className="absolute right-0 top-full mt-1.5 z-30 w-44 rounded-xl bg-white dark:bg-[#1a1a20] border border-slate-200 dark:border-zinc-700 shadow-xl p-1 space-y-0.5">
+                                      {prods.map((p) => {
+                                        const playingThis =
+                                          player.currentTrack?.id === p.track.id && player.isPlaying;
+                                        return (
+                                          <button
+                                            key={p.track.id}
+                                            type="button"
+                                            onClick={() => {
+                                              setProdPickerOpen(false);
+                                              if (player.currentTrack?.id === p.track.id) {
+                                                player.togglePlay();
+                                              } else {
+                                                void player.playTrack(p.track, 0, prodQueue);
+                                              }
+                                            }}
+                                            className={`w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition cursor-pointer ${
+                                              player.currentTrack?.id === p.track.id
+                                                ? 'bg-emerald-600 text-white font-semibold'
+                                                : 'text-slate-700 dark:text-zinc-200 hover:bg-emerald-500/12'
+                                            }`}
+                                          >
+                                            <span className="flex items-center gap-1.5 min-w-0">
+                                              {playingThis ? (
+                                                <Pause size={10} fill="currentColor" />
+                                              ) : (
+                                                <Play size={10} fill="currentColor" />
+                                              )}
+                                              <span className="font-mono truncate">{p.versionLabel}</span>
+                                            </span>
+                                            {p.isLatest && (
+                                              <span className="text-[9px] opacity-75 shrink-0">Actuelle</span>
+                                            )}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
                       )}
 
                       {/* Loop Toggle */}

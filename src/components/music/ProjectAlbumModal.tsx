@@ -10,7 +10,7 @@ import {
   ChevronRight,
   ChevronUp,
   Disc3,
-  Flame,
+  FolderOpen,
   GitBranch,
   Globe,
   GripVertical,
@@ -714,7 +714,7 @@ export function ProjectAlbumModal({
                     }`}
                   >
                     <Disc3 size={12} />
-                    <span>Production</span>
+                    <span>Tracklist</span>
                   </button>
                   <button
                     type="button"
@@ -727,8 +727,17 @@ export function ProjectAlbumModal({
                         : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
                     }`}
                   >
-                    <Flame size={12} />
-                    <span>Studio</span>
+                    <FolderOpen size={12} />
+                    <span>Packs</span>
+                    {(project.packs?.length ?? project.sprints?.length ?? 0) > 0 && (
+                      <span
+                        className={`font-mono text-[10px] rounded-full px-1.5 py-0.2 ${
+                          isStudioMode ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-zinc-800'
+                        }`}
+                      >
+                        {project.packs ? project.packs.length : project.sprints?.length || 0}
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>
