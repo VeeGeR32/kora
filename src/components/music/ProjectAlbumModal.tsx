@@ -49,10 +49,7 @@ import {
   resolveTrackWorkflow,
 } from '../../lib/trackCover';
 import { groupMusicTracks, type TrackGroup } from '../../lib/musicVersioning';
-import {
-  TRACK_MOOD_META,
-  TRACK_STATUS_META,
-} from '../../utils/theme';
+import { TRACK_STATUS_META } from '../../utils/theme';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 import { ProjectSprintView } from './ProjectSprintView';
 
@@ -1280,7 +1277,6 @@ export function ProjectAlbumModal({
                     trkGroup?.versions.map((v) => v.track)
                   );
                   const trkStatusMeta = TRACK_STATUS_META[trkWorkflow.status];
-                  const trkMoodMeta = trkWorkflow.mood ? TRACK_MOOD_META[trkWorkflow.mood] : null;
                   const trkRatings = resolveTrackRatings(
                     trk,
                     trkGroup?.versions.map((v) => v.track)
@@ -1442,13 +1438,6 @@ export function ProjectAlbumModal({
                                         ↗{trkRatings.potential}
                                       </span>
                                     )}
-                                  </span>
-                                )}
-                                {trkMoodMeta && (
-                                  <span
-                                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${trkMoodMeta.badge}`}
-                                  >
-                                    {trkMoodMeta.emoji}
                                   </span>
                                 )}
                                 {trkFixCount > 0 && (

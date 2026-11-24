@@ -21,7 +21,7 @@ import {
   resolveTrackRatings,
   resolveTrackWorkflow,
 } from '../../lib/trackCover';
-import { TRACK_MOOD_META, TRACK_STATUS_META } from '../../utils/theme';
+import { TRACK_STATUS_META } from '../../utils/theme';
 import { getGradientClass } from './MiniAudioPlayer';
 
 interface TrackCardProps {
@@ -126,7 +126,6 @@ export function TrackCard({
     [track, group.versions]
   );
   const statusMeta = TRACK_STATUS_META[workflow.status];
-  const moodMeta = workflow.mood ? TRACK_MOOD_META[workflow.mood] : null;
   const ratings = useMemo(
     () =>
       resolveTrackRatings(
@@ -299,15 +298,6 @@ export function TrackCard({
                 {ratings.potential !== null && (
                   <span className="text-[#8C271E] dark:text-[#E56B5F]">↗{ratings.potential}</span>
                 )}
-              </span>
-            )}
-
-            {moodMeta && (
-              <span
-                title={`Ambiance : ${moodMeta.label}`}
-                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${moodMeta.badge}`}
-              >
-                {moodMeta.emoji}
               </span>
             )}
 

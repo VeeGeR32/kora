@@ -25,7 +25,7 @@ import {
   Unlink,
   X,
 } from 'lucide-react';
-import type { MusicTrack, TrackMood, TrackStatus } from '../../types';
+import type { MusicTrack, TrackStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
@@ -45,7 +45,6 @@ import {
 import type { TrackGroup } from '../../lib/musicVersioning';
 import { getDeterministicGradientId } from '../../lib/musicVersioning';
 import {
-  TRACK_MOOD_META,
   TRACK_PIPELINE_ORDER,
   TRACK_STATUS_META,
 } from '../../utils/theme';
@@ -309,7 +308,7 @@ export function TrackDetailModal({
             track,
             group.versions.map((v) => v.track)
           )
-        : { status: 'maquette' as TrackStatus, mood: null as TrackMood | null },
+        : { status: 'maquette' as TrackStatus, mood: null },
     [track, group]
   );
   const currentStepIdx = TRACK_PIPELINE_ORDER.indexOf(workflow.status);
@@ -984,35 +983,6 @@ export function TrackDetailModal({
                     </button>
                   );
                 })}
-              </div>
-
-              {/* Mood Tag Selector */}
-              <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-800/70 flex items-center justify-between gap-2 flex-wrap">
-                <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400">
-                  Ambiance (pour Sprints)
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {(['energetic', 'chill', 'experimental'] as TrackMood[]).map((m) => {
-                    const meta = TRACK_MOOD_META[m];
-                    const active = workflow.mood === m;
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() =>
-                          setTrackGroupWorkflow(allGroupTrackIds, { mood: active ? null : m })
-                        }
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition cursor-pointer ${
-                          active
-                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20'
-                            : 'bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 text-slate-500 dark:text-zinc-400 hover:border-slate-400'
-                        }`}
-                      >
-                        {meta.emoji} {meta.label}
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
             </section>
 
