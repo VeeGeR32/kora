@@ -494,8 +494,14 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
       prodEntries[0].isLatest = true;
     }
 
-    const latest = activeVersions[0];
-    const prodTrack = prodEntries[0]?.track || null;
+    // Honor the user's globally chosen song version & prod version (set exclusively on the Song Page!)
+    const selectedSong =
+      activeVersions.find((e) => Boolean(e.track.isPreferredVersion)) || activeVersions[0];
+    const selectedProd =
+      prodEntries.find((e) => Boolean(e.track.isPreferredVersion)) || prodEntries[0] || null;
+
+    const latest = selectedSong;
+    const prodTrack = selectedProd?.track || null;
     const allTrackIds = entries.map((e) => e.track.id);
 
     // Pick the cleanest display title for the group:

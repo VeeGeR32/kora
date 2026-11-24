@@ -7,11 +7,12 @@ import {
   ExternalLink,
   FileText,
   FolderKanban,
-  GitBranch,
   ImagePlus,
   Link2,
   ListChecks,
+  ListEnd,
   ListMusic,
+  ListPlus,
   Music2,
   Pause,
   Play,
@@ -48,18 +49,10 @@ interface TrackContextMenuProps {
   onDetachVersion: (trackId: string) => void;
 }
 
-function fmtShortDate(iso?: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
 export function TrackContextMenu({
   menu,
   queueTracks,
   onClose,
-  onSelectVersion,
   onOpenDetails,
   onOpenLyrics,
   onRequestLinkVersion,
@@ -84,7 +77,7 @@ export function TrackContextMenu({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const [openSection, setOpenSection] = useState<
-    'versions' | 'prods' | 'projects' | 'playlists' | 'rename' | null
+    'projects' | 'playlists' | 'rename' | null
   >(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [isMobileViewport, setIsMobileViewport] = useState(() =>
@@ -93,7 +86,7 @@ export function TrackContextMenu({
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: 12, top: 12 });
 
   useEffect(() => {
-    setOpenSection(menu?.initialSection ?? null);
+    setOpenSection(menu?.initialSection === 'projects' ? 'projects' : null);
     setRenameDraft(menu?.group.baseTitle || '');
     if (typeof window !== 'undefined') {
       setIsMobileViewport(window.innerWidth < 640);
@@ -139,15 +132,10 @@ export function TrackContextMenu({
 
   const isCurrent = player.currentTrack?.id === track.id;
   const isPlaying = isCurrent && player.isPlaying;
-  const activeProdEntry =
-    group.prodTracks.find((p) => p.track.id === player.currentTrack?.id) ||
-    group.prodTracks[0] ||
-    null;
-  const isCurrentProd = Boolean(
-    activeProdEntry && player.currentTrack?.id === activeProdEntry.track.id
-  );
+  const selectedProd = group.prodTrack;
+  const isCurrentProd = Boolean(selectedProd && player.currentTrack?.id === selectedProd.id);
   const isPlayingProd = isCurrentProd && player.isPlaying;
-  const prodQueue = [track, ...group.prodTracks.map((p) => p.track)];
+  const prodQueue = selectedProd ? [track, selectedProd] : [track];
   const allIds = group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
   const todos = track.todos || [];
   const todoDone = todos.filter((t) => t.done).length;
@@ -250,13 +238,38 @@ export function TrackContextMenu({
             <span className="font-medium">{isPlaying ? 'Mettre en pause' : 'Écouter'}</span>
           </button>
 
-          {/* Play Linked Prod(s) (supports 1 or multiple prod versions!) */}
-          {group.prodTracks.length === 1 && group.prodTrack && group.prodTrack.id !== track.id && (
+          {/* Queue Controls */}
+          <button
+            type="button"
+            onClick={() => {
+              player.addToQueue(track, 'next');
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+          >
+            <ListPlus size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
+            <span className="font-medium">Lire ensuite</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              player.addToQueue(track, 'end');
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
+          >
+            <ListEnd size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
+            <span className="font-medium">Ajouter à la file d’attente</span>
+          </button>
+
+          {/* Play Selected Prod (changed exclusively on the Song Page) */}
+          {selectedProd && selectedProd.id !== track.id && (
             <button
               type="button"
               onClick={() => {
                 if (isCurrentProd) player.togglePlay();
-                else void player.playTrack(group.prodTrack!, 0, prodQueue);
+                else void player.playTrack(selectedProd, 0, prodQueue);
                 onClose();
               }}
               className="w-full flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
@@ -267,61 +280,9 @@ export function TrackContextMenu({
                 <Music2 size={14} className="shrink-0" />
               )}
               <span className="font-semibold">
-                {isPlayingProd ? 'Pause (Prod)' : 'Lancer la prod (instru)'}
+                {isPlayingProd ? 'Pause (Prod)' : 'Lancer la prod'}
               </span>
             </button>
-          )}
-          {group.prodTracks.length > 1 && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setOpenSection((s) => (s === 'prods' ? null : 'prods'))}
-                className="w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <Music2 size={14} className="shrink-0" />
-                  <span className="font-semibold">Prods ({group.prodTracks.length})</span>
-                </span>
-                <ChevronRight
-                  size={13}
-                  className={`transition-transform ${openSection === 'prods' ? 'rotate-90' : ''}`}
-                />
-              </button>
-              {openSection === 'prods' && (
-                <div className="mt-0.5 mb-1 mx-1 rounded-xl bg-emerald-500/5 dark:bg-emerald-950/30 border border-emerald-500/20 max-h-40 overflow-y-auto p-1 space-y-0.5">
-                  {group.prodTracks.map((p) => {
-                    const isThisCurrent = player.currentTrack?.id === p.track.id;
-                    const isThisPlaying = isThisCurrent && player.isPlaying;
-                    return (
-                      <button
-                        key={p.track.id}
-                        type="button"
-                        onClick={() => {
-                          if (isThisCurrent) player.togglePlay();
-                          else void player.playTrack(p.track, 0, prodQueue);
-                          onClose();
-                        }}
-                        className={`w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition cursor-pointer ${
-                          isThisCurrent
-                            ? 'bg-emerald-600 text-white'
-                            : 'text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/15'
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5 min-w-0">
-                          {isThisPlaying ? <Pause size={11} /> : <Play size={11} />}
-                          <span className="font-mono text-[11px] font-semibold truncate">
-                            {p.versionLabel}
-                          </span>
-                        </span>
-                        <span className="font-mono text-[9px] opacity-70 shrink-0">
-                          {fmtShortDate(p.track.modifiedAt || p.track.addedAt)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           )}
 
           {/* Rename Song (without touching version names!) */}
@@ -469,74 +430,6 @@ export function TrackContextMenu({
               </span>
             )}
           </button>
-
-          {/* Versions Sub-section */}
-          {group.hasMultipleVersions && (
-            <div>
-              <button
-                type="button"
-                onClick={() =>
-                  setOpenSection((s) => (s === 'versions' ? null : 'versions'))
-                }
-                className="w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800/90 transition cursor-pointer"
-              >
-                <span className="flex items-center gap-2.5">
-                  <GitBranch size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
-                  <span className="font-medium">Versions ({group.versions.length})</span>
-                </span>
-                <ChevronRight
-                  size={13}
-                  className={`text-slate-400 transition-transform ${
-                    openSection === 'versions' ? 'rotate-90' : ''
-                  }`}
-                />
-              </button>
-
-              {openSection === 'versions' && (
-                <div className="mt-0.5 mb-1 mx-1 rounded-xl bg-slate-50 dark:bg-zinc-900/90 border border-slate-100 dark:border-zinc-800 max-h-44 overflow-y-auto p-1 space-y-0.5">
-                  {group.versions.map((v) => {
-                    const selected = v.track.id === track.id;
-                    return (
-                      <button
-                        key={v.track.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectVersion(group.groupKey, v.track.id, true);
-                          onClose();
-                        }}
-                        className={`w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition cursor-pointer ${
-                          selected
-                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25 font-semibold'
-                            : 'text-slate-700 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-800'
-                        }`}
-                      >
-                        <span className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-mono text-[11px]">{v.versionLabel}</span>
-                          {v.isLatest && (
-                            <span
-                              className={`text-[9px] px-1.5 py-0.2 rounded-full ${
-                                selected
-                                  ? 'bg-white/20 text-white dark:bg-black/15 dark:text-zinc-950'
-                                  : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
-                              }`}
-                            >
-                              Dernière
-                            </span>
-                          )}
-                        </span>
-                        <span className="flex items-center gap-1 shrink-0">
-                          <span className="text-[10px] opacity-60 font-mono">
-                            {fmtShortDate(v.track.modifiedAt || v.track.addedAt)}
-                          </span>
-                          {selected && <Check size={11} />}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Manual Version Link / Detach */}
           <button

@@ -5,6 +5,7 @@ import {
   Disc3,
   Edit3,
   FileText,
+  GripVertical,
   ListMusic,
   Loader2,
   Monitor,
@@ -20,6 +21,7 @@ import {
   Smartphone,
   Star,
   Tablet,
+  Trash2,
   X,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -87,6 +89,9 @@ export function MiniAudioPlayer() {
     playTrack,
     playNext,
     playPrev,
+    removeFromQueue,
+    moveInQueue,
+    clearUpcomingQueue,
     togglePlay,
     seek,
     cycleRepeatMode,
@@ -112,8 +117,15 @@ export function MiniAudioPlayer() {
 
   // Mini-player text slide direction
   const [slideDir, setSlideDir] = useState<1 | -1>(1);
-  const [showProdPicker, setShowProdPicker] = useState(false);
   const prevTrackIdRef = useRef<string | null>(null);
+  const [draggingQueueIdx, setDraggingQueueIdx] = useState<number | null>(null);
+  const [dragOverQueueIdx, setDragOverQueueIdx] = useState<number | null>(null);
+  const queueRowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const queueDragStateRef = useRef<{
+    pointerId: number;
+    fromIdx: number;
+    overIdx: number;
+  } | null>(null);
   const pendingDirRef = useRef<1 | -1 | null>(null);
 
   // Frozen 3-slide snapshot during the 230ms Spotify glide so cover never jumps or double-animates!
@@ -1153,16 +1165,12 @@ export function MiniAudioPlayer() {
                           </AnimatePresence>
                         </div>
 
-                        <div className="relative flex items-center gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {alternateProdOrSong && (
                             <button
                               type="button"
                               onClick={() => {
-                                if (currentGroup && currentGroup.prodTracks.length > 1) {
-                                  setShowProdPicker((v) => !v);
-                                } else {
-                                  void playTrack(alternateProdOrSong.target, 0, queue);
-                                }
+                                void playTrack(alternateProdOrSong.target, 0, queue);
                                 triggerHapticTick(8);
                               }}
                               className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
@@ -1172,75 +1180,8 @@ export function MiniAudioPlayer() {
                               }`}
                             >
                               <Music2 size={11} />
-                              <span>
-                                {currentGroup && currentGroup.prodTracks.length > 1
-                                  ? alternateProdOrSong.isCurrentlyProd
-                                    ? parsedCurrent?.versionLabel || 'Prod'
-                                    : `Prods (${currentGroup.prodTracks.length})`
-                                  : alternateProdOrSong.isCurrentlyProd
-                                  ? 'Son'
-                                  : 'Prod'}
-                              </span>
-                              {currentGroup && currentGroup.prodTracks.length > 1 && (
-                                <ChevronDown size={10} className="opacity-75" />
-                              )}
+                              {alternateProdOrSong.isCurrentlyProd ? 'Son' : 'Prod'}
                             </button>
-                          )}
-
-                          {/* Multi-Prod Quick Switcher Popover (only when > 1 prod version exists) */}
-                          {showProdPicker && currentGroup && currentGroup.prodTracks.length > 1 && (
-                            <>
-                              <div
-                                className="fixed inset-0 z-20"
-                                onClick={() => setShowProdPicker(false)}
-                              />
-                              <div className="absolute right-0 bottom-full mb-2 z-30 w-48 rounded-2xl bg-white dark:bg-[#1a1a20] border border-slate-200 dark:border-zinc-700 shadow-2xl p-1.5 space-y-0.5">
-                                {currentGroup.latestTrack.id !== currentGroup.prodTrack?.id && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setShowProdPicker(false);
-                                      void playTrack(currentGroup.latestTrack, 0, queue);
-                                      triggerHapticTick(8);
-                                    }}
-                                    className={`w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition cursor-pointer ${
-                                      currentTrack.id === currentGroup.latestTrack.id
-                                        ? 'bg-[#8C271E] text-white font-semibold'
-                                        : 'text-slate-700 dark:text-zinc-200 hover:bg-slate-100 dark:hover:bg-zinc-800'
-                                    }`}
-                                  >
-                                    <span className="truncate">Son ({currentGroup.latestVersionLabel})</span>
-                                  </button>
-                                )}
-                                <p className="px-2 pt-1 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                                  Versions de prod
-                                </p>
-                                {currentGroup.prodTracks.map((p) => {
-                                  const isThis = currentTrack.id === p.track.id;
-                                  return (
-                                    <button
-                                      key={p.track.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setShowProdPicker(false);
-                                        void playTrack(p.track, 0, queue);
-                                        triggerHapticTick(8);
-                                      }}
-                                      className={`w-full flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition cursor-pointer ${
-                                        isThis
-                                          ? 'bg-emerald-600 text-white font-semibold'
-                                          : 'text-slate-700 dark:text-zinc-200 hover:bg-emerald-500/12'
-                                      }`}
-                                    >
-                                      <span className="font-mono truncate">{p.versionLabel}</span>
-                                      {p.isLatest && (
-                                        <span className="text-[9px] opacity-75 shrink-0">Actuelle</span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </>
                           )}
 
                           <button
@@ -1538,6 +1479,18 @@ export function MiniAudioPlayer() {
                         data-queue-scroll="true"
                         className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 space-y-1"
                       >
+                        {queue.length > 1 && (
+                          <div className="flex items-center justify-between px-2 pb-1.5 text-[10px] text-slate-400 dark:text-zinc-500">
+                            <span>Glisse ⠿ pour réordonner</span>
+                            <button
+                              type="button"
+                              onClick={clearUpcomingQueue}
+                              className="inline-flex items-center gap-1 hover:text-rose-500 transition cursor-pointer font-semibold"
+                            >
+                              <Trash2 size={10} /> Vider
+                            </button>
+                          </div>
+                        )}
                         {queue.length === 0 ? (
                           <p className="py-12 text-center text-xs text-slate-400 dark:text-zinc-500">
                             File d’attente vide.
@@ -1545,34 +1498,124 @@ export function MiniAudioPlayer() {
                         ) : (
                           queue.map((t, i) => {
                             const active = t.id === currentTrack.id;
+                            const isDragging = draggingQueueIdx === i;
+                            const isDropTarget =
+                              draggingQueueIdx !== null &&
+                              dragOverQueueIdx === i &&
+                              draggingQueueIdx !== i;
                             return (
-                              <button
-                                key={t.id}
-                                type="button"
-                                onClick={() => {
-                                  void playTrack(t, 0, queue);
-                                  triggerHapticTick(8);
+                              <div
+                                key={`${t.id}_${i}`}
+                                ref={(el) => {
+                                  if (el) queueRowRefs.current.set(i, el);
+                                  else queueRowRefs.current.delete(i);
                                 }}
-                                className={`w-full flex items-center justify-between gap-2.5 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
+                                className={`group w-full flex items-center gap-1.5 rounded-xl px-2 py-2 transition ${
                                   active
                                     ? 'bg-[#8C271E]/12 dark:bg-[#8C271E]/28 text-[#8C271E] dark:text-[#F08B82] font-semibold'
-                                    : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8 hover:text-slate-900 dark:hover:text-zinc-100'
+                                    : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-900/5 dark:hover:bg-white/8'
+                                } ${isDragging ? 'opacity-50 scale-[0.98]' : ''} ${
+                                  isDropTarget ? 'ring-2 ring-[#8C271E]/70' : ''
                                 }`}
                               >
-                                <span className="flex items-center gap-3 min-w-0">
+                                <button
+                                  type="button"
+                                  aria-label="Déplacer dans la file"
+                                  title="Glisser pour déplacer"
+                                  style={{ touchAction: 'none' }}
+                                  onPointerDown={(e) => {
+                                    e.stopPropagation();
+                                    e.currentTarget.setPointerCapture(e.pointerId);
+                                    queueDragStateRef.current = {
+                                      pointerId: e.pointerId,
+                                      fromIdx: i,
+                                      overIdx: i,
+                                    };
+                                    setDraggingQueueIdx(i);
+                                    setDragOverQueueIdx(i);
+                                    triggerHapticTick(8);
+                                  }}
+                                  onPointerMove={(e) => {
+                                    const st = queueDragStateRef.current;
+                                    if (!st || st.pointerId !== e.pointerId) return;
+                                    e.stopPropagation();
+                                    let bestIdx = st.overIdx;
+                                    for (let idx = 0; idx < queue.length; idx++) {
+                                      const el = queueRowRefs.current.get(idx);
+                                      if (!el) continue;
+                                      const r = el.getBoundingClientRect();
+                                      if (e.clientY >= r.top && e.clientY <= r.bottom) {
+                                        bestIdx = idx;
+                                        break;
+                                      }
+                                    }
+                                    if (bestIdx !== st.overIdx) {
+                                      st.overIdx = bestIdx;
+                                      setDragOverQueueIdx(bestIdx);
+                                      triggerHapticTick(6);
+                                    }
+                                  }}
+                                  onPointerUp={(e) => {
+                                    const st = queueDragStateRef.current;
+                                    if (!st || st.pointerId !== e.pointerId) return;
+                                    e.stopPropagation();
+                                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                      e.currentTarget.releasePointerCapture(e.pointerId);
+                                    }
+                                    queueDragStateRef.current = null;
+                                    if (st.fromIdx !== st.overIdx) {
+                                      moveInQueue(st.fromIdx, st.overIdx);
+                                    }
+                                    setDraggingQueueIdx(null);
+                                    setDragOverQueueIdx(null);
+                                  }}
+                                  onPointerCancel={() => {
+                                    queueDragStateRef.current = null;
+                                    setDraggingQueueIdx(null);
+                                    setDragOverQueueIdx(null);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 cursor-grab active:cursor-grabbing shrink-0"
+                                >
+                                  <GripVertical size={13} />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void playTrack(t, 0, queue);
+                                    triggerHapticTick(8);
+                                  }}
+                                  className="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
+                                >
                                   <span className="font-mono text-[11px] opacity-55 w-5 shrink-0">
                                     {String(i + 1).padStart(2, '0')}
                                   </span>
                                   <span className="text-sm font-medium truncate">
                                     {t.manualGroupTitle || t.title}
                                   </span>
-                                </span>
+                                </button>
+
                                 {t.durationSec ? (
                                   <span className="font-mono text-[11px] opacity-55 shrink-0">
                                     {fmt(t.durationSec)}
                                   </span>
                                 ) : null}
-                              </button>
+
+                                {!active && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      removeFromQueue(i);
+                                      triggerHapticTick(6);
+                                    }}
+                                    title="Retirer de la file"
+                                    aria-label="Retirer de la file"
+                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 opacity-70 sm:opacity-0 group-hover:opacity-100 transition cursor-pointer shrink-0"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                )}
+                              </div>
                             );
                           })
                         )}
@@ -1847,53 +1890,152 @@ export function MiniAudioPlayer() {
                     transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
                     className="absolute inset-x-0 bottom-0 top-24 z-20 rounded-t-3xl bg-white dark:bg-[#131010] border-t border-slate-200/80 dark:border-white/10 flex flex-col"
                   >
-                    <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-white/10 flex items-center justify-between">
+                    <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
                         File d’attente ({queue.length})
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => setShowQueue(false)}
-                        className="h-8 w-8 rounded-full flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:bg-slate-900/8 dark:hover:bg-white/10 cursor-pointer"
-                      >
-                        <X size={16} />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        {queue.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={clearUpcomingQueue}
+                            className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition cursor-pointer"
+                          >
+                            <Trash2 size={11} /> Vider
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowQueue(false)}
+                          className="h-8 w-8 rounded-full flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:bg-slate-900/8 dark:hover:bg-white/10 cursor-pointer"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
                     </div>
                     <div
                       data-queue-scroll="true"
                       style={{ touchAction: 'pan-y' }}
-                      className="flex-1 overflow-y-auto px-4 py-3 space-y-1 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+                      className="flex-1 overflow-y-auto px-3 py-3 space-y-1 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
                     >
                       {queue.map((t, i) => {
                         const active = t.id === currentTrack.id;
+                        const isDragging = draggingQueueIdx === i;
+                        const isDropTarget =
+                          draggingQueueIdx !== null &&
+                          dragOverQueueIdx === i &&
+                          draggingQueueIdx !== i;
                         return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => {
-                              void playTrack(t, 0, queue);
-                              triggerHapticTick(8);
+                          <div
+                            key={`${t.id}_${i}`}
+                            ref={(el) => {
+                              if (el) queueRowRefs.current.set(i, el);
+                              else queueRowRefs.current.delete(i);
                             }}
-                            className={`w-full flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left transition cursor-pointer ${
+                            className={`w-full flex items-center gap-1.5 rounded-xl px-2 py-2 transition ${
                               active
                                 ? 'bg-[#8C271E]/12 dark:bg-[#8C271E]/28 text-[#8C271E] dark:text-[#F08B82] font-semibold'
-                                : 'text-slate-500 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/8'
+                                : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-900/5 dark:hover:bg-white/8'
+                            } ${isDragging ? 'opacity-50 scale-[0.98]' : ''} ${
+                              isDropTarget ? 'ring-2 ring-[#8C271E]/70' : ''
                             }`}
                           >
-                            <span className="flex items-center gap-3 min-w-0">
-                              <span className="font-mono text-[11px] opacity-55 w-5">
+                            <button
+                              type="button"
+                              aria-label="Déplacer dans la file"
+                              style={{ touchAction: 'none' }}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                e.currentTarget.setPointerCapture(e.pointerId);
+                                queueDragStateRef.current = {
+                                  pointerId: e.pointerId,
+                                  fromIdx: i,
+                                  overIdx: i,
+                                };
+                                setDraggingQueueIdx(i);
+                                setDragOverQueueIdx(i);
+                                triggerHapticTick(8);
+                              }}
+                              onPointerMove={(e) => {
+                                const st = queueDragStateRef.current;
+                                if (!st || st.pointerId !== e.pointerId) return;
+                                e.stopPropagation();
+                                let bestIdx = st.overIdx;
+                                for (let idx = 0; idx < queue.length; idx++) {
+                                  const el = queueRowRefs.current.get(idx);
+                                  if (!el) continue;
+                                  const r = el.getBoundingClientRect();
+                                  if (e.clientY >= r.top && e.clientY <= r.bottom) {
+                                    bestIdx = idx;
+                                    break;
+                                  }
+                                }
+                                if (bestIdx !== st.overIdx) {
+                                  st.overIdx = bestIdx;
+                                  setDragOverQueueIdx(bestIdx);
+                                  triggerHapticTick(6);
+                                }
+                              }}
+                              onPointerUp={(e) => {
+                                const st = queueDragStateRef.current;
+                                if (!st || st.pointerId !== e.pointerId) return;
+                                e.stopPropagation();
+                                if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                                  e.currentTarget.releasePointerCapture(e.pointerId);
+                                }
+                                queueDragStateRef.current = null;
+                                if (st.fromIdx !== st.overIdx) {
+                                  moveInQueue(st.fromIdx, st.overIdx);
+                                }
+                                setDraggingQueueIdx(null);
+                                setDragOverQueueIdx(null);
+                              }}
+                              onPointerCancel={() => {
+                                queueDragStateRef.current = null;
+                                setDraggingQueueIdx(null);
+                                setDragOverQueueIdx(null);
+                              }}
+                              className="p-1.5 text-slate-400 active:text-slate-800 dark:active:text-zinc-100 cursor-grab active:cursor-grabbing shrink-0"
+                            >
+                              <GripVertical size={14} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void playTrack(t, 0, queue);
+                                triggerHapticTick(8);
+                              }}
+                              className="flex-1 min-w-0 flex items-center gap-2.5 text-left cursor-pointer"
+                            >
+                              <span className="font-mono text-[11px] opacity-55 w-5 shrink-0">
                                 {String(i + 1).padStart(2, '0')}
                               </span>
                               <span className="text-sm font-medium truncate">
                                 {t.manualGroupTitle || t.title}
                               </span>
-                            </span>
+                            </button>
+
                             {t.durationSec ? (
                               <span className="font-mono text-[11px] opacity-55 shrink-0">
                                 {fmt(t.durationSec)}
                               </span>
                             ) : null}
-                          </button>
+
+                            {!active && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  removeFromQueue(i);
+                                  triggerHapticTick(6);
+                                }}
+                                aria-label="Retirer de la file"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 active:bg-rose-500/15 transition cursor-pointer shrink-0"
+                              >
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </div>

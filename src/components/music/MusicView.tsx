@@ -318,14 +318,7 @@ export function MusicView({
     });
   }, [groupVersions, trackGroups, flatTrackGroups, libSearch, libFilter, libSort]);
 
-  const getActiveTrackForGroup = (group: TrackGroup): MusicTrack => {
-    const overrideId = selectedVersionByGroup[group.groupKey];
-    if (overrideId) {
-      const found = group.versions.find((v) => v.track.id === overrideId);
-      if (found) return found.track;
-    }
-    return group.latestTrack;
-  };
+  const getActiveTrackForGroup = (group: TrackGroup): MusicTrack => group.latestTrack;
 
   const detailGroup = useMemo(() => {
     if (!detailTarget) return null;

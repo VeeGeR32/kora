@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ChevronDown,
   Disc3,
   GitBranch,
   ListChecks,
@@ -254,29 +253,18 @@ export function TrackCard({
             </div>
           </div>
 
-          {/* Version Pill + Status + Ratings + Duration (Single-Line, No Vertical Wrap) */}
+          {/* Version Badge + Status + Ratings + Duration (Single-Line, No Vertical Wrap) */}
           <div className="flex items-center gap-1.5 flex-nowrap overflow-hidden whitespace-nowrap mt-1 min-w-0">
-            {group.hasMultipleVersions ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenContextMenu(e, group, track.id, 'versions');
-                }}
-                title="Choisir une autre version"
-                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-900/8 dark:bg-zinc-100/10 hover:bg-slate-900/14 dark:hover:bg-zinc-100/16 px-2 py-0.5 font-mono text-[10px] font-semibold text-slate-800 dark:text-zinc-200 transition cursor-pointer"
+            {activeEntry.versionLabel !== 'Original' && (
+              <span
+                title="Changer la version depuis la page du son"
+                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-600 dark:text-zinc-300"
               >
-                <GitBranch size={9} className="text-slate-500 dark:text-zinc-400" />
+                {group.hasMultipleVersions && (
+                  <GitBranch size={9} className="text-slate-400 dark:text-zinc-500" />
+                )}
                 <span>{activeEntry.versionLabel}</span>
-                <span className="opacity-55">· {group.versions.length}</span>
-                <ChevronDown size={10} className="opacity-70" />
-              </button>
-            ) : (
-              activeEntry.versionLabel !== 'Original' && (
-                <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-zinc-400">
-                  {activeEntry.versionLabel}
-                </span>
-              )
+              </span>
             )}
 
             <span
@@ -317,11 +305,7 @@ export function TrackCard({
                   e.stopPropagation();
                   onPlayProd(group.prodTrack!);
                 }}
-                title={
-                  group.prodTracks.length > 1
-                    ? `Lancer la prod (${group.prodTracks.length} versions de prod disponibles)`
-                    : 'Lancer la prod (instru) de ce morceau'
-                }
+                title="Lancer la prod sélectionnée"
                 className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer ${
                   isPlayingProd
                     ? 'bg-emerald-600 text-white shadow-xs'
@@ -333,9 +317,7 @@ export function TrackCard({
                 ) : (
                   <Music2 size={9} />
                 )}
-                <span>
-                  {group.prodTracks.length > 1 ? `Prod ×${group.prodTracks.length}` : 'Prod'}
-                </span>
+                <span>Prod</span>
               </button>
             )}
 

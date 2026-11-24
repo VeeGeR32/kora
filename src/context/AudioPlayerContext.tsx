@@ -60,6 +60,10 @@ interface AudioPlayerContextValue {
   restoreTrack: (track: MusicTrack, startAtSec?: number, shouldExpand?: boolean) => void;
   playNext: () => void;
   playPrev: () => void;
+  addToQueue: (track: MusicTrack, position?: 'next' | 'end') => void;
+  removeFromQueue: (index: number) => void;
+  moveInQueue: (fromIndex: number, toIndex: number) => void;
+  clearUpcomingQueue: () => void;
   togglePlay: () => void;
   pause: () => void;
   seek: (sec: number) => void;
@@ -1786,6 +1790,108 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     setCurrentTrack((prev) => (prev && prev.id === track.id ? track : prev));
   }, []);
 
+  const addToQueue = useCallback(
+    (track: MusicTrack, position: 'next' | 'end' = 'end') => {
+      const label = track.manualGroupTitle || track.title;
+      const cur = currentTrackRef.current;
+      if (!cur) {
+        void playTrack(track, 0, [track]);
+        notify(`Lecture de « ${label} »`);
+        return;
+      }
+      if (track.id === cur.id) {
+        notify(`« ${label} » est déjà en cours de lecture`);
+        return;
+      }
+      const base =
+        queueRef.current.length > 0 ? [...queueRef.current] : [...dedupedLibraryRef.current];
+      if (!base.some((t) => t.id === cur.id)) {
+        base.unshift(cur);
+      }
+      const existingIdx = base.findIndex((t) => t.id === track.id);
+      if (existingIdx >= 0) {
+        base.splice(existingIdx, 1);
+      }
+      const curIdx = base.findIndex((t) => t.id === cur.id);
+      if (position === 'next') {
+        base.splice(Math.max(0, curIdx + 1), 0, track);
+      } else {
+        base.push(track);
+      }
+      queueRef.current = base;
+      baseQueueRef.current = base;
+      setQueue(base);
+      if (!remoteSessionRef.current) {
+        publishLocalLive();
+        prefetchUpcomingTracks(cur.id, base);
+      }
+      notify(
+        position === 'next'
+          ? `Lire ensuite : « ${label} » ✓`
+          : `« ${label} » ajouté à la file d’attente ✓`
+      );
+    },
+    [playTrack, publishLocalLive, prefetchUpcomingTracks, notify]
+  );
+
+  const removeFromQueue = useCallback(
+    (index: number) => {
+      const base =
+        queueRef.current.length > 0 ? [...queueRef.current] : [...dedupedLibraryRef.current];
+      if (index < 0 || index >= base.length) return;
+      const cur = currentTrackRef.current;
+      if (cur && base[index].id === cur.id) return;
+      base.splice(index, 1);
+      queueRef.current = base;
+      baseQueueRef.current = base;
+      setQueue(base);
+      if (!remoteSessionRef.current && cur) {
+        publishLocalLive();
+        prefetchUpcomingTracks(cur.id, base);
+      }
+    },
+    [publishLocalLive, prefetchUpcomingTracks]
+  );
+
+  const moveInQueue = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const base =
+        queueRef.current.length > 0 ? [...queueRef.current] : [...dedupedLibraryRef.current];
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= base.length ||
+        toIndex >= base.length
+      ) {
+        return;
+      }
+      const [moved] = base.splice(fromIndex, 1);
+      base.splice(toIndex, 0, moved);
+      queueRef.current = base;
+      baseQueueRef.current = base;
+      setQueue(base);
+      const cur = currentTrackRef.current;
+      if (!remoteSessionRef.current && cur) {
+        publishLocalLive();
+        prefetchUpcomingTracks(cur.id, base);
+      }
+    },
+    [publishLocalLive, prefetchUpcomingTracks]
+  );
+
+  const clearUpcomingQueue = useCallback(() => {
+    const cur = currentTrackRef.current;
+    const next = cur ? [cur] : [];
+    queueRef.current = next;
+    baseQueueRef.current = next;
+    setQueue(next);
+    if (!remoteSessionRef.current && cur) {
+      publishLocalLive();
+    }
+    notify('File d’attente vidée');
+  }, [publishLocalLive, notify]);
+
   const contextValue = useMemo<AudioPlayerContextValue>(
     () => ({
       currentTrack,
@@ -1807,6 +1913,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       restoreTrack,
       playNext,
       playPrev,
+      addToQueue,
+      removeFromQueue,
+      moveInQueue,
+      clearUpcomingQueue,
       togglePlay,
       pause,
       seek,
@@ -1852,6 +1962,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       restoreTrack,
       playNext,
       playPrev,
+      addToQueue,
+      removeFromQueue,
+      moveInQueue,
+      clearUpcomingQueue,
       togglePlay,
       pause,
       seek,

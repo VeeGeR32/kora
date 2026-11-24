@@ -237,6 +237,7 @@ interface AppContextValue {
     trackIds: string[],
     patch: { status?: import('../types').TrackStatus; mood?: import('../types').TrackMood | null }
   ) => void;
+  selectGroupPreferredVersion: (targetTrackId: string, kind: 'song' | 'prod') => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
   deleteMusicTrackTodo: (trackId: string, todoId: string) => void;
@@ -2731,6 +2732,150 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  /**
+   * Globally sets the selected active version (song or prod) for a track group.
+   * Once changed on the Song Page, every tab (Accueil, Sons, Projets, Packs, Playlists, Textes, Lecteur)
+   * automatically plays and displays that exact chosen version!
+   */
+  const selectGroupPreferredVersion = useCallback(
+    (targetTrackId: string, kind: 'song' | 'prod') => {
+      touch((prev) => {
+        const groups = groupMusicTracks(prev.musicTracks);
+        const group = groups.find((g) => g.allTrackIds.includes(targetTrackId));
+        if (!group) return prev;
+
+        const scopeIds = new Set(
+          kind === 'prod'
+            ? group.prodTracks.map((p) => p.track.id)
+            : group.versions.map((v) => v.track.id)
+        );
+        if (!scopeIds.has(targetTrackId)) return prev;
+
+        const allGroupIds = new Set(group.allTrackIds);
+        const targetTrack = prev.musicTracks.find((t) => t.id === targetTrackId);
+        const linkedProjectId =
+          targetTrack?.linkedProjectId ||
+          group.versions.find((v) => Boolean(v.track.linkedProjectId))?.track.linkedProjectId;
+        const linkedLyricsId =
+          targetTrack?.linkedLyricsId ||
+          group.versions.find((v) => Boolean(v.track.linkedLyricsId))?.track.linkedLyricsId;
+
+        const nextTracks = prev.musicTracks.map((t) => {
+          if (!scopeIds.has(t.id)) return t;
+          if (t.id === targetTrackId) {
+            return {
+              ...t,
+              isPreferredVersion: true,
+              ...(kind === 'song' && linkedProjectId && !t.linkedProjectId
+                ? { linkedProjectId }
+                : {}),
+              ...(kind === 'song' && linkedLyricsId && !t.linkedLyricsId
+                ? { linkedLyricsId }
+                : {}),
+            };
+          }
+          if (t.isPreferredVersion) {
+            const copy = { ...t };
+            delete copy.isPreferredVersion;
+            return copy;
+          }
+          return t;
+        });
+
+        if (kind === 'prod') {
+          return { ...prev, musicTracks: nextTracks };
+        }
+
+        const replaceIds = (ids: string[] | undefined): string[] | undefined => {
+          if (!ids) return ids;
+          const out: string[] = [];
+          let placed = false;
+          for (const id of ids) {
+            if (allGroupIds.has(id)) {
+              if (!placed) {
+                out.push(targetTrackId);
+                placed = true;
+              }
+            } else if (!out.includes(id)) {
+              out.push(id);
+            }
+          }
+          return out;
+        };
+
+        const nextProjects = prev.musicProjects.map((p) => {
+          const touches =
+            p.trackIds.some((id) => allGroupIds.has(id)) ||
+            (p.benchTrackIds || []).some((id) => allGroupIds.has(id)) ||
+            (p.packs || []).some((pk) => pk.trackIds.some((id) => allGroupIds.has(id))) ||
+            Boolean(p.pinnedVersionByGroup?.[group.groupKey]);
+          if (!touches) return p;
+
+          const nextPins = { ...(p.pinnedVersionByGroup || {}) };
+          delete nextPins[group.groupKey];
+
+          return {
+            ...p,
+            trackIds: replaceIds(p.trackIds) || p.trackIds,
+            ...(p.benchTrackIds ? { benchTrackIds: replaceIds(p.benchTrackIds) } : {}),
+            ...(p.packs
+              ? {
+                  packs: p.packs.map((pk) => ({
+                    ...pk,
+                    trackIds: replaceIds(pk.trackIds) || pk.trackIds,
+                    ...(pk.doneTrackIds ? { doneTrackIds: replaceIds(pk.doneTrackIds) } : {}),
+                  })),
+                }
+              : {}),
+            ...(p.sprints
+              ? {
+                  sprints: p.sprints.map((s) => ({
+                    ...s,
+                    trackIds: replaceIds(s.trackIds) || s.trackIds,
+                  })),
+                }
+              : {}),
+            pinnedVersionByGroup: Object.keys(nextPins).length > 0 ? nextPins : undefined,
+          };
+        });
+
+        const nextLyricsDocs = prev.lyricsDocs.map((doc) =>
+          doc.linkedTrackId && allGroupIds.has(doc.linkedTrackId)
+            ? { ...doc, linkedTrackId: targetTrackId }
+            : doc
+        );
+
+        const prevPlaylists = prev.preferences.lastSession?.playlists;
+        const nextPlaylists = prevPlaylists
+          ? prevPlaylists.map((pl) =>
+              pl.ownTrackIds.some((id) => allGroupIds.has(id))
+                ? { ...pl, ownTrackIds: replaceIds(pl.ownTrackIds) || pl.ownTrackIds }
+                : pl
+            )
+          : undefined;
+
+        return {
+          ...prev,
+          musicTracks: nextTracks,
+          musicProjects: nextProjects,
+          lyricsDocs: nextLyricsDocs,
+          ...(nextPlaylists && prev.preferences.lastSession
+            ? {
+                preferences: {
+                  ...prev.preferences,
+                  lastSession: {
+                    ...prev.preferences.lastSession,
+                    playlists: nextPlaylists,
+                  },
+                },
+              }
+            : {}),
+        };
+      });
+    },
+    []
+  );
+
   // Automatically reconcile project track versions whenever tracks or projects change
   // (e.g., on cloud hydration, after Drive sync, or after manual version linking/detaching).
   useEffect(() => {
@@ -3220,6 +3365,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setTrackGroupFavorite,
         setTrackGroupRatings,
         setTrackGroupWorkflow,
+        selectGroupPreferredVersion,
         addMusicTrackTodo,
         toggleMusicTrackTodo,
         deleteMusicTrackTodo,

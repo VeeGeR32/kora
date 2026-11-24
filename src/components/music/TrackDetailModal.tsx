@@ -11,6 +11,7 @@ import {
   GitBranch,
   Link2,
   ListChecks,
+  ListPlus,
   Music2,
   Pause,
   Pencil,
@@ -90,7 +91,6 @@ const BAR_COUNT = 96;
 export function TrackDetailModal({
   group,
   selectedTrackId,
-  activeProjectId,
   onSelectVersion,
   onOpenLyrics,
   onRequestPullVersion,
@@ -108,6 +108,7 @@ export function TrackDetailModal({
     setTrackGroupFavorite,
     setTrackGroupRatings,
     setTrackGroupWorkflow,
+    selectGroupPreferredVersion,
     addMusicTrackTodo,
     toggleMusicTrackTodo,
     deleteMusicTrackTodo,
@@ -115,7 +116,6 @@ export function TrackDetailModal({
     deleteTrackMarker,
     deleteMusicTrack,
     updateMusicProject,
-    setProjectTrackVersion,
     updateLyricsDoc,
     notify,
   } = useApp();
@@ -336,16 +336,18 @@ export function TrackDetailModal({
   );
   const allGroupTrackIds =
     group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
+  const selectedProdTrack = group.prodTrack;
   const activeProdEntry =
-    group.prodTracks.find((p) => p.track.id === player.currentTrack?.id) ||
+    (selectedProdTrack &&
+      group.prodTracks.find((p) => p.track.id === selectedProdTrack.id)) ||
     group.prodTracks[0] ||
     null;
-  const activeProdTrack = activeProdEntry?.track || group.prodTrack;
+  const activeProdTrack = selectedProdTrack;
   const isCurrentProd = Boolean(
     activeProdTrack && player.currentTrack?.id === activeProdTrack.id
   );
   const isPlayingProd = isCurrentProd && player.isPlaying;
-  const prodPlaybackQueue = [track, ...group.prodTracks.map((p) => p.track)];
+  const prodPlaybackQueue = activeProdTrack ? [track, activeProdTrack] : [track];
 
   const handleUploadCover = async (file: File | undefined) => {
     if (!file) return;
@@ -360,26 +362,6 @@ export function TrackDetailModal({
 
   const siblingTracks = group.versions.map((v) => v.track);
   const linkedProject = findLinkedProjectForTrack(track, state.musicProjects, siblingTracks);
-  const activeContextProject = activeProjectId
-    ? state.musicProjects.find(
-        (p) =>
-          p.id === activeProjectId &&
-          (p.trackIds.some((id) => allGroupTrackIds.includes(id)) ||
-            (p.benchTrackIds || []).some((id) => allGroupTrackIds.includes(id)))
-      ) || null
-    : null;
-  const targetProject = activeContextProject || linkedProject;
-  const projectTrackIdInGroup = targetProject
-    ? targetProject.trackIds.find((id) => allGroupTrackIds.includes(id)) ||
-      (targetProject.benchTrackIds || []).find((id) => allGroupTrackIds.includes(id)) ||
-      null
-    : null;
-  const projectVersionEntry = projectTrackIdInGroup
-    ? group.versions.find((v) => v.track.id === projectTrackIdInGroup) || null
-    : null;
-  const isProjectPinned = Boolean(
-    targetProject && targetProject.pinnedVersionByGroup?.[group.groupKey]
-  );
 
   const handleAssignProject = (projectId: string) => {
     const prevProjectId = linkedProject?.id || track.linkedProjectId;
@@ -660,22 +642,30 @@ export function TrackDetailModal({
                       {isPlayingProd ? (
                         <>
                           <Pause size={13} fill="currentColor" />
-                          <span>
-                            Pause {group.prodTracks.length > 1 && activeProdEntry ? activeProdEntry.versionLabel : 'Prod'}
-                          </span>
+                          <span>Pause Prod</span>
                         </>
                       ) : (
                         <>
                           <Music2 size={13} />
                           <span>
-                            {group.prodTracks.length > 1
-                              ? `Prods (${group.prodTracks.length})`
+                            {activeProdEntry && group.prodTracks.length > 1
+                              ? `Prod (${activeProdEntry.versionLabel})`
                               : 'Lancer la prod'}
                           </span>
                         </>
                       )}
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => player.addToQueue(track, 'end')}
+                    title="Ajouter ce morceau à la file d’attente"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
+                  >
+                    <ListPlus size={13} className="text-slate-500 dark:text-zinc-400" />
+                    <span>+ File</span>
+                  </button>
 
                   {linkedLyrics ? (
                     <div className="inline-flex items-center rounded-full border border-slate-200 dark:border-zinc-800 overflow-hidden">
@@ -1090,77 +1080,9 @@ export function TrackDetailModal({
                 </div>
               </div>
 
-              {targetProject && projectVersionEntry && group.hasMultipleVersions && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-900/50 px-3 py-2 text-xs">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                    <FolderKanban size={12} className="text-slate-500 dark:text-zinc-400 shrink-0" />
-                    <span className="text-slate-500 dark:text-zinc-400">
-                      Dans <strong className="text-slate-800 dark:text-zinc-100">{targetProject.title}</strong> :
-                    </span>
-                    <span className="font-mono font-semibold text-slate-900 dark:text-zinc-100">
-                      {projectVersionEntry.versionLabel}
-                    </span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
-                        isProjectPinned
-                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-                          : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {isProjectPinned ? 'Fixée' : 'Auto · dernière'}
-                    </span>
-                  </div>
-
-                  {track.id !== projectTrackIdInGroup ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProjectTrackVersion(
-                          targetProject.id,
-                          group.groupKey,
-                          track.id,
-                          activeEntry.isLatest ? 'auto' : 'pin'
-                        );
-                        notify(
-                          activeEntry.isLatest
-                            ? `Version ${activeEntry.versionLabel} (auto) activée pour « ${targetProject.title} » ✓`
-                            : `Version ${activeEntry.versionLabel} fixée pour « ${targetProject.title} » ✓`
-                        );
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 transition cursor-pointer shrink-0"
-                    >
-                      <Check size={11} />
-                      Utiliser {activeEntry.versionLabel} dans le projet
-                    </button>
-                  ) : isProjectPinned && !projectVersionEntry.isLatest ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProjectTrackVersion(
-                          targetProject.id,
-                          group.groupKey,
-                          group.latestTrack.id,
-                          'auto'
-                        );
-                        onSelectVersion(group.latestTrack.id);
-                        notify(
-                          `Version ${group.latestVersionLabel} (auto) activée pour « ${targetProject.title} » ✓`
-                        );
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-slate-200/80 dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 hover:bg-slate-300 dark:hover:bg-zinc-700 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer shrink-0"
-                    >
-                      Passer en auto ({group.latestVersionLabel})
-                    </button>
-                  ) : null}
-                </div>
-              )}
-
               <div className="flex flex-wrap gap-1.5">
                 {group.versions.map((v) => {
-                  const selected = v.track.id === track.id;
-                  const isUsedInProject = Boolean(
-                    targetProject && projectTrackIdInGroup === v.track.id
-                  );
+                  const selected = v.track.id === group.latestTrack.id;
                   const playingThis =
                     player.currentTrack?.id === v.track.id && player.isPlaying;
                   return (
@@ -1175,12 +1097,10 @@ export function TrackDetailModal({
                       <button
                         type="button"
                         onClick={() => {
+                          selectGroupPreferredVersion(v.track.id, 'song');
                           onSelectVersion(v.track.id);
-                          void player.playTrack(
-                            v.track,
-                            0,
-                            group.versions.map((x) => x.track)
-                          );
+                          void player.playTrack(v.track, 0, [v.track]);
+                          notify(`Version « ${v.versionLabel} » sélectionnée partout ✓`);
                         }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
                       >
@@ -1194,27 +1114,9 @@ export function TrackDetailModal({
                             {fmtDate(v.track.modifiedAt || v.track.addedAt)}
                           </span>
                         )}
-                        {v.isLatest && (
-                          <span
-                            className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
-                              selected
-                                ? 'bg-white/20 text-white dark:bg-black/15 dark:text-zinc-950'
-                                : 'bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
-                            }`}
-                          >
-                            Actuelle
-                          </span>
-                        )}
-                        {isUsedInProject && (
-                          <span
-                            title={`Version active dans « ${targetProject?.title} »`}
-                            className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                              selected
-                                ? 'bg-emerald-400/25 text-emerald-200 dark:bg-emerald-600/20 dark:text-emerald-800'
-                                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                            }`}
-                          >
-                            Projet
+                        {selected && group.hasMultipleVersions && (
+                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/20 text-white">
+                            Active
                           </span>
                         )}
                         {playingThis && (
@@ -1264,6 +1166,7 @@ export function TrackDetailModal({
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {group.prodTracks.map((p) => {
+                    const isSelectedProd = p.track.id === group.prodTrack?.id;
                     const isThisProdCurrent = player.currentTrack?.id === p.track.id;
                     const playingThisProd = isThisProdCurrent && player.isPlaying;
                     const isEditingThis = editingProdId === p.track.id;
@@ -1271,7 +1174,7 @@ export function TrackDetailModal({
                       <div
                         key={p.track.id}
                         className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
-                          isThisProdCurrent
+                          isSelectedProd
                             ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs shadow-emerald-600/25'
                             : 'bg-emerald-500/8 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 border-emerald-500/25 hover:border-emerald-500/50'
                         }`}
@@ -1317,10 +1220,14 @@ export function TrackDetailModal({
                             <button
                               type="button"
                               onClick={() => {
+                                selectGroupPreferredVersion(p.track.id, 'prod');
                                 if (isThisProdCurrent) {
                                   player.togglePlay();
                                 } else {
-                                  void player.playTrack(p.track, 0, prodPlaybackQueue);
+                                  void player.playTrack(p.track, 0, [track, p.track]);
+                                }
+                                if (!isSelectedProd) {
+                                  notify(`Prod « ${p.versionLabel} » sélectionnée partout ✓`);
                                 }
                               }}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
@@ -1334,21 +1241,15 @@ export function TrackDetailModal({
                               {(p.track.modifiedAt || p.track.addedAt) && (
                                 <span
                                   className={`font-mono text-[10px] ${
-                                    isThisProdCurrent ? 'opacity-75' : 'text-emerald-700/60 dark:text-emerald-300/60'
+                                    isSelectedProd ? 'opacity-75' : 'text-emerald-700/60 dark:text-emerald-300/60'
                                   }`}
                                 >
                                   {fmtDate(p.track.modifiedAt || p.track.addedAt)}
                                 </span>
                               )}
-                              {p.isLatest && group.prodTracks.length > 1 && (
-                                <span
-                                  className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
-                                    isThisProdCurrent
-                                      ? 'bg-white/20 text-white'
-                                      : 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-200'
-                                  }`}
-                                >
-                                  Actuelle
+                              {isSelectedProd && group.prodTracks.length > 1 && (
+                                <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/20 text-white">
+                                  Active
                                 </span>
                               )}
                               {playingThisProd && (
@@ -1364,7 +1265,7 @@ export function TrackDetailModal({
                                 setEditingProdDraft(p.versionLabel);
                               }}
                               className={`px-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
-                                isThisProdCurrent ? 'text-white' : 'text-emerald-700 dark:text-emerald-300'
+                                isSelectedProd ? 'text-white' : 'text-emerald-700 dark:text-emerald-300'
                               }`}
                             >
                               <Pencil size={10} />
@@ -1376,7 +1277,7 @@ export function TrackDetailModal({
                                 title="Détacher cette prod en fichier indépendant"
                                 onClick={() => onDetachVersion(p.track.id)}
                                 className={`pr-2 pl-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
-                                  isThisProdCurrent ? 'hover:text-rose-200' : 'hover:text-rose-500'
+                                  isSelectedProd ? 'hover:text-rose-200' : 'hover:text-rose-500'
                                 }`}
                               >
                                 <Unlink size={11} />

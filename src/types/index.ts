@@ -290,6 +290,7 @@ export interface MusicTrack {
   manualGroupTitle?: string; // Optional custom display title for the manual group
   manualVersionLabel?: string; // Optional custom version label (e.g. "Mix final", "Acoustique", "Prod v2")
   isProdOverride?: boolean; // Explicit override marking this track as a prod/instrumental version (or vocal if false)
+  isPreferredVersion?: boolean; // User-selected active version (song or prod) chosen on the Song Page and persisted everywhere
   modifiedAt?: string; // Drive modifiedTime or last file edit ISO
   durationSec?: number;
   bpm?: number;
