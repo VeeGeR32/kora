@@ -56,6 +56,7 @@ import { ProjectSprintView } from './ProjectSprintView';
 interface ProjectAlbumModalProps {
   projectId: string | null;
   onClose: () => void;
+  onOpenProfile?: () => void;
   onOpenTrackDetails?: (trackId: string) => void;
   onOpenContextMenu?: (
     e: React.MouseEvent,
@@ -111,6 +112,7 @@ function fmtReleaseShort(iso?: string): string {
 export function ProjectAlbumModal({
   projectId,
   onClose,
+  onOpenProfile,
   onOpenTrackDetails,
   onOpenContextMenu,
   onOpenProjectContextMenu,
@@ -789,7 +791,12 @@ export function ProjectAlbumModal({
                     className="w-full bg-transparent text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-50 outline-none border-b border-transparent focus:border-slate-300 dark:focus:border-zinc-700 pb-0.5 text-center sm:text-left"
                   />
                   <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-1 text-xs text-slate-500 dark:text-zinc-400">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800 dark:text-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => onOpenProfile?.()}
+                      title="Voir mon profil"
+                      className="inline-flex items-center gap-1.5 font-semibold text-slate-800 dark:text-zinc-200 hover:underline cursor-pointer"
+                    >
                       {artistAvatarUrl ? (
                         <img
                           src={artistAvatarUrl}
@@ -801,8 +808,8 @@ export function ProjectAlbumModal({
                           {artistName.slice(0, 2).toUpperCase()}
                         </span>
                       )}
-                      {artistName}
-                    </span>
+                      <span>{artistName}</span>
+                    </button>
                     <span>·</span>
                     <span>
                       {fmtProjectKindLabel(project.kind)} · {fmtReleaseShort(project.targetReleaseDate)} ·{' '}

@@ -69,15 +69,27 @@ function KoraMusicApp() {
     }
   }, [state.preferences.lastSession?.savedAt, state.musicTracks.length]);
 
-  // If user taps cover art or "Éditer les paroles" inside the player while on Settings or Docs, switch back to MusicView!
+  // If user navigates to a Song, Project, Profile or Lyrics from inside the player while on Settings or Docs, switch back to MusicView!
   useEffect(() => {
     if (
-      (player.pendingOpenTrackId || player.pendingOpenLyricsDocId) &&
+      (player.pendingOpenTrackId ||
+        player.pendingOpenLyricsDocId ||
+        player.pendingOpenProjectId ||
+        player.pendingOpenProfileUid) &&
       (activePage === 'settings' || activePage === 'docs')
     ) {
-      setActivePageState(player.pendingOpenLyricsDocId ? 'lyrics' : 'dashboard');
+      if (player.pendingOpenLyricsDocId) setActivePageState('lyrics');
+      else if (player.pendingOpenProjectId) setActivePageState('projects');
+      else if (player.pendingOpenProfileUid) setActivePageState('profile');
+      else setActivePageState('dashboard');
     }
-  }, [player.pendingOpenTrackId, player.pendingOpenLyricsDocId, activePage]);
+  }, [
+    player.pendingOpenTrackId,
+    player.pendingOpenLyricsDocId,
+    player.pendingOpenProjectId,
+    player.pendingOpenProfileUid,
+    activePage,
+  ]);
 
   // Persist exact scroll position when leaving / closing the app on any device
   useEffect(() => {

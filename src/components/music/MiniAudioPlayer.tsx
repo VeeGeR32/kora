@@ -100,6 +100,8 @@ export function MiniAudioPlayer() {
     closePlayer,
     requestOpenTrackPage,
     requestOpenLyricsDoc,
+    requestOpenProjectPage,
+    requestOpenProfile,
     localDevice,
     remoteDevice,
     isRemotePlayback,
@@ -463,15 +465,9 @@ export function MiniAudioPlayer() {
     return { target: currentGroup.prodTrack, label: 'Prod', isCurrentlyProd: false };
   }, [currentTrack, parsedCurrent, currentGroup]);
 
-  const versionSuffix =
-    parsedCurrent && parsedCurrent.versionLabel !== 'Original' ? parsedCurrent.versionLabel : '';
-  const subtitle = [
-    versionSuffix,
-    linkedProject?.title,
-    state.preferences.name || currentTrack?.artist || 'Moi',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const authorDisplayName =
+    state.preferences.name?.trim() || currentTrack?.artist || 'Moi';
+  const subtitle = [authorDisplayName, linkedProject?.title].filter(Boolean).join(' · ');
 
   const canPlay = Boolean(
     isRemotePlayback ||
@@ -784,6 +780,20 @@ export function MiniAudioPlayer() {
     requestOpenTrackPage(currentTrack.id);
   };
 
+  const handleOpenProjectFromPlayer = () => {
+    if (!linkedProject || justDraggedRef.current) return;
+    triggerHapticTick(8);
+    setExpanded(false);
+    requestOpenProjectPage(linkedProject.id);
+  };
+
+  const handleOpenAuthorFromPlayer = () => {
+    if (justDraggedRef.current) return;
+    triggerHapticTick(8);
+    setExpanded(false);
+    requestOpenProfile('me');
+  };
+
   const isFavorite = currentTrack
     ? currentGroup?.isFavorite ?? Boolean(currentTrack.isFavorite)
     : false;
@@ -1052,9 +1062,20 @@ export function MiniAudioPlayer() {
                     </button>
 
                     <div className="min-w-0 flex-1 text-center">
-                      <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400 truncate">
-                        {linkedProject?.title || 'En lecture'}
-                      </p>
+                      {linkedProject ? (
+                        <button
+                          type="button"
+                          onClick={handleOpenProjectFromPlayer}
+                          className="max-w-full text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white truncate transition cursor-pointer"
+                          title={`Ouvrir le projet « ${linkedProject.title} »`}
+                        >
+                          {linkedProject.title}
+                        </button>
+                      ) : (
+                        <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-zinc-400 truncate">
+                          En lecture
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-0.5">
@@ -1143,25 +1164,49 @@ export function MiniAudioPlayer() {
                       <div data-cover-swipe="true" className="flex items-center justify-between gap-2.5">
                         <div className="min-w-0 flex-1 overflow-hidden">
                           <AnimatePresence mode="popLayout" initial={false} custom={slideDir}>
-                            <motion.button
+                            <motion.div
                               key={currentTrack.id}
-                              type="button"
                               custom={slideDir}
                               initial={{ x: slideDir * 24, opacity: 0 }}
                               animate={{ x: 0, opacity: 1 }}
                               exit={{ x: slideDir * -24, opacity: 0 }}
                               transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                              onClick={handleOpenTrackPageFromCover}
-                              className="w-full text-left cursor-pointer group block"
-                              title="Ouvrir la page du morceau"
+                              className="w-full text-left block"
                             >
-                              <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white truncate group-hover:underline">
-                                {displayTrackTitle}
-                              </h2>
-                              <p className="text-xs sm:text-sm text-slate-500 dark:text-zinc-400 truncate mt-0.5">
-                                {subtitle}
-                              </p>
-                            </motion.button>
+                              <button
+                                type="button"
+                                onClick={handleOpenTrackPageFromCover}
+                                title="Ouvrir la page du morceau"
+                                className="block max-w-full text-left cursor-pointer group"
+                              >
+                                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white truncate group-hover:underline">
+                                  {displayTrackTitle}
+                                </h2>
+                              </button>
+                              <div className="flex items-center gap-1.5 text-xs sm:text-sm text-slate-500 dark:text-zinc-400 mt-0.5 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={handleOpenAuthorFromPlayer}
+                                  title="Voir le profil de l’artiste"
+                                  className="truncate hover:text-slate-900 dark:hover:text-white hover:underline transition cursor-pointer"
+                                >
+                                  {authorDisplayName}
+                                </button>
+                                {linkedProject && (
+                                  <>
+                                    <span className="opacity-50 shrink-0">·</span>
+                                    <button
+                                      type="button"
+                                      onClick={handleOpenProjectFromPlayer}
+                                      title={`Ouvrir le projet « ${linkedProject.title} »`}
+                                      className="truncate hover:text-slate-900 dark:hover:text-white hover:underline transition cursor-pointer"
+                                    >
+                                      {linkedProject.title}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </motion.div>
                           </AnimatePresence>
                         </div>
 
@@ -1623,27 +1668,54 @@ export function MiniAudioPlayer() {
                     ) : (
                       <div
                         data-queue-scroll="true"
-                        className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 select-text"
+                        style={{
+                          maskImage:
+                            'linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)',
+                          WebkitMaskImage:
+                            'linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)',
+                        }}
+                        className="flex-1 overflow-y-auto overscroll-contain px-6 py-10 select-text"
                       >
-                        {linkedLyrics && (playerLyricsBlocks || desktopLyricsLines.some((l) => l.text.trim())) ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 truncate">
-                                {linkedLyrics.title}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={handleOpenOrCreateLyricsInEditor}
-                                className="inline-flex items-center gap-1 rounded-full bg-slate-900/8 dark:bg-white/10 hover:bg-[#8C271E] hover:text-white px-2.5 py-1 text-[10.5px] font-semibold text-slate-600 dark:text-zinc-300 transition cursor-pointer shrink-0"
-                              >
-                                <Edit3 size={10} />
-                                Éditer
-                              </button>
-                            </div>
-                            {playerLyricsBlocks ? (
-                              <div className="space-y-1.5">
-                                {playerLyricsBlocks.map((b) => {
+                        {(() => {
+                          const writtenBlocks = playerLyricsBlocks
+                            ? playerLyricsBlocks.filter((b) =>
+                                b.lines.some((ln) => ln.text.trim().length > 0)
+                              )
+                            : null;
+                          const cleanPlainLines = desktopLyricsLines.filter((ln) =>
+                            ln.text.trim().length > 0
+                          );
+                          const hasListenerLyrics = Boolean(
+                            linkedLyrics &&
+                              ((writtenBlocks && writtenBlocks.length > 0) ||
+                                cleanPlainLines.length > 0)
+                          );
+
+                          if (!hasListenerLyrics) {
+                            return (
+                              <div className="h-full flex flex-col items-center justify-center text-center gap-3 text-slate-400 dark:text-zinc-500">
+                                <FileText size={24} className="opacity-40" />
+                                <p className="text-xs">Aucune parole disponible.</p>
+                                <button
+                                  type="button"
+                                  onClick={handleOpenOrCreateLyricsInEditor}
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-3.5 py-1.5 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
+                                >
+                                  <Edit3 size={12} />
+                                  Écrire les paroles
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          if (writtenBlocks && writtenBlocks.length > 0) {
+                            return (
+                              <div className="space-y-6 py-12">
+                                {writtenBlocks.map((b) => {
                                   const isActive = activePlayerLyricsBlockIdx === b.index;
+                                  const isPast =
+                                    activePlayerLyricsBlockIdx >= 0 &&
+                                    b.index < activePlayerLyricsBlockIdx;
                                   return (
                                     <button
                                       key={b.index}
@@ -1657,82 +1729,44 @@ export function MiniAudioPlayer() {
                                         applyVisualFrame(b.startSec, effectiveDuration);
                                         triggerHapticTick(8);
                                       }}
-                                      className={`w-full text-left rounded-xl px-3 py-2 transition cursor-pointer ${
+                                      className={`w-full text-left transition-all duration-300 cursor-pointer space-y-1.5 ${
                                         isActive
-                                          ? 'bg-[#8C271E]/14 dark:bg-[#8C271E]/28 text-slate-950 dark:text-white'
-                                          : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-900/5 dark:hover:bg-white/[0.05]'
+                                          ? 'text-slate-950 dark:text-white opacity-100 scale-[1.01] origin-left'
+                                          : isPast
+                                          ? 'text-slate-900 dark:text-white opacity-28 hover:opacity-70'
+                                          : 'text-slate-900 dark:text-white opacity-42 hover:opacity-80'
                                       }`}
                                     >
-                                      <p className="text-[9.5px] font-mono uppercase tracking-wider opacity-60 mb-0.5">
-                                        M{b.startBar}–{b.endBar} · {b.sectionLabel}
-                                      </p>
-                                      {b.lines.length > 0 ? (
-                                        <div className="space-y-0.5">
-                                          {b.lines.map((ln, lIdx) => (
-                                            <div
-                                              key={lIdx}
-                                              className={`flex items-start gap-1.5 text-[15px] leading-[1.75] ${
-                                                isActive ? 'font-semibold' : ''
-                                              }`}
-                                            >
-                                              {ln.fix && (
-                                                <span className="mt-1 rounded bg-[#8C271E] text-white px-1 py-0.5 text-[8.5px] font-bold shrink-0">
-                                                  FIX
-                                                </span>
-                                              )}
-                                              <span className="whitespace-pre-wrap break-words">{ln.text}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <p className="text-xs italic text-[#8C271E] dark:text-[#f08b82]">
-                                          {b.note || 'À écrire…'}
-                                        </p>
-                                      )}
+                                      {b.lines
+                                        .filter((ln) => ln.text.trim().length > 0)
+                                        .map((ln, lIdx) => (
+                                          <p
+                                            key={lIdx}
+                                            className="text-[20px] font-bold leading-[1.42] tracking-tight whitespace-pre-wrap break-words"
+                                          >
+                                            {ln.text}
+                                          </p>
+                                        ))}
                                     </button>
                                   );
                                 })}
                               </div>
-                            ) : (
-                              <div className="space-y-1">
-                                {desktopLyricsLines.map((ln, idx) =>
-                                  !ln.text.trim() && !ln.fix ? (
-                                    <div key={idx} className="h-3" />
-                                  ) : (
-                                    <div
-                                      key={idx}
-                                      className={`flex items-start gap-2 rounded-lg px-2 -mx-2 py-0.5 text-[15px] leading-[1.85] ${
-                                        ln.fix
-                                          ? 'bg-rose-500/10 text-slate-950 dark:text-white font-medium'
-                                          : 'text-slate-800 dark:text-zinc-200'
-                                      }`}
-                                    >
-                                      {ln.fix && (
-                                        <span className="mt-1.5 rounded bg-[#8C271E] text-white px-1.5 py-0.5 text-[9px] font-bold shrink-0">
-                                          FIX
-                                        </span>
-                                      )}
-                                      <span className="whitespace-pre-wrap break-words">{ln.text}</span>
-                                    </div>
-                                  )
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="h-full flex flex-col items-center justify-center text-center gap-3 text-slate-400 dark:text-zinc-500">
-                            <FileText size={24} className="opacity-40" />
-                            <p className="text-xs">Aucun texte lié à ce morceau.</p>
-                            <button
-                              type="button"
-                              onClick={handleOpenOrCreateLyricsInEditor}
-                              className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-3.5 py-1.5 text-xs font-semibold hover:opacity-90 transition cursor-pointer"
-                            >
-                              <Edit3 size={12} />
-                              Créer le texte
-                            </button>
-                          </div>
-                        )}
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-2.5 py-4">
+                              {cleanPlainLines.map((ln, idx) => (
+                                <p
+                                  key={idx}
+                                  className="text-[19px] font-bold leading-[1.48] tracking-tight text-slate-900 dark:text-white/90 whitespace-pre-wrap break-words"
+                                >
+                                  {ln.text}
+                                </p>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -1749,23 +1783,24 @@ export function MiniAudioPlayer() {
                     transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
                     className="lg:hidden absolute inset-x-0 bottom-0 top-16 z-20 rounded-t-3xl bg-[#faf7f6] dark:bg-[#130f0f] border-t border-slate-200/80 dark:border-white/10 flex flex-col"
                   >
-                    <div className="px-5 py-3.5 border-b border-slate-200/80 dark:border-white/10 flex items-center justify-between gap-2 shrink-0">
+                    <div className="px-5 py-3.5 flex items-center justify-between gap-2 shrink-0">
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                          {linkedLyrics?.title || displayTrackTitle}
+                          {displayTrackTitle}
                         </p>
-                        <p className="text-[10px] text-slate-400 dark:text-zinc-500">
-                          Paroles {playerLyricsBlocks ? '· synchronisées aux mesures' : ''}
+                        <p className="text-[11px] text-slate-400 dark:text-zinc-500 truncate">
+                          {authorDisplayName}
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
                           onClick={handleOpenOrCreateLyricsInEditor}
-                          className="inline-flex items-center gap-1 rounded-full bg-[#8C271E] text-white px-3 py-1 text-[11px] font-semibold cursor-pointer"
+                          title="Éditer dans Textes"
+                          aria-label="Éditer dans Textes"
+                          className="h-8 w-8 rounded-full flex items-center justify-center text-slate-500 dark:text-zinc-400 hover:bg-slate-900/8 dark:hover:bg-white/10 cursor-pointer"
                         >
-                          <Edit3 size={11} />
-                          {linkedLyrics ? 'Éditer' : 'Créer'}
+                          <Edit3 size={14} />
                         </button>
                         <button
                           type="button"
@@ -1779,102 +1814,106 @@ export function MiniAudioPlayer() {
 
                     <div
                       data-queue-scroll="true"
-                      style={{ touchAction: 'pan-y' }}
-                      className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 pb-[max(2rem,env(safe-area-inset-bottom))] select-text"
+                      style={{
+                        touchAction: 'pan-y',
+                        maskImage:
+                          'linear-gradient(to bottom, transparent 0%, black 10%, black 88%, transparent 100%)',
+                        WebkitMaskImage:
+                          'linear-gradient(to bottom, transparent 0%, black 10%, black 88%, transparent 100%)',
+                      }}
+                      className="flex-1 overflow-y-auto overscroll-contain px-6 py-8 pb-[max(3rem,env(safe-area-inset-bottom))] select-text"
                     >
-                      {linkedLyrics && (playerLyricsBlocks || desktopLyricsLines.some((l) => l.text.trim())) ? (
-                        playerLyricsBlocks ? (
-                          <div className="space-y-1.5">
-                            {playerLyricsBlocks.map((b) => {
-                              const isActive = activePlayerLyricsBlockIdx === b.index;
-                              return (
-                                <button
-                                  key={b.index}
-                                  ref={(el) => {
-                                    if (el) playerLyricsBlockRefs.current.set(b.index, el);
-                                    else playerLyricsBlockRefs.current.delete(b.index);
-                                  }}
-                                  type="button"
-                                  onClick={() => {
-                                    seek(b.startSec);
-                                    applyVisualFrame(b.startSec, effectiveDuration);
-                                    triggerHapticTick(8);
-                                  }}
-                                  className={`w-full text-left rounded-2xl px-3.5 py-2.5 transition cursor-pointer ${
-                                    isActive
-                                      ? 'bg-[#8C271E]/14 dark:bg-[#8C271E]/28 text-slate-950 dark:text-white'
-                                      : 'text-slate-600 dark:text-zinc-400'
-                                  }`}
-                                >
-                                  <p className="text-[9.5px] font-mono uppercase tracking-wider opacity-55 mb-0.5">
-                                    M{b.startBar}–{b.endBar} · {b.sectionLabel}
-                                  </p>
-                                  {b.lines.length > 0 ? (
-                                    <div className="space-y-0.5">
-                                      {b.lines.map((ln, lIdx) => (
-                                        <div
+                      {(() => {
+                        const writtenBlocks = playerLyricsBlocks
+                          ? playerLyricsBlocks.filter((b) =>
+                              b.lines.some((ln) => ln.text.trim().length > 0)
+                            )
+                          : null;
+                        const cleanPlainLines = desktopLyricsLines.filter((ln) =>
+                          ln.text.trim().length > 0
+                        );
+                        const hasListenerLyrics = Boolean(
+                          linkedLyrics &&
+                            ((writtenBlocks && writtenBlocks.length > 0) ||
+                              cleanPlainLines.length > 0)
+                        );
+
+                        if (!hasListenerLyrics) {
+                          return (
+                            <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-12 text-slate-400 dark:text-zinc-500">
+                              <FileText size={28} className="opacity-40" />
+                              <p className="text-sm">Aucune parole disponible.</p>
+                              <button
+                                type="button"
+                                onClick={handleOpenOrCreateLyricsInEditor}
+                                className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold cursor-pointer"
+                              >
+                                <Edit3 size={13} />
+                                Écrire les paroles
+                              </button>
+                            </div>
+                          );
+                        }
+
+                        if (writtenBlocks && writtenBlocks.length > 0) {
+                          return (
+                            <div className="space-y-7 py-16">
+                              {writtenBlocks.map((b) => {
+                                const isActive = activePlayerLyricsBlockIdx === b.index;
+                                const isPast =
+                                  activePlayerLyricsBlockIdx >= 0 &&
+                                  b.index < activePlayerLyricsBlockIdx;
+                                return (
+                                  <button
+                                    key={b.index}
+                                    ref={(el) => {
+                                      if (el) playerLyricsBlockRefs.current.set(b.index, el);
+                                      else playerLyricsBlockRefs.current.delete(b.index);
+                                    }}
+                                    type="button"
+                                    onClick={() => {
+                                      seek(b.startSec);
+                                      applyVisualFrame(b.startSec, effectiveDuration);
+                                      triggerHapticTick(8);
+                                    }}
+                                    className={`w-full text-left transition-all duration-300 cursor-pointer space-y-1.5 ${
+                                      isActive
+                                        ? 'text-slate-950 dark:text-white opacity-100 scale-[1.01] origin-left'
+                                        : isPast
+                                        ? 'text-slate-900 dark:text-white opacity-28'
+                                        : 'text-slate-900 dark:text-white opacity-42'
+                                    }`}
+                                  >
+                                    {b.lines
+                                      .filter((ln) => ln.text.trim().length > 0)
+                                      .map((ln, lIdx) => (
+                                        <p
                                           key={lIdx}
-                                          className={`flex items-start gap-1.5 text-[16px] leading-[1.75] ${
-                                            isActive ? 'font-semibold' : ''
-                                          }`}
+                                          className="text-[22px] font-bold leading-[1.42] tracking-tight whitespace-pre-wrap break-words"
                                         >
-                                          {ln.fix && (
-                                            <span className="mt-1.5 rounded bg-[#8C271E] text-white px-1 py-0.5 text-[8.5px] font-bold shrink-0">
-                                              FIX
-                                            </span>
-                                          )}
-                                          <span className="whitespace-pre-wrap break-words">{ln.text}</span>
-                                        </div>
+                                          {ln.text}
+                                        </p>
                                       ))}
-                                    </div>
-                                  ) : (
-                                    <p className="text-sm italic text-[#8C271E] dark:text-[#f08b82]">
-                                      {b.note || 'À écrire…'}
-                                    </p>
-                                  )}
-                                </button>
-                              );
-                            })}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-3 py-4">
+                            {cleanPlainLines.map((ln, idx) => (
+                              <p
+                                key={idx}
+                                className="text-[21px] font-bold leading-[1.45] tracking-tight text-slate-900 dark:text-white/90 whitespace-pre-wrap break-words"
+                              >
+                                {ln.text}
+                              </p>
+                            ))}
                           </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {desktopLyricsLines.map((ln, idx) =>
-                              !ln.text.trim() && !ln.fix ? (
-                                <div key={idx} className="h-3.5" />
-                              ) : (
-                                <div
-                                  key={idx}
-                                  className={`flex items-start gap-2 rounded-xl px-2.5 -mx-2.5 py-0.5 text-[16px] leading-[1.8] ${
-                                    ln.fix
-                                      ? 'bg-rose-500/10 text-slate-950 dark:text-white font-medium'
-                                      : 'text-slate-800 dark:text-zinc-200'
-                                  }`}
-                                >
-                                  {ln.fix && (
-                                    <span className="mt-1.5 rounded bg-[#8C271E] text-white px-1.5 py-0.5 text-[9px] font-bold shrink-0">
-                                      FIX
-                                    </span>
-                                  )}
-                                  <span className="whitespace-pre-wrap break-words">{ln.text}</span>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        )
-                      ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-12 text-slate-400 dark:text-zinc-500">
-                          <FileText size={28} className="opacity-40" />
-                          <p className="text-sm">Aucun texte associé à ce son pour l’instant.</p>
-                          <button
-                            type="button"
-                            onClick={handleOpenOrCreateLyricsInEditor}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-4 py-2 text-xs font-semibold cursor-pointer"
-                          >
-                            <Edit3 size={13} />
-                            Écrire les paroles
-                          </button>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </motion.div>
                 )}

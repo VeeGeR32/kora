@@ -1557,241 +1557,220 @@ export function SocialHubView({
             </button>
           )}
 
-          {/* Artist Banner & Stats Hero */}
-          <div className="tempo-card rounded-3xl p-6 sm:p-7 space-y-6">
-            <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-5">
-              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
-                <div className="relative group shrink-0">
-                  <div
-                    className="h-28 w-28 sm:h-32 sm:w-32 rounded-[24px] flex items-center justify-center text-white font-extrabold text-3xl shadow-xl border border-slate-200/70 dark:border-zinc-800 overflow-hidden"
-                    style={getCoverGradientStyle(activeArtistProfile.coverGradient)}
-                  >
-                    {activeArtistProfile.avatarUrl ? (
-                      <img
-                        src={activeArtistProfile.avatarUrl}
-                        alt={activeArtistProfile.name}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      activeArtistProfile.name.slice(0, 2).toUpperCase()
-                    )}
-                  </div>
-                  {isViewingOwnProfile && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => profileAvatarInputRef.current?.click()}
-                        title="Changer ma photo de profil"
-                        aria-label="Changer ma photo de profil"
-                        className="absolute inset-0 rounded-[24px] bg-black/40 opacity-0 group-hover:opacity-100 text-white flex items-center justify-center transition cursor-pointer"
-                      >
-                        <Camera size={22} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => profileAvatarInputRef.current?.click()}
-                        title="Changer ma photo de profil"
-                        aria-label="Changer ma photo de profil"
-                        className="absolute -bottom-1.5 -right-1.5 h-8 w-8 rounded-full bg-[#8C271E] text-white border-2 border-white dark:border-[#141418] flex items-center justify-center shadow-md cursor-pointer"
-                      >
-                        <Camera size={14} />
-                      </button>
-                      <input
-                        ref={profileAvatarInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          e.target.value = '';
-                          if (!file) return;
-                          try {
-                            const dataUrl = await prepareAvatarDataUrl(file);
-                            await updateUserAvatar(dataUrl);
-                            setProfiles((prev) =>
-                              prev.map((p) => (p.uid === myUid ? { ...p, avatarUrl: dataUrl } : p))
-                            );
-                          } catch {
-                            notify('Impossible de lire cette image');
-                          }
-                        }}
-                      />
-                    </>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E]/12 text-[#8C271E] dark:text-[#E56B5F] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
-                    <Sparkles size={11} /> Artiste Vérifié · Portfolio Rowav
-                  </div>
-                  <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-zinc-50">
-                    {activeArtistProfile.name}
-                  </h1>
-                  <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-xl">
-                    {activeArtistProfile.bio}
-                  </p>
-                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[11px] text-slate-400 pt-0.5">
-                    <span className="font-mono">{activeArtistProfile.handle}</span>
-                    {activeArtistProfile.location && (
-                      <>
-                        <span>·</span>
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin size={11} /> {activeArtistProfile.location}
-                        </span>
-                      </>
-                    )}
-                    {(activeArtistProfile.genres || []).map((g) => (
-                      <span
-                        key={g}
-                        className="rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-zinc-300"
-                      >
-                        {g}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Profile Action Pills */}
-              <div className="flex flex-wrap items-center justify-center gap-2 shrink-0">
-                {isViewingOwnProfile ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditName(myProfile.name);
-                        setEditBio(myProfile.bio);
-                        setEditLocation(myProfile.location || 'Paris, FR');
-                        setEditGenres((myProfile.genres || ['Studio']).join(', '));
-                        setEditGradient(myProfile.coverGradient || 'sunset');
-                        setEditingProfile(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-zinc-100 transition cursor-pointer"
-                    >
-                      <Pencil size={12} /> Modifier le profil
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowPublishSheet(true)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-4 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 transition cursor-pointer"
-                    >
-                      <Plus size={14} /> Publier au portfolio
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => void handleToggleFollow(activeArtistProfile)}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition cursor-pointer ${
-                        activeArtistProfile.isFollowedByMe
-                          ? 'bg-slate-100 dark:bg-zinc-900 text-slate-900 dark:text-zinc-100'
-                          : 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
-                      }`}
-                    >
-                      {activeArtistProfile.isFollowedByMe ? (
-                        <>
-                          <UserCheck size={14} /> Abonné
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus size={14} /> S’abonner
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openDirectMessageWith(activeArtistProfile.uid)}
-                      className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-4 py-2 text-xs font-semibold transition cursor-pointer"
-                    >
-                      <MessageCircle size={14} /> Message
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Artist Stats Grid */}
-            <div className="pt-5 border-t border-slate-100 dark:border-zinc-800/80 grid grid-cols-2 sm:grid-cols-5 gap-3">
-              <div className="rounded-2xl bg-slate-50/80 dark:bg-zinc-900/60 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Abonnés
-                </p>
-                <p className="font-mono text-lg font-bold text-slate-900 dark:text-zinc-100 mt-0.5">
-                  {activeArtistProfile.followersCount}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-slate-50/80 dark:bg-zinc-900/60 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Projets Portfolio
-                </p>
-                <p className="font-mono text-lg font-bold text-slate-900 dark:text-zinc-100 mt-0.5">
-                  {isViewingOwnProfile
-                    ? `${activeArtistProfile.projectsCount} (${state.musicProjects.length} studio)`
-                    : activeArtistProfile.projectsCount}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-slate-50/80 dark:bg-zinc-900/60 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Sons
-                </p>
-                <p className="font-mono text-lg font-bold text-slate-900 dark:text-zinc-100 mt-0.5">
-                  {isViewingOwnProfile
-                    ? `${trackGroups.length} studio`
-                    : `${activeArtistProfile.tracksCount} publiés`}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-slate-50/80 dark:bg-zinc-900/60 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Likes reçus ♥
-                </p>
-                <p className="font-mono text-lg font-bold text-rose-500 mt-0.5">
-                  {activeArtistProfile.totalLikes}
-                </p>
-              </div>
-              <div className="rounded-2xl bg-slate-50/80 dark:bg-zinc-900/60 p-3 col-span-2 sm:col-span-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  Note moyenne
-                </p>
-                <p className="font-mono text-lg font-bold text-[#8C271E] dark:text-[#E56B5F] mt-0.5">
-                  {activeArtistProfile.averageRating > 0
-                    ? `★ ${activeArtistProfile.averageRating}/10`
-                    : '— /10'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Popular Tracks of this Artist */}
+          {/* Spotify-Style Artist Profile Hero (PUBLIC VIEW) */}
           {(() => {
             const artistPublishedProjects = socialProjects.filter(
               (p) => p.ownerUid === activeArtistProfile.uid
             );
             const artistTracks = artistPublishedProjects.flatMap((p) => p.tracks);
+            const publicPlaylists = isViewingOwnProfile
+              ? playlists.filter((pl) => Boolean(pl.isPublic))
+              : [];
 
             return (
               <>
+                <div className="tempo-card rounded-3xl overflow-hidden">
+                  {/* Gradient Spotify-like Header Banner */}
+                  <div
+                    className="relative px-6 pt-8 pb-6 sm:px-8 sm:pt-10 sm:pb-7"
+                    style={getCoverGradientStyle(activeArtistProfile.coverGradient)}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/15 via-black/35 to-black/75" />
+                    <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-end gap-5 sm:gap-6 text-center sm:text-left">
+                      {/* Large Circular Spotify PFP */}
+                      <div className="relative group shrink-0">
+                        <div
+                          className="h-32 w-32 sm:h-40 sm:w-40 rounded-full flex items-center justify-center text-white font-extrabold text-4xl shadow-2xl border-2 border-white/25 overflow-hidden bg-black/30"
+                        >
+                          {activeArtistProfile.avatarUrl ? (
+                            <img
+                              src={activeArtistProfile.avatarUrl}
+                              alt={activeArtistProfile.name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            activeArtistProfile.name.slice(0, 2).toUpperCase()
+                          )}
+                        </div>
+                        {isViewingOwnProfile && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => profileAvatarInputRef.current?.click()}
+                              title="Changer ma photo de profil"
+                              aria-label="Changer ma photo de profil"
+                              className="absolute inset-0 rounded-full bg-black/45 opacity-0 group-hover:opacity-100 text-white flex items-center justify-center transition cursor-pointer"
+                            >
+                              <Camera size={24} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => profileAvatarInputRef.current?.click()}
+                              title="Changer ma photo de profil"
+                              aria-label="Changer ma photo de profil"
+                              className="absolute bottom-1 right-1 h-9 w-9 rounded-full bg-[#8C271E] text-white border-2 border-white flex items-center justify-center shadow-lg cursor-pointer"
+                            >
+                              <Camera size={15} />
+                            </button>
+                            <input
+                              ref={profileAvatarInputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                try {
+                                  const dataUrl = await prepareAvatarDataUrl(file);
+                                  await updateUserAvatar(dataUrl);
+                                  setProfiles((prev) =>
+                                    prev.map((p) =>
+                                      p.uid === myUid ? { ...p, avatarUrl: dataUrl } : p
+                                    )
+                                  );
+                                } catch {
+                                  notify('Impossible de lire cette image');
+                                }
+                              }}
+                            />
+                          </>
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1 space-y-2 pb-1">
+                        <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur-md text-white px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                          <Sparkles size={11} /> Profil Public
+                        </div>
+                        <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white drop-shadow-xs truncate">
+                          {activeArtistProfile.name}
+                        </h1>
+                        {activeArtistProfile.bio && (
+                          <p className="text-xs sm:text-sm text-white/85 max-w-xl leading-relaxed">
+                            {activeArtistProfile.bio}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[11px] text-white/75 pt-0.5">
+                          <span className="font-mono">{activeArtistProfile.handle}</span>
+                          {activeArtistProfile.location && (
+                            <>
+                              <span>·</span>
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin size={11} /> {activeArtistProfile.location}
+                              </span>
+                            </>
+                          )}
+                          <span>·</span>
+                          <span className="font-semibold text-white">
+                            {activeArtistProfile.followersCount} abonné{activeArtistProfile.followersCount > 1 ? 's' : ''}
+                          </span>
+                          <span>·</span>
+                          <span>
+                            {artistTracks.length} son{artistTracks.length > 1 ? 's' : ''} · {artistPublishedProjects.length} projet{artistPublishedProjects.length > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Spotify-Style Action Bar */}
+                  <div className="px-6 py-4 sm:px-8 flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-[#131317]">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {artistTracks.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handlePlaySocialTrack(artistTracks[0], artistTracks)}
+                          className="h-11 px-5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white inline-flex items-center gap-2 text-xs font-bold shadow-md shadow-[#8C271E]/25 active:scale-95 transition cursor-pointer"
+                        >
+                          <Play size={15} fill="currentColor" className="ml-0.5" />
+                          <span>Écouter</span>
+                        </button>
+                      )}
+
+                      {isViewingOwnProfile ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditName(myProfile.name);
+                              setEditBio(myProfile.bio);
+                              setEditLocation(myProfile.location || 'Paris, FR');
+                              setEditGenres((myProfile.genres || ['Studio']).join(', '));
+                              setEditGradient(myProfile.coverGradient || 'sunset');
+                              setEditingProfile(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-700 hover:border-slate-400 dark:hover:border-zinc-500 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-zinc-100 transition cursor-pointer"
+                          >
+                            <Pencil size={12} /> Modifier le profil
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowPublishSheet(true)}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-zinc-100 transition cursor-pointer"
+                          >
+                            <Plus size={13} /> Publier un projet
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleFollow(activeArtistProfile)}
+                            className={`inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition cursor-pointer ${
+                              activeArtistProfile.isFollowedByMe
+                                ? 'border border-slate-200 dark:border-zinc-700 text-slate-900 dark:text-zinc-100'
+                                : 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/25'
+                            }`}
+                          >
+                            {activeArtistProfile.isFollowedByMe ? (
+                              <>
+                                <UserCheck size={14} /> Abonné
+                              </>
+                            ) : (
+                              <>
+                                <UserPlus size={14} /> S’abonner
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openDirectMessageWith(activeArtistProfile.uid)}
+                            className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-100 px-4 py-2 text-xs font-semibold transition cursor-pointer"
+                          >
+                            <MessageCircle size={14} /> Message
+                          </button>
+                        </>
+                      )}
+                    </div>
+
+                    {(activeArtistProfile.genres || []).length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {(activeArtistProfile.genres || []).map((g) => (
+                          <span
+                            key={g}
+                            className="rounded-full bg-slate-100 dark:bg-zinc-800/90 px-2.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-zinc-300"
+                          >
+                            {g}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Popular Public Tracks (Spotify-style numbered list) */}
                 <section className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                      Titres populaires
+                    <h2 className="text-base font-bold text-slate-900 dark:text-zinc-100">
+                      Populaires
                     </h2>
-                    {artistTracks.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handlePlaySocialTrack(artistTracks[0], artistTracks)}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] text-white px-3.5 py-1 text-xs font-semibold cursor-pointer"
-                      >
-                        <Play size={12} fill="currentColor" /> Tout écouter
-                      </button>
-                    )}
                   </div>
 
                   {artistTracks.length === 0 ? (
                     <div className="tempo-card rounded-3xl p-8 text-center space-y-2.5">
                       <p className="text-xs text-slate-400">
                         {isViewingOwnProfile
-                          ? 'Publie un de tes projets pour afficher tes morceaux populaires sur ton portfolio public.'
+                          ? 'Seuls tes morceaux publiés s’affichent ici. Publie un projet pour le rendre visible sur ton profil.'
                           : 'Cet artiste n’a pas encore publié de morceaux.'}
                       </p>
                       {isViewingOwnProfile && (
@@ -1813,11 +1792,11 @@ export function SocialHubView({
                   )}
                 </section>
 
-                {/* Artist Portfolio / Discography */}
+                {/* Public Discography (Albums / EP / Singles) */}
                 <section className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                      Portfolio & Discographie ({artistPublishedProjects.length})
+                    <h2 className="text-base font-bold text-slate-900 dark:text-zinc-100">
+                      Discographie ({artistPublishedProjects.length})
                     </h2>
                     {isViewingOwnProfile && (
                       <button
@@ -1825,7 +1804,7 @@ export function SocialHubView({
                         onClick={() => setShowPublishSheet(true)}
                         className="text-xs font-semibold text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
                       >
-                        + Ajouter un projet au portfolio
+                        + Publier
                       </button>
                     )}
                   </div>
@@ -1833,7 +1812,7 @@ export function SocialHubView({
                   {artistPublishedProjects.length === 0 ? (
                     <div className="tempo-card rounded-3xl p-8 text-center">
                       <p className="text-xs text-slate-400">
-                        Aucun projet publié dans le portfolio public pour l’instant.
+                        Aucun projet public pour l’instant.
                       </p>
                     </div>
                   ) : (
@@ -1861,7 +1840,7 @@ export function SocialHubView({
                                   handlePlaySocialTrack(proj.tracks[0], proj.tracks);
                                 }
                               }}
-                              className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-2xl bg-slate-950/80 text-white flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer"
+                              className="absolute bottom-2.5 right-2.5 h-10 w-10 rounded-full bg-[#8C271E] text-white flex items-center justify-center shadow-lg hover:scale-105 transition cursor-pointer"
                             >
                               <Play size={16} fill="currentColor" className="ml-0.5" />
                             </button>
@@ -1898,13 +1877,14 @@ export function SocialHubView({
                   )}
                 </section>
 
-                {isViewingOwnProfile && playlists.length > 0 && (
+                {/* Public Playlists ONLY */}
+                {publicPlaylists.length > 0 && (
                   <section className="space-y-3">
-                    <h2 className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
-                      Mes Playlists ({playlists.length})
+                    <h2 className="text-base font-bold text-slate-900 dark:text-zinc-100">
+                      Playlists publiques ({publicPlaylists.length})
                     </h2>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {playlists.map((pl) => (
+                      {publicPlaylists.map((pl) => (
                         <div
                           key={pl.id}
                           onClick={() => onOpenPlaylist?.(pl.id)}

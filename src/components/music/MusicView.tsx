@@ -76,6 +76,7 @@ export function MusicView({
 }: MusicViewProps) {
   const {
     state,
+    cloudUser,
     lastCloudSyncAt,
     autoSyncingDrive,
     driveSources,
@@ -368,6 +369,38 @@ export function MusicView({
     setSubTab('lyrics');
     player.clearPendingOpenLyricsDoc();
   }, [player.pendingOpenLyricsDocId]);
+
+  // Open Project Page automatically when user taps project name inside the player
+  useEffect(() => {
+    if (!player.pendingOpenProjectId) return;
+    const projId = player.pendingOpenProjectId;
+    setDetailTarget(null);
+    setOpenPlaylistId(null);
+    setShowNewProj(false);
+    setOpenProjectId(projId);
+    if (subTab === 'lyrics' || subTab === 'profile' || subTab === 'social') {
+      setSubTab('projects');
+    }
+    player.clearPendingOpenProjectPage();
+  }, [player.pendingOpenProjectId]);
+
+  // Open Artist Profile automatically when user taps author name inside the player
+  useEffect(() => {
+    if (!player.pendingOpenProfileUid) return;
+    const targetUid = player.pendingOpenProfileUid;
+    setDetailTarget(null);
+    setOpenProjectId(null);
+    setOpenPlaylistId(null);
+    setShowNewProj(false);
+    if (targetUid === 'me' || targetUid === cloudUser?.uid) {
+      setSocialTargetArtistUid(null);
+      setSubTab('profile');
+    } else {
+      setSocialTargetArtistUid(targetUid);
+      setSubTab('social');
+    }
+    player.clearPendingOpenProfile();
+  }, [player.pendingOpenProfileUid, cloudUser?.uid]);
 
   const openLinkedLyrics = (track: MusicTrack) => {
     // Remember exact place the user came from so "Retour" in Textes brings them right back!
@@ -866,7 +899,7 @@ export function MusicView({
 
       {/* ================= IN-APP SUB-PAGES (full-width directly under top header!) ================= */}
       {isSettingsOpen ? (
-        <SettingsPage />
+        <SettingsPage onOpenProfile={() => setSubTab('profile')} />
       ) : isDocsOpen ? (
         <DocumentationPage
           onNavigateTab={(tab) => {
@@ -935,6 +968,12 @@ export function MusicView({
         <ProjectAlbumModal
           projectId={openProjectId}
           onClose={() => setOpenProjectId(null)}
+          onOpenProfile={() => {
+            setOpenProjectId(null);
+            setDetailTarget(null);
+            setSocialTargetArtistUid(null);
+            setSubTab('profile');
+          }}
           onOpenTrackDetails={(trackId) => {
             const grp = trackGroups.find((g) => g.allTrackIds.includes(trackId));
             if (grp) setDetailTarget({ groupKey: grp.groupKey, trackId });

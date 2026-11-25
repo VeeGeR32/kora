@@ -264,11 +264,11 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               <img
                 src={state.preferences.avatarUrl || cloudUser?.photoURL || ''}
                 alt="Profil"
-                className="h-8 w-8 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-zinc-700"
+                className="h-8 w-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-zinc-700"
               />
             ) : (
               <div
-                className={`h-8 w-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 ${
+                className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                   state.preferences.avatarColor === 'indigo'
                     ? 'bg-zinc-700 text-white'
                     : state.preferences.avatarColor === 'emerald'
@@ -289,7 +289,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
                   {state.preferences.name || cloudUser?.displayName || 'Mon Profil'}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate">
-                  Portfolio & Carrière
+                  Voir mon profil
                 </p>
               </div>
             )}
@@ -386,20 +386,38 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               type="button"
               onClick={() => onPageChange(activePage === 'settings' ? 'dashboard' : 'settings')}
               aria-label="Paramètres"
-              className={`rounded-xl p-1.5 flex items-center gap-1.5 transition ${
+              title="Paramètres"
+              className={`rounded-xl p-2 transition ${
                 activePage === 'settings'
                   ? 'bg-[#8C271E] text-white'
                   : 'text-slate-600 dark:text-zinc-300'
+              }`}
+            >
+              <Settings size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onPageChange(activePage === 'profile' ? 'dashboard' : 'profile')}
+              aria-label="Mon Profil"
+              title="Mon Profil"
+              className={`rounded-full p-0.5 transition ${
+                activePage === 'profile'
+                  ? 'ring-2 ring-[#8C271E]'
+                  : ''
               }`}
             >
               {state.preferences.avatarUrl || cloudUser?.photoURL ? (
                 <img
                   src={state.preferences.avatarUrl || cloudUser?.photoURL || ''}
                   alt="Profil"
-                  className="h-7 w-7 rounded-xl object-cover border border-slate-200 dark:border-zinc-700"
+                  className="h-7 w-7 rounded-full object-cover border border-slate-200 dark:border-zinc-700"
                 />
               ) : (
-                <Settings size={16} />
+                <span className="h-7 w-7 rounded-full bg-[#8C271E] text-white text-[10px] font-bold flex items-center justify-center">
+                  {(state.preferences.name || cloudUser?.displayName || cloudUser?.email || 'R')
+                    .slice(0, 2)
+                    .toUpperCase()}
+                </span>
               )}
             </button>
           </div>
