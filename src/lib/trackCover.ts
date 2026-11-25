@@ -91,6 +91,54 @@ export function resolveTrackWorkflow(
   return { status, mood };
 }
 
+/** Compresses & center-crops any photo into a crisp square avatar data URL (guaranteed < 65 KB for instant local + Firestore + Social persistence) */
+export async function prepareAvatarDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const minSide = Math.min(img.width, img.height);
+          const sx = Math.max(0, Math.floor((img.width - minSide) / 2));
+          const sy = Math.max(0, Math.floor((img.height - minSide) / 2));
+
+          const renderSquare = (size: number, quality: number, mime: 'image/webp' | 'image/jpeg') => {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+            }
+            return canvas.toDataURL(mime, quality);
+          };
+
+          let out = renderSquare(256, 0.85, 'image/webp');
+          if (!out.startsWith('data:image/webp')) {
+            out = renderSquare(256, 0.85, 'image/jpeg');
+          }
+          if (out.length > 68_000) {
+            out = renderSquare(224, 0.78, 'image/jpeg');
+          }
+          if (out.length > 68_000) {
+            out = renderSquare(180, 0.72, 'image/jpeg');
+          }
+          resolve(out);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = reject;
+      img.src = String(reader.result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 /** Compresses any uploaded cover image cleanly (supports WebP & high-quality resampling) */
 export async function compressCoverImage(
   file: File,

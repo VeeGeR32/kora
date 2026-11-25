@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { groupMusicTracks } from '../lib/musicVersioning';
+import { prepareAvatarDataUrl } from '../lib/trackCover';
 import { DriveSourcesManager } from './music/DrivePermanentSetupModal';
 
 const AVATAR_COLORS = [
@@ -28,28 +29,6 @@ const AVATAR_COLORS = [
   { id: 'fuchsia', cls: 'bg-stone-600 text-white' },
 ];
 
-async function resizeImageToDataUrl(file: File, maxSize = 160): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.84));
-      };
-      img.onerror = reject;
-      img.src = String(reader.result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 export function SettingsPage() {
   const {
     state,
@@ -59,6 +38,7 @@ export function SettingsPage() {
     cloudError,
     lastCloudSyncAt,
     forceSaveCloud,
+    updateUserAvatar,
     disconnectGoogleCloud,
     notify,
   } = useApp();
@@ -81,11 +61,19 @@ export function SettingsPage() {
     setAvatarUrl(state.preferences.avatarUrl || '');
   }, [state.preferences, cloudUser?.displayName]);
 
-  const handleAvatarUpload = async (file: File | undefined) => {
+  // Keep local preview synced if avatar is changed from Mon Profil
+  useEffect(() => {
+    setAvatarUrl(state.preferences.avatarUrl || '');
+  }, [state.preferences.avatarUrl]);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     try {
-      const dataUrl = await resizeImageToDataUrl(file);
+      const dataUrl = await prepareAvatarDataUrl(file);
       setAvatarUrl(dataUrl);
+      await updateUserAvatar(dataUrl);
     } catch {
       notify('Impossible de lire cette image');
     }
@@ -169,15 +157,25 @@ export function SettingsPage() {
               type="button"
               onClick={() => avatarInputRef.current?.click()}
               title="Changer la photo"
-              className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 text-white flex items-center justify-center transition cursor-pointer"
+              aria-label="Changer la photo de profil"
+              className="absolute inset-0 rounded-2xl bg-black/40 opacity-0 group-hover:opacity-100 text-white flex items-center justify-center transition cursor-pointer"
             >
               <Camera size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              title="Changer la photo"
+              aria-label="Changer la photo de profil"
+              className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full bg-[#8C271E] text-white border-2 border-white dark:border-[#141418] flex items-center justify-center shadow-xs cursor-pointer"
+            >
+              <Camera size={11} />
             </button>
             <input
               ref={avatarInputRef}
               type="file"
               accept="image/*"
-              onChange={(e) => void handleAvatarUpload(e.target.files?.[0])}
+              onChange={(e) => void handleAvatarUpload(e)}
               className="hidden"
             />
           </div>
@@ -283,6 +281,7 @@ export function SettingsPage() {
                     onClick={() => {
                       setAvatarColor(c.id);
                       setAvatarUrl('');
+                      void updateUserAvatar(null, c.id);
                     }}
                     aria-label={`Couleur ${c.id}`}
                     className={`h-5 w-5 rounded-full ${c.cls} cursor-pointer transition ${
@@ -297,7 +296,10 @@ export function SettingsPage() {
                 {avatarUrl && (
                   <button
                     type="button"
-                    onClick={() => setAvatarUrl('')}
+                    onClick={() => {
+                      setAvatarUrl('');
+                      void updateUserAvatar(null);
+                    }}
                     className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-rose-500 cursor-pointer"
                   >
                     <Trash2 size={11} /> Retirer

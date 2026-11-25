@@ -723,6 +723,24 @@ export default async function handler(req, res) {
         genres: Array.isArray(body.genres) ? body.genres.slice(0, 6) : existing.genres,
         updatedAt: nowIso,
       };
+      // Mirror updated avatar & artist name onto all existing published projects/tracks of this user!
+      if (body.avatarUrl !== undefined || body.name) {
+        const nextAvatar = hub.profiles[viewerUid].avatarUrl;
+        const nextOwnerName = hub.profiles[viewerUid].name;
+        hub.projects = (hub.projects || []).map((proj) => {
+          if (proj.ownerUid !== viewerUid) return proj;
+          return {
+            ...proj,
+            ownerName: nextOwnerName,
+            ownerAvatarUrl: nextAvatar,
+            tracks: (proj.tracks || []).map((t) => ({
+              ...t,
+              ownerName: nextOwnerName,
+              ownerAvatarUrl: nextAvatar,
+            })),
+          };
+        });
+      }
       await saveHubDoc(sa.project_id, dsToken, hub);
       return res.status(200).json({
         ok: true,

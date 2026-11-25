@@ -48,6 +48,7 @@ import {
   reconcileProjectTrackVersions,
 } from '../lib/musicVersioning';
 import { createEmptyState, createSeedState } from '../data/seed';
+import { postSocialAction } from '../lib/socialApi';
 import { uid } from '../utils/dates';
 import {
   completeGoogleRedirectIfPending,
@@ -55,6 +56,7 @@ import {
   formatFirebaseSyncError,
   getEnvFirebaseConfig,
   listenAuthState,
+  pushAvatarDelta,
   pushLiveCommandDelta,
   pushLivePlaybackDelta,
   pushStateToCloud,
@@ -289,6 +291,7 @@ interface AppContextValue {
 
   // Preferences & Data
   updatePreferences: (patch: Partial<UserPreferences>) => void;
+  updateUserAvatar: (avatarUrl: string | null, avatarColor?: string) => Promise<void>;
   updateLastSession: (patch: Partial<Omit<LastSessionState, 'savedAt'>>) => void;
   livePlayback: LivePlaybackState | null;
   liveCommand: LivePlaybackCommand | null;
@@ -868,6 +871,82 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } finally {
         setCloudSyncing(false);
       }
+    },
+    [cloudUser, resolvedFbConfig, notify]
+  );
+
+  /**
+   * Instant (0ms UI + localStorage) + dedicated lightweight Firestore delta + Social Hub sync
+   * for profile picture updates so changing your PFP applies immediately and NEVER reverts!
+   */
+  const updateUserAvatar = useCallback(
+    async (avatarUrl: string | null, avatarColor?: string) => {
+      const cleanUrl = avatarUrl && avatarUrl.trim() ? avatarUrl.trim() : undefined;
+      const nextTs = Math.max(Date.now(), (latestStateRef.current.updatedAt || 0) + 1);
+      const nextPrefs: UserPreferences = {
+        ...latestStateRef.current.preferences,
+        ...(avatarColor ? { avatarColor } : {}),
+        avatarUrl: cleanUrl,
+      };
+      if (!cleanUrl) {
+        delete nextPrefs.avatarUrl;
+      }
+      const nextState: AppState = {
+        ...latestStateRef.current,
+        preferences: nextPrefs,
+        updatedAt: nextTs,
+      };
+
+      // 1. 0ms instant update in React state + localStorage (never lost on refresh!)
+      ignoreNextPushRef.current = true;
+      latestStateRef.current = nextState;
+      lastPushedUpdatedAtRef.current = nextTs;
+      setState(nextState);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+      } catch {
+        // ignore quota errors
+      }
+
+      // 2. Fast dedicated Firestore delta write (~20 KB instead of full appState doc!)
+      if (cloudUser && resolvedFbConfig) {
+        try {
+          await pushAvatarDelta(
+            resolvedFbConfig,
+            cloudUser.uid,
+            cleanUrl || null,
+            avatarColor,
+            nextTs
+          );
+          setLastCloudSyncAt(Date.now());
+          setCloudError(null);
+        } catch (err) {
+          const code = (err as { code?: string })?.code || '';
+          if (code === 'not-found') {
+            try {
+              const ts = await pushStateToCloud(resolvedFbConfig, cloudUser.uid, nextState);
+              lastPushedUpdatedAtRef.current = ts;
+              setLastCloudSyncAt(Date.now());
+              setCloudError(null);
+            } catch (err2) {
+              console.warn('[Rowav Avatar] Fallback push error:', err2);
+            }
+          } else {
+            console.warn('[Rowav Avatar] Delta push error:', err);
+          }
+        }
+
+        // 3. Mirror PFP onto Social Hub profile & published tracks/projects in the background
+        void postSocialAction(
+          {
+            action: 'sync_profile',
+            avatarUrl: cleanUrl || '',
+          },
+          resolvedFbConfig
+        ).catch(() => {});
+      }
+
+      notify(cleanUrl ? 'Photo de profil mise à jour ✓' : 'Photo de profil retirée');
     },
     [cloudUser, resolvedFbConfig, notify]
   );
@@ -3402,6 +3481,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         stopActiveFocus,
         completeActiveFocus,
         updatePreferences,
+        updateUserAvatar,
         updateLastSession,
         livePlayback,
         liveCommand,

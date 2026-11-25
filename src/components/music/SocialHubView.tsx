@@ -1,5 +1,6 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Camera,
   Check,
   ChevronLeft,
   Compass,
@@ -38,7 +39,7 @@ import {
   postSocialAction,
   socialTrackToMusicTrack,
 } from '../../lib/socialApi';
-import { resolveEffectiveTrackCover } from '../../lib/trackCover';
+import { prepareAvatarDataUrl, resolveEffectiveTrackCover } from '../../lib/trackCover';
 import type {
   MusicProject,
   SocialArtistProfile,
@@ -89,9 +90,11 @@ export function SocialHubView({
     toggleTrackInPlaylist,
     createPlaylist,
     updatePreferences,
+    updateUserAvatar,
     notify,
   } = useApp();
   const player = useAudioPlayer();
+  const profileAvatarInputRef = useRef<HTMLInputElement>(null);
 
   const myUid = cloudUser?.uid || 'local_me';
   const myName =
@@ -204,26 +207,35 @@ export function SocialHubView({
           ) / 10
         : 0;
 
-    return (
-      found || {
-        uid: myUid,
-        name: myName,
-        handle: `@${myName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'artiste'}`,
-        bio: state.preferences.bio || 'Producteur & Artiste sur Rowav Music Studio.',
-        avatarUrl: state.preferences.avatarUrl || cloudUser?.photoURL || undefined,
-        coverGradient: 'sunset',
-        location: 'Paris, FR',
-        genres: ['Studio', 'Production'],
-        followersCount: 0,
-        followingCount: profiles.filter((p) => p.isFollowedByMe).length,
-        totalLikes,
-        averageRating: avg,
-        ratingsCount: rated.length,
-        projectsCount: myPublishedProjects.length,
-        tracksCount: myPublishedTracks.length,
-        updatedAt: new Date().toISOString(),
-      }
-    );
+    const effectiveMyAvatar =
+      state.preferences.avatarUrl || found?.avatarUrl || cloudUser?.photoURL || undefined;
+
+    if (found) {
+      return {
+        ...found,
+        name: myName || found.name,
+        avatarUrl: effectiveMyAvatar,
+      };
+    }
+
+    return {
+      uid: myUid,
+      name: myName,
+      handle: `@${myName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'artiste'}`,
+      bio: state.preferences.bio || 'Producteur & Artiste sur Rowav Music Studio.',
+      avatarUrl: effectiveMyAvatar,
+      coverGradient: 'sunset',
+      location: 'Paris, FR',
+      genres: ['Studio', 'Production'],
+      followersCount: 0,
+      followingCount: profiles.filter((p) => p.isFollowedByMe).length,
+      totalLikes,
+      averageRating: avg,
+      ratingsCount: rated.length,
+      projectsCount: myPublishedProjects.length,
+      tracksCount: myPublishedTracks.length,
+      updatedAt: new Date().toISOString(),
+    };
   }, [profiles, socialProjects, myUid, myName, state.preferences, cloudUser]);
 
   const activeArtistProfile = useMemo<SocialArtistProfile>(() => {
@@ -551,6 +563,7 @@ export function SocialHubView({
         action: 'sync_profile',
         name: cleanName,
         bio: cleanBio,
+        avatarUrl: state.preferences.avatarUrl || '',
         location: editLocation.trim(),
         coverGradient: editGradient,
         genres: editGenres
@@ -1548,18 +1561,62 @@ export function SocialHubView({
           <div className="tempo-card rounded-3xl p-6 sm:p-7 space-y-6">
             <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-5">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
-                <div
-                  className="h-28 w-28 sm:h-32 sm:w-32 rounded-[24px] flex items-center justify-center text-white font-extrabold text-3xl shadow-xl border border-slate-200/70 dark:border-zinc-800 overflow-hidden shrink-0"
-                  style={getCoverGradientStyle(activeArtistProfile.coverGradient)}
-                >
-                  {activeArtistProfile.avatarUrl ? (
-                    <img
-                      src={activeArtistProfile.avatarUrl}
-                      alt={activeArtistProfile.name}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    activeArtistProfile.name.slice(0, 2).toUpperCase()
+                <div className="relative group shrink-0">
+                  <div
+                    className="h-28 w-28 sm:h-32 sm:w-32 rounded-[24px] flex items-center justify-center text-white font-extrabold text-3xl shadow-xl border border-slate-200/70 dark:border-zinc-800 overflow-hidden"
+                    style={getCoverGradientStyle(activeArtistProfile.coverGradient)}
+                  >
+                    {activeArtistProfile.avatarUrl ? (
+                      <img
+                        src={activeArtistProfile.avatarUrl}
+                        alt={activeArtistProfile.name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      activeArtistProfile.name.slice(0, 2).toUpperCase()
+                    )}
+                  </div>
+                  {isViewingOwnProfile && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => profileAvatarInputRef.current?.click()}
+                        title="Changer ma photo de profil"
+                        aria-label="Changer ma photo de profil"
+                        className="absolute inset-0 rounded-[24px] bg-black/40 opacity-0 group-hover:opacity-100 text-white flex items-center justify-center transition cursor-pointer"
+                      >
+                        <Camera size={22} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => profileAvatarInputRef.current?.click()}
+                        title="Changer ma photo de profil"
+                        aria-label="Changer ma photo de profil"
+                        className="absolute -bottom-1.5 -right-1.5 h-8 w-8 rounded-full bg-[#8C271E] text-white border-2 border-white dark:border-[#141418] flex items-center justify-center shadow-md cursor-pointer"
+                      >
+                        <Camera size={14} />
+                      </button>
+                      <input
+                        ref={profileAvatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!file) return;
+                          try {
+                            const dataUrl = await prepareAvatarDataUrl(file);
+                            await updateUserAvatar(dataUrl);
+                            setProfiles((prev) =>
+                              prev.map((p) => (p.uid === myUid ? { ...p, avatarUrl: dataUrl } : p))
+                            );
+                          } catch {
+                            notify('Impossible de lire cette image');
+                          }
+                        }}
+                      />
+                    </>
                   )}
                 </div>
 
@@ -2334,6 +2391,43 @@ export function SocialHubView({
             </div>
 
             <div className="space-y-3">
+              {/* Instant Avatar Picker inside Edit Profile Modal */}
+              <div className="flex items-center gap-3 pb-1">
+                <button
+                  type="button"
+                  onClick={() => profileAvatarInputRef.current?.click()}
+                  className="relative h-14 w-14 rounded-2xl overflow-hidden border border-slate-200 dark:border-zinc-700 shrink-0 cursor-pointer group"
+                  style={getCoverGradientStyle(editGradient)}
+                >
+                  {myProfile.avatarUrl ? (
+                    <img
+                      src={myProfile.avatarUrl}
+                      alt={myProfile.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="h-full w-full flex items-center justify-center text-white font-bold text-base">
+                      {myProfile.name.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="absolute inset-0 bg-black/45 flex items-center justify-center text-white opacity-80 group-hover:opacity-100 transition">
+                    <Camera size={15} />
+                  </span>
+                </button>
+                <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => profileAvatarInputRef.current?.click()}
+                    className="text-xs font-semibold text-[#8C271E] dark:text-[#E56B5F] hover:underline cursor-pointer"
+                  >
+                    Changer la photo de profil
+                  </button>
+                  <p className="text-[11px] text-slate-400">
+                    Mise à jour instantanée partout dans Rowav
+                  </p>
+                </div>
+              </div>
+
               <div>
                 <label className="text-[11px] font-semibold text-slate-400">Nom d’artiste</label>
                 <input

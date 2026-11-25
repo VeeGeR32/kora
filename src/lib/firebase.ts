@@ -702,6 +702,30 @@ export async function pushStateToCloud(
   return cleanPayload.updatedAt as number;
 }
 
+/** Ultra-fast dedicated Firestore delta write for profile picture (avatarUrl + optional avatarColor).
+ *  Writes ONLY the ~20 KB avatar field instead of the full appState doc so updates are instant & never hit size limits! */
+export async function pushAvatarDelta(
+  config: FirebaseUserConfig | null | undefined,
+  uid: string,
+  avatarUrl: string | null,
+  avatarColor?: string,
+  explicitUpdatedAt?: number
+): Promise<number> {
+  const bundle = initFirebaseClient(config);
+  const ts = explicitUpdatedAt || Date.now();
+  if (!bundle) return ts;
+  const refDoc = doc(bundle.db, 'users', uid, 'appState', 'main');
+  const patch: Record<string, unknown> = {
+    'preferences.avatarUrl': avatarUrl ? avatarUrl.slice(0, 118000) : deleteField(),
+    updatedAt: ts,
+  };
+  if (avatarColor) {
+    patch['preferences.avatarColor'] = avatarColor.slice(0, 40);
+  }
+  await updateDoc(refDoc, patch);
+  return ts;
+}
+
 /** Ultra-lightweight Firestore delta write (~350 bytes) for real-time Rowav Connect active playback state.
  *  Does NOT touch top-level `updatedAt` so Connect heartbeats NEVER trigger full appState merges on other devices! */
 export async function pushLivePlaybackDelta(
