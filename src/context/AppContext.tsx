@@ -255,6 +255,7 @@ interface AppContextValue {
   ) => number;
   detachTrackVariant: (variantTrackIds: string[], newSongTitle: string) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
+  updateMusicTrackTodo: (trackId: string, todoId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
   deleteMusicTrackTodo: (trackId: string, todoId: string) => void;
   addTrackMarker: (trackId: string, marker: Omit<AudioMarker, 'id'>) => void;
@@ -287,6 +288,7 @@ interface AppContextValue {
   ) => void;
   toggleMusicProjectStep: (projectId: string, stepId: string) => void;
   addMusicProjectStep: (projectId: string, label: string, dueDate?: string) => void;
+  updateMusicProjectStep: (projectId: string, stepId: string, label: string) => void;
   deleteMusicProjectStep: (projectId: string, stepId: string) => void;
   deleteMusicProject: (id: string) => void;
 
@@ -2597,6 +2599,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const updateMusicTrackTodo = useCallback((trackId: string, todoId: string, label: string) => {
+    const clean = label.trim();
+    if (!clean) return;
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        t.id === trackId
+          ? {
+              ...t,
+              todos: (t.todos || []).map((td) =>
+                td.id === todoId ? { ...td, label: clean } : td
+              ),
+            }
+          : t
+      ),
+    }));
+  }, []);
+
   const toggleMusicTrackTodo = useCallback((trackId: string, todoId: string) => {
     touch((prev) => ({
       ...prev,
@@ -3237,6 +3257,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [state.musicTracks, state.musicProjects, lastCloudSyncAt, cloudConfigured, cloudUser?.uid]);
 
+  const updateMusicProjectStep = useCallback((projectId: string, stepId: string, label: string) => {
+    const clean = label.trim();
+    if (!clean) return;
+    touch((prev) => ({
+      ...prev,
+      musicProjects: prev.musicProjects.map((p) =>
+        p.id === projectId
+          ? { ...p, steps: p.steps.map((s) => (s.id === stepId ? { ...s, label: clean } : s)) }
+          : p
+      ),
+    }));
+  }, []);
+
   const toggleMusicProjectStep = useCallback((projectId: string, stepId: string) => {
     touch((prev) => ({
       ...prev,
@@ -3714,6 +3747,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         moveTracksToVariant,
         detachTrackVariant,
         addMusicTrackTodo,
+        updateMusicTrackTodo,
         toggleMusicTrackTodo,
         deleteMusicTrackTodo,
         addTrackMarker,
@@ -3735,6 +3769,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setProjectTrackVersion,
         toggleMusicProjectStep,
         addMusicProjectStep,
+        updateMusicProjectStep,
         deleteMusicProjectStep,
         deleteMusicProject,
         setEnergyCheckin,

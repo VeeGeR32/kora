@@ -123,6 +123,7 @@ export function TrackDetailModal({
     moveTracksToVariant,
     detachTrackVariant,
     addMusicTrackTodo,
+    updateMusicTrackTodo,
     toggleMusicTrackTodo,
     deleteMusicTrackTodo,
     addTrackMarker,
@@ -136,6 +137,8 @@ export function TrackDetailModal({
 
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [todoInput, setTodoInput] = useState('');
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editingTodoDraft, setEditingTodoDraft] = useState('');
   const [markerLabel, setMarkerLabel] = useState('');
   const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
   const [songTitleDraft, setSongTitleDraft] = useState('');
@@ -1834,38 +1837,100 @@ export function TrackDetailModal({
                     Aucune tâche pour ce son — ajoute tes prochaines modifs (ex. « Revoir la 808 », « Enregistrer refrain »).
                   </p>
                 ) : (
-                  todos.map((td) => (
-                    <div
-                      key={td.id}
-                      className="flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 hover:bg-white/80 dark:hover:bg-zinc-800/60 transition group"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <CheckCircle
-                          checked={td.done}
-                          onToggle={() => toggleMusicTrackTodo(track.id, td.id)}
-                          accent="violet"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => toggleMusicTrackTodo(track.id, td.id)}
-                          className={`text-xs truncate text-left flex-1 cursor-pointer ${
-                            td.done
-                              ? 'line-through text-slate-400 dark:text-zinc-500'
-                              : 'text-slate-800 dark:text-zinc-100'
-                          }`}
-                        >
-                          {td.label}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => deleteMusicTrackTodo(track.id, td.id)}
-                        className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                  todos.map((td) => {
+                    const isEditing = editingTodoId === td.id;
+                    return (
+                      <div
+                        key={td.id}
+                        className="flex items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 hover:bg-white/80 dark:hover:bg-zinc-800/60 transition group"
                       >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ))
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <CheckCircle
+                            checked={td.done}
+                            onToggle={() => toggleMusicTrackTodo(track.id, td.id)}
+                            accent="violet"
+                          />
+                          {isEditing ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                if (editingTodoDraft.trim()) {
+                                  updateMusicTrackTodo(track.id, td.id, editingTodoDraft);
+                                }
+                                setEditingTodoId(null);
+                              }}
+                              className="flex-1 flex items-center gap-1.5 min-w-0"
+                            >
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingTodoDraft}
+                                onChange={(e) => setEditingTodoDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') setEditingTodoId(null);
+                                }}
+                                onBlur={() => {
+                                  if (editingTodoDraft.trim()) {
+                                    updateMusicTrackTodo(track.id, td.id, editingTodoDraft);
+                                  }
+                                  setEditingTodoId(null);
+                                }}
+                                className="flex-1 min-w-0 rounded-lg border border-[#8C271E]/50 bg-white dark:bg-zinc-900 px-2 py-1 text-xs text-slate-900 dark:text-zinc-100 outline-none"
+                              />
+                              <button
+                                type="submit"
+                                onMouseDown={(e) => e.preventDefault()}
+                                aria-label="Enregistrer"
+                                className="p-1 rounded-lg bg-[#8C271E] text-white cursor-pointer shrink-0"
+                              >
+                                <Check size={11} />
+                              </button>
+                            </form>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingTodoId(td.id);
+                                setEditingTodoDraft(td.label);
+                              }}
+                              title="Cliquer pour modifier cette tâche"
+                              className={`text-xs truncate text-left flex-1 cursor-text ${
+                                td.done
+                                  ? 'line-through text-slate-400 dark:text-zinc-500'
+                                  : 'text-slate-800 dark:text-zinc-100'
+                              }`}
+                            >
+                              {td.label}
+                            </button>
+                          )}
+                        </div>
+                        {!isEditing && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingTodoId(td.id);
+                                setEditingTodoDraft(td.label);
+                              }}
+                              title="Modifier cette tâche"
+                              aria-label="Modifier cette tâche"
+                              className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 transition cursor-pointer"
+                            >
+                              <Pencil size={11} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteMusicTrackTodo(track.id, td.id)}
+                              aria-label="Supprimer cette tâche"
+                              className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
 

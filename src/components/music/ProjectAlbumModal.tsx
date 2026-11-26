@@ -126,9 +126,11 @@ export function ProjectAlbumModal({
     updateMusicProject,
     toggleMusicProjectStep,
     addMusicProjectStep,
+    updateMusicProjectStep,
     deleteMusicProjectStep,
     deleteMusicProject,
     updateMusicTrack,
+    updateMusicTrackTodo,
     toggleMusicTrackTodo,
     renameTrackGroup,
     notify,
@@ -138,6 +140,10 @@ export function ProjectAlbumModal({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const todoSectionRef = useRef<HTMLDivElement>(null);
   const [todoInput, setTodoInput] = useState('');
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  const [editingStepDraft, setEditingStepDraft] = useState('');
+  const [editingRolledTodoKey, setEditingRolledTodoKey] = useState<string | null>(null);
+  const [editingRolledTodoDraft, setEditingRolledTodoDraft] = useState('');
   // Two explicit modes: Mode Production (Tracklist & listening) vs Mode Studio (5-phase workflow, NO tracklist!)
   const [isStudioMode, setIsStudioMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -1755,33 +1761,95 @@ export function ProjectAlbumModal({
               </div>
 
               <div className="space-y-1">
-                {project.steps.map((step) => (
-                  <div
-                    key={step.id}
-                    className="group flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900/60"
-                  >
-                    <CheckCircle
-                      checked={step.done}
-                      onToggle={() => toggleMusicProjectStep(project.id, step.id)}
-                      accent="violet"
-                      size="sm"
-                    />
-                    <span
-                      className={`flex-1 text-sm ${
-                        step.done ? 'line-through text-slate-400' : 'text-slate-800 dark:text-zinc-200'
-                      }`}
+                {project.steps.map((step) => {
+                  const isEditing = editingStepId === step.id;
+                  return (
+                    <div
+                      key={step.id}
+                      className="group flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-slate-50 dark:hover:bg-zinc-900/60"
                     >
-                      {step.label}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => deleteMusicProjectStep(project.id, step.id)}
-                      className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
-                    >
-                      <X size={13} />
-                    </button>
-                  </div>
-                ))}
+                      <CheckCircle
+                        checked={step.done}
+                        onToggle={() => toggleMusicProjectStep(project.id, step.id)}
+                        accent="violet"
+                        size="sm"
+                      />
+                      {isEditing ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (editingStepDraft.trim()) {
+                              updateMusicProjectStep(project.id, step.id, editingStepDraft);
+                            }
+                            setEditingStepId(null);
+                          }}
+                          className="flex-1 flex items-center gap-1.5 min-w-0"
+                        >
+                          <input
+                            autoFocus
+                            type="text"
+                            value={editingStepDraft}
+                            onChange={(e) => setEditingStepDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') setEditingStepId(null);
+                            }}
+                            onBlur={() => {
+                              if (editingStepDraft.trim()) {
+                                updateMusicProjectStep(project.id, step.id, editingStepDraft);
+                              }
+                              setEditingStepId(null);
+                            }}
+                            className="flex-1 min-w-0 rounded-lg border border-[#8C271E]/50 bg-white dark:bg-zinc-900 px-2.5 py-1 text-sm text-slate-900 dark:text-zinc-100 outline-none"
+                          />
+                          <button
+                            type="submit"
+                            onMouseDown={(e) => e.preventDefault()}
+                            aria-label="Enregistrer"
+                            className="p-1 rounded-lg bg-[#8C271E] text-white cursor-pointer shrink-0"
+                          >
+                            <Check size={12} />
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingStepId(step.id);
+                              setEditingStepDraft(step.label);
+                            }}
+                            title="Cliquer pour modifier cette tâche"
+                            className={`flex-1 text-left text-sm cursor-text ${
+                              step.done ? 'line-through text-slate-400' : 'text-slate-800 dark:text-zinc-200'
+                            }`}
+                          >
+                            {step.label}
+                          </button>
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingStepId(step.id);
+                                setEditingStepDraft(step.label);
+                              }}
+                              title="Modifier cette tâche"
+                              className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer"
+                            >
+                              <Pencil size={12} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteMusicProjectStep(project.id, step.id)}
+                              className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
 
                 {/* Automatic Roll-Up of ALL active tracks' TODOs */}
                 {rolledUpTrackTodos.length > 0 && (
@@ -1790,35 +1858,104 @@ export function ProjectAlbumModal({
                       Tâches des titres actifs ({rolledUpTrackTodos.filter((t) => t.done).length}/
                       {rolledUpTrackTodos.length})
                     </p>
-                    {rolledUpTrackTodos.map((item) => (
-                      <div
-                        key={`${item.trackId}-${item.todoId}`}
-                        className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900/60"
-                      >
-                        <CheckCircle
-                          checked={item.done}
-                          onToggle={() => toggleMusicTrackTodo(item.trackId, item.todoId)}
-                          accent="violet"
-                          size="sm"
-                        />
-                        <span
-                          className={`flex-1 text-xs ${
-                            item.done
-                              ? 'line-through text-slate-400'
-                              : 'text-slate-700 dark:text-zinc-200'
-                          }`}
+                    {rolledUpTrackTodos.map((item) => {
+                      const rowKey = `${item.trackId}-${item.todoId}`;
+                      const isEditing = editingRolledTodoKey === rowKey;
+                      return (
+                        <div
+                          key={rowKey}
+                          className="group flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-zinc-900/60"
                         >
-                          {item.label}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onOpenTrackDetails?.(item.trackId)}
-                          className="rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 truncate max-w-[110px] cursor-pointer shrink-0"
-                        >
-                          {item.trackTitle}
-                        </button>
-                      </div>
-                    ))}
+                          <CheckCircle
+                            checked={item.done}
+                            onToggle={() => toggleMusicTrackTodo(item.trackId, item.todoId)}
+                            accent="violet"
+                            size="sm"
+                          />
+                          {isEditing ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                if (editingRolledTodoDraft.trim()) {
+                                  updateMusicTrackTodo(
+                                    item.trackId,
+                                    item.todoId,
+                                    editingRolledTodoDraft
+                                  );
+                                }
+                                setEditingRolledTodoKey(null);
+                              }}
+                              className="flex-1 flex items-center gap-1.5 min-w-0"
+                            >
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingRolledTodoDraft}
+                                onChange={(e) => setEditingRolledTodoDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') setEditingRolledTodoKey(null);
+                                }}
+                                onBlur={() => {
+                                  if (editingRolledTodoDraft.trim()) {
+                                    updateMusicTrackTodo(
+                                      item.trackId,
+                                      item.todoId,
+                                      editingRolledTodoDraft
+                                    );
+                                  }
+                                  setEditingRolledTodoKey(null);
+                                }}
+                                className="flex-1 min-w-0 rounded-lg border border-[#8C271E]/50 bg-white dark:bg-zinc-900 px-2 py-0.5 text-xs text-slate-900 dark:text-zinc-100 outline-none"
+                              />
+                              <button
+                                type="submit"
+                                onMouseDown={(e) => e.preventDefault()}
+                                aria-label="Enregistrer"
+                                className="p-1 rounded-lg bg-[#8C271E] text-white cursor-pointer shrink-0"
+                              >
+                                <Check size={11} />
+                              </button>
+                            </form>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingRolledTodoKey(rowKey);
+                                  setEditingRolledTodoDraft(item.label);
+                                }}
+                                title="Cliquer pour modifier cette tâche"
+                                className={`flex-1 text-left text-xs cursor-text ${
+                                  item.done
+                                    ? 'line-through text-slate-400'
+                                    : 'text-slate-700 dark:text-zinc-200'
+                                }`}
+                              >
+                                {item.label}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingRolledTodoKey(rowKey);
+                                  setEditingRolledTodoDraft(item.label);
+                                }}
+                                title="Modifier cette tâche"
+                                className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer shrink-0"
+                              >
+                                <Pencil size={11} />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onOpenTrackDetails?.(item.trackId)}
+                            className="rounded-full bg-slate-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-medium text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100 truncate max-w-[110px] cursor-pointer shrink-0"
+                          >
+                            {item.trackTitle}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
