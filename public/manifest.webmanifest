@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "Rowav",
   "short_name": "Rowav",
-  "description": "Rowav Music Studio : bibliothèque Google Drive, projets, sprints, textes et communauté.",
+  "description": "Rowav Music Studio : bibliothèque Google Drive, projets, packs, textes et communauté.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0b0909",
   "theme_color": "#8C271E",

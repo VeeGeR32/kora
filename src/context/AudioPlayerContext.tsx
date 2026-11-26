@@ -1395,9 +1395,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         (p) => p.id === currentTrack.linkedProjectId || p.trackIds.includes(currentTrack.id)
       );
       const coverSrc =
+        linkedProj?.coverDataUrl ||
         currentTrack.coverDataUrl ||
         currentTrack.cloudCoverUrl ||
-        linkedProj?.coverDataUrl ||
         `${window.location.origin}/icon-512.png`;
       const artwork: MediaImage[] = coverSrc
         ? [{ src: coverSrc, sizes: '512x512', type: 'image/png' }]
@@ -1434,16 +1434,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           seekRef.current(details.seekTime);
         }
       });
-      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-        const offset = details.seekOffset || 10;
-        const curT = audioRef.current?.currentTime ?? 0;
-        seekRef.current(Math.max(0, curT - offset));
-      });
-      navigator.mediaSession.setActionHandler('seekforward', (details) => {
-        const offset = details.seekOffset || 10;
-        const curT = audioRef.current?.currentTime ?? 0;
-        seekRef.current(curT + offset);
-      });
+      // IMPORTANT for iOS Lock Screen / Control Center / Dynamic Island:
+      // Registering seekbackward/seekforward forces WebKit into "Podcast mode" (-10s/+10s)
+      // and HIDES Previous/Next track buttons! Explicitly clearing them restores ⏮ / ⏭.
+      navigator.mediaSession.setActionHandler('seekbackward', null);
+      navigator.mediaSession.setActionHandler('seekforward', null);
     } catch {
       // ignore unsupported handlers
     }
