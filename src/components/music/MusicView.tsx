@@ -513,11 +513,7 @@ export function MusicView({
     if (autoPlay) {
       const targetTrack = state.musicTracks.find((t) => t.id === trackId);
       if (targetTrack) {
-        void player.playTrack(
-          targetTrack,
-          0,
-          grp ? grp.versions.map((v) => v.track) : state.musicTracks
-        );
+        void player.playTrack(targetTrack, 0);
       }
     }
   };

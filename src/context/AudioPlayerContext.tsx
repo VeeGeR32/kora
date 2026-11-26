@@ -891,22 +891,38 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           setQueue(cleanCustom);
         }
       } else if (queueRef.current.length === 0 || !queueRef.current.some((t) => t.id === track.id)) {
-        const libPool = dedupedLibraryRef.current.length > 0 ? dedupedLibraryRef.current : state.musicTracks;
-        // Replace the song's group entry with the exact clicked track version so there's only 1 entry for this song!
         const clickedGroup = getGroupKey(track);
-        const withoutSameGroup = libPool.filter(
-          (t) => t.id !== track.id && getGroupKey(t) !== clickedGroup
-        );
-        const orderedBase = [track, ...withoutSameGroup];
-        baseQueueRef.current = orderedBase;
-        if (shuffleRef.current && orderedBase.length > 1) {
-          const rest = shuffleTracksFisherYates(withoutSameGroup, new Set([clickedGroup]), getGroupKey);
-          const nextQ = [track, ...rest];
-          queueRef.current = nextQ;
-          setQueue(nextQ);
+        // If current queue already contains another version of the same song, swap it in-place cleanly!
+        if (queueRef.current.some((t) => getGroupKey(t) === clickedGroup)) {
+          const swapped = queueRef.current.map((t) => (getGroupKey(t) === clickedGroup ? track : t));
+          const dedupedSwapped: MusicTrack[] = [];
+          const seenKeys = new Set<string>();
+          for (const item of swapped) {
+            const k = getGroupKey(item);
+            if (seenKeys.has(k)) continue;
+            seenKeys.add(k);
+            dedupedSwapped.push(item);
+          }
+          queueRef.current = dedupedSwapped;
+          baseQueueRef.current = dedupedSwapped;
+          setQueue(dedupedSwapped);
         } else {
-          queueRef.current = orderedBase;
-          setQueue(orderedBase);
+          const libPool = dedupedLibraryRef.current.length > 0 ? dedupedLibraryRef.current : state.musicTracks;
+          // Replace the song's group entry with the exact clicked track version so there's only 1 entry for this song!
+          const withoutSameGroup = libPool.filter(
+            (t) => t.id !== track.id && getGroupKey(t) !== clickedGroup
+          );
+          const orderedBase = [track, ...withoutSameGroup];
+          baseQueueRef.current = orderedBase;
+          if (shuffleRef.current && orderedBase.length > 1) {
+            const rest = shuffleTracksFisherYates(withoutSameGroup, new Set([clickedGroup]), getGroupKey);
+            const nextQ = [track, ...rest];
+            queueRef.current = nextQ;
+            setQueue(nextQ);
+          } else {
+            queueRef.current = orderedBase;
+            setQueue(orderedBase);
+          }
         }
       }
 

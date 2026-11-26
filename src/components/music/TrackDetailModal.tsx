@@ -313,7 +313,6 @@ export function TrackDetailModal({
     activeProdTrack && player.currentTrack?.id === activeProdTrack.id
   );
   const isPlayingProd = isCurrentProd && player.isPlaying;
-  const prodPlaybackQueue = activeProdTrack ? [track, activeProdTrack] : [track];
   const isGroupLoadedInPlayer = Boolean(
     player.currentTrack && allGroupTrackIds.includes(player.currentTrack.id)
   );
@@ -329,7 +328,7 @@ export function TrackDetailModal({
 
   const handleCycleAbLoop = () => {
     if (!isCurrent) {
-      void player.playTrack(track, 0, group.versions.map((v) => v.track));
+      void player.playTrack(track, 0);
       player.setAbLoop({ start: 0, end: null });
       notify('Point A fixé à 0:00 — clique à nouveau pour poser B');
       return;
@@ -615,11 +614,7 @@ export function TrackDetailModal({
                     onClick={() =>
                       isCurrent
                         ? player.togglePlay()
-                        : void player.playTrack(
-                            track,
-                            0,
-                            group.versions.map((v) => v.track)
-                          )
+                        : void player.playTrack(track, 0)
                     }
                     className="inline-flex items-center gap-1.5 rounded-full bg-[#8C271E] hover:bg-[#A32E24] text-white px-4 py-2 text-xs font-semibold shadow-xs shadow-[#8C271E]/25 active:scale-95 transition cursor-pointer"
                   >
@@ -643,7 +638,7 @@ export function TrackDetailModal({
                           : void player.playTrack(
                               activeProdTrack,
                               getCompareStartSec(),
-                              prodPlaybackQueue
+                              [activeProdTrack]
                             )
                       }
                       className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer ${
@@ -828,11 +823,7 @@ export function TrackDetailModal({
                     player.seek(targetSec);
                     applyVisualFrame(targetSec, effectiveDuration);
                   } else {
-                    void player.playTrack(
-                      track,
-                      targetSec,
-                      group.versions.map((v) => v.track)
-                    );
+                    void player.playTrack(track, targetSec);
                   }
                   triggerHapticTick(8);
                 }}
@@ -957,11 +948,7 @@ export function TrackDetailModal({
                           player.seek(mk.timeSec);
                           applyVisualFrame(mk.timeSec, effectiveDuration);
                         } else {
-                          void player.playTrack(
-                            track,
-                            mk.timeSec,
-                            group.versions.map((v) => v.track)
-                          );
+                          void player.playTrack(track, mk.timeSec);
                         }
                         triggerHapticTick(8);
                       }}
@@ -1192,7 +1179,7 @@ export function TrackDetailModal({
                           const keepSec = getCompareStartSec();
                           selectGroupPreferredVersion(v.track.id, 'song');
                           onSelectVersion(v.track.id);
-                          void player.playTrack(v.track, keepSec, [v.track]);
+                          void player.playTrack(v.track, keepSec);
                           notify(
                             keepSec > 0.3
                               ? `A/B → ${v.versionLabel} (${fmt(keepSec)}) ✓`
@@ -1322,7 +1309,7 @@ export function TrackDetailModal({
                                 if (isThisProdCurrent) {
                                   player.togglePlay();
                                 } else {
-                                  void player.playTrack(p.track, keepSec, [track, p.track]);
+                                  void player.playTrack(p.track, keepSec, [p.track]);
                                 }
                                 if (keepSec > 0.3 && !isThisProdCurrent) {
                                   notify(`A/B → ${p.versionLabel} (${fmt(keepSec)}) ✓`);
