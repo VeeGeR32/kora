@@ -40,14 +40,9 @@ export function SettingsPage({ onOpenProfile }: SettingsPageProps) {
   return (
     <div className="w-full max-w-3xl mx-auto space-y-5 pb-14">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-zinc-50">
-            Paramètres
-          </h1>
-          <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">
-            Google Drive, apparence et compte cloud
-          </p>
-        </div>
+        <p className="text-xs text-slate-400 dark:text-zinc-500">
+          Google Drive, apparence et compte cloud
+        </p>
         {lastCloudSyncAt && (
           <span className="font-mono text-[11px] text-slate-400 dark:text-zinc-500 shrink-0">
             Sync{' '}
