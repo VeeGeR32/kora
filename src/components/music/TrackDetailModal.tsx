@@ -50,7 +50,11 @@ import {
   resolveTrackWorkflow,
 } from '../../lib/trackCover';
 import type { TrackGroup } from '../../lib/musicVersioning';
-import { getDeterministicGradientId } from '../../lib/musicVersioning';
+import {
+  extractTrackRoutingPrefix,
+  getDeterministicGradientId,
+  normalizeGroupKey,
+} from '../../lib/musicVersioning';
 import {
   TRACK_PIPELINE_ORDER,
   TRACK_STATUS_META,
@@ -116,6 +120,7 @@ export function TrackDetailModal({
     setTrackGroupWorkflow,
     selectGroupPreferredVersion,
     renameTrackVariant,
+    moveTracksToVariant,
     detachTrackVariant,
     addMusicTrackTodo,
     toggleMusicTrackTodo,
@@ -148,6 +153,9 @@ export function TrackDetailModal({
   const [editingVariantDraft, setEditingVariantDraft] = useState('');
   const [assignBranchTrackId, setAssignBranchTrackId] = useState<string | null>(null);
   const [assignBranchDraft, setAssignBranchDraft] = useState('');
+  const [assignIncludeSiblings, setAssignIncludeSiblings] = useState(true);
+  const [draggingTrackId, setDraggingTrackId] = useState<string | null>(null);
+  const [dragOverVariantId, setDragOverVariantId] = useState<string | null>(null);
   const [confirmDetachBranch, setConfirmDetachBranch] = useState<{
     ids: string[];
     label: string;
@@ -1194,11 +1202,42 @@ export function TrackDetailModal({
                   {group.variants.map((br) => {
                     const isViewing = br.id === activeBranch.id;
                     const isEditingThis = editingVariantId === br.id;
+                    const isDropHover = dragOverVariantId === br.id && draggingTrackId !== null;
                     return (
                       <div
                         key={br.id}
+                        onDragOver={(e) => {
+                          if (!draggingTrackId) return;
+                          e.preventDefault();
+                          if (dragOverVariantId !== br.id) setDragOverVariantId(br.id);
+                        }}
+                        onDragLeave={() => {
+                          if (dragOverVariantId === br.id) setDragOverVariantId(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          const droppedId = e.dataTransfer.getData('text/plain') || draggingTrackId;
+                          setDragOverVariantId(null);
+                          setDraggingTrackId(null);
+                          if (!droppedId) return;
+                          const movedCount = moveTracksToVariant(
+                            allGroupTrackIds,
+                            droppedId,
+                            br.rawLabel,
+                            true
+                          );
+                          setViewedVariantId(br.id);
+                          notify(
+                            movedCount > 1
+                              ? `${movedCount} versions déplacées dans « ${br.label} » ✓`
+                              : `Déplacé dans « ${br.label} » ✓`
+                          );
+                          triggerHapticTick(8);
+                        }}
                         className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
-                          isViewing
+                          isDropHover
+                            ? 'bg-[#8C271E] text-white border-[#8C271E] ring-2 ring-[#8C271E]/50 scale-105'
+                            : isViewing
                             ? 'bg-slate-900 dark:bg-white text-white dark:text-zinc-950 border-slate-900 dark:border-white shadow-xs'
                             : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600'
                         }`}
@@ -1340,131 +1379,220 @@ export function TrackDetailModal({
                   const selected = v.track.id === group.latestTrack.id;
                   const playingThis =
                     player.currentTrack?.id === v.track.id && player.isPlaying;
-                  const isAssigningBranch = assignBranchTrackId === v.track.id;
+                  const isPickingBranch = assignBranchTrackId === v.track.id;
                   return (
                     <div
                       key={v.track.id}
+                      draggable={group.hasMultipleVariants}
+                      onDragStart={(e) => {
+                        setDraggingTrackId(v.track.id);
+                        e.dataTransfer.setData('text/plain', v.track.id);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragEnd={() => {
+                        setDraggingTrackId(null);
+                        setDragOverVariantId(null);
+                      }}
                       className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
+                        isPickingBranch
+                          ? 'ring-2 ring-[#8C271E] border-[#8C271E]'
+                          : ''
+                      } ${
                         selected
                           ? 'bg-[#8C271E] text-white border-[#8C271E] shadow-xs shadow-[#8C271E]/25'
                           : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600'
                       }`}
                     >
-                      {isAssigningBranch ? (
-                        <form
-                          onSubmit={(e) => {
-                            e.preventDefault();
-                            const clean = assignBranchDraft.trim();
-                            updateMusicTrack(v.track.id, {
-                              variantLabel: clean || undefined,
-                            });
-                            notify(
-                              clean
-                                ? `Déplacé dans la variante « ${clean} » ✓`
-                                : 'Replacé dans la variante Principale ✓'
-                            );
-                            setAssignBranchTrackId(null);
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const keepSec = getCompareStartSec();
+                          selectGroupPreferredVersion(v.track.id, 'song');
+                          onSelectVersion(v.track.id);
+                          void player.playTrack(v.track, keepSec);
+                          notify(
+                            keepSec > 0.3
+                              ? `A/B → ${v.versionLabel} (${fmt(keepSec)}) ✓`
+                              : `Version « ${v.versionLabel} » sélectionnée partout ✓`
+                          );
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
+                      >
+                        <span className="font-mono font-semibold">{v.versionLabel}</span>
+                        {(v.track.modifiedAt || v.track.addedAt) && (
+                          <span
+                            className={`font-mono text-[10px] ${
+                              selected ? 'opacity-70' : 'text-slate-400 dark:text-zinc-500'
+                            }`}
+                          >
+                            {fmtDate(v.track.modifiedAt || v.track.addedAt)}
+                          </span>
+                        )}
+                        {selected && group.hasMultipleVersions && (
+                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/20 text-white">
+                            Active
+                          </span>
+                        )}
+                        {playingThis && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        )}
+                      </button>
+
+                      {group.allTrackIds.length > 1 && (
+                        <button
+                          type="button"
+                          title="Déplacer vers une variante (ou créer une variante)"
+                          onClick={() => {
+                            if (assignBranchTrackId === v.track.id) {
+                              setAssignBranchTrackId(null);
+                            } else {
+                              setAssignBranchTrackId(v.track.id);
+                              setAssignBranchDraft('');
+                              setAssignIncludeSiblings(true);
+                            }
                           }}
-                          className="inline-flex items-center gap-1 px-2 py-1"
+                          className={`px-1 py-1.5 transition cursor-pointer ${
+                            isPickingBranch ? 'opacity-100' : 'opacity-55 hover:opacity-100'
+                          }`}
                         >
-                          <input
-                            autoFocus
-                            type="text"
-                            value={assignBranchDraft}
-                            onChange={(e) => setAssignBranchDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Escape') setAssignBranchTrackId(null);
-                            }}
-                            onBlur={() => setAssignBranchTrackId(null)}
-                            list="rowav-existing-variants"
-                            placeholder="Nom variante…"
-                            className="w-28 bg-white dark:bg-zinc-900 text-slate-900 dark:text-zinc-100 rounded-md px-1.5 py-0.5 text-xs outline-none"
-                          />
-                          <button
-                            type="submit"
-                            onMouseDown={(e) => e.preventDefault()}
-                            className="p-0.5 rounded bg-emerald-600 text-white cursor-pointer"
-                          >
-                            <Check size={11} />
-                          </button>
-                        </form>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const keepSec = getCompareStartSec();
-                              selectGroupPreferredVersion(v.track.id, 'song');
-                              onSelectVersion(v.track.id);
-                              void player.playTrack(v.track, keepSec);
-                              notify(
-                                keepSec > 0.3
-                                  ? `A/B → ${v.versionLabel} (${fmt(keepSec)}) ✓`
-                                  : `Version « ${v.versionLabel} » sélectionnée partout ✓`
-                              );
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
-                          >
-                            <span className="font-mono font-semibold">{v.versionLabel}</span>
-                            {(v.track.modifiedAt || v.track.addedAt) && (
-                              <span
-                                className={`font-mono text-[10px] ${
-                                  selected ? 'opacity-70' : 'text-slate-400 dark:text-zinc-500'
-                                }`}
-                              >
-                                {fmtDate(v.track.modifiedAt || v.track.addedAt)}
-                              </span>
-                            )}
-                            {selected && group.hasMultipleVersions && (
-                              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/20 text-white">
-                                Active
-                              </span>
-                            )}
-                            {playingThis && (
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            )}
-                          </button>
+                          <Layers size={10.5} />
+                        </button>
+                      )}
 
-                          {group.hasMultipleVersions && (
-                            <button
-                              type="button"
-                              title="Classer / déplacer dans une variante de prod"
-                              onClick={() => {
-                                setAssignBranchTrackId(v.track.id);
-                                setAssignBranchDraft(v.track.variantLabel || '');
-                              }}
-                              className="px-1 py-1.5 opacity-55 hover:opacity-100 transition cursor-pointer"
-                            >
-                              <Layers size={10.5} />
-                            </button>
-                          )}
-
-                          {group.hasMultipleVersions && (
-                            <button
-                              type="button"
-                              title="Détacher cette version en son indépendant"
-                              onClick={() => onDetachVersion(v.track.id)}
-                              className={`pr-2 pl-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
-                                selected ? 'hover:text-rose-300 dark:hover:text-rose-600' : 'hover:text-rose-500'
-                              }`}
-                            >
-                              <Unlink size={11} />
-                            </button>
-                          )}
-                        </>
+                      {group.hasMultipleVersions && (
+                        <button
+                          type="button"
+                          title="Détacher cette version en son indépendant"
+                          onClick={() => onDetachVersion(v.track.id)}
+                          className={`pr-2 pl-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
+                            selected ? 'hover:text-rose-300 dark:hover:text-rose-600' : 'hover:text-rose-500'
+                          }`}
+                        >
+                          <Unlink size={11} />
+                        </button>
                       )}
                     </div>
                   );
                 })}
               </div>
 
-              <datalist id="rowav-existing-variants">
-                {group.variants
-                  .filter((b) => Boolean(b.rawLabel))
-                  .map((b) => (
-                    <option key={b.id} value={b.label} />
-                  ))}
-              </datalist>
+              {/* Quick 1-Click Move-to-Variant Picker (works for both vocal versions & prods!) */}
+              {assignBranchTrackId && (() => {
+                const targetEntry =
+                  group.versions.find((e) => e.track.id === assignBranchTrackId) ||
+                  group.prodTracks.find((e) => e.track.id === assignBranchTrackId);
+                if (!targetEntry) return null;
+                const targetPrefix = extractTrackRoutingPrefix(targetEntry.track);
+                const samePrefixCount = targetPrefix
+                  ? [...group.versions, ...group.prodTracks].filter(
+                      (e) =>
+                        e.track.id !== targetEntry.track.id &&
+                        extractTrackRoutingPrefix(e.track) === targetPrefix
+                    ).length
+                  : 0;
+                const currentBranchOfTarget = group.variants.find((b) =>
+                  b.allTrackIds.includes(targetEntry.track.id)
+                );
+
+                const commitMove = (destRawLabel: string | null, destDisplayLabel: string) => {
+                  const movedCount = moveTracksToVariant(
+                    allGroupTrackIds,
+                    targetEntry.track.id,
+                    destRawLabel,
+                    assignIncludeSiblings
+                  );
+                  const destId = destRawLabel ? normalizeGroupKey(destRawLabel) || 'default' : 'default';
+                  setViewedVariantId(destId);
+                  setAssignBranchTrackId(null);
+                  setAssignBranchDraft('');
+                  notify(
+                    movedCount > 1
+                      ? `${movedCount} versions déplacées dans « ${destDisplayLabel} » ✓`
+                      : `« ${targetEntry.versionLabel} » déplacé dans « ${destDisplayLabel} » ✓`
+                  );
+                  triggerHapticTick(8);
+                };
+
+                return (
+                  <div className="rounded-2xl border border-[#8C271E]/30 bg-[#8C271E]/[0.05] dark:bg-[#8C271E]/[0.12] p-3 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-slate-800 dark:text-zinc-100 truncate">
+                        Déplacer « {targetEntry.versionLabel} » vers une variante :
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setAssignBranchTrackId(null)}
+                        className="p-0.5 text-slate-400 hover:text-slate-800 dark:hover:text-white cursor-pointer"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {group.variants.map((br) => {
+                        const isSame = currentBranchOfTarget?.id === br.id;
+                        return (
+                          <button
+                            key={br.id}
+                            type="button"
+                            disabled={isSame}
+                            onClick={() => commitMove(br.rawLabel, br.label)}
+                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                              isSame
+                                ? 'bg-slate-200/80 dark:bg-zinc-800 text-slate-400 cursor-default'
+                                : 'bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-zinc-100 hover:border-[#8C271E] hover:text-[#8C271E] dark:hover:text-[#F08B82] cursor-pointer'
+                            }`}
+                          >
+                            <span>{br.label}</span>
+                            {isSame && <span className="text-[9px] opacity-70">(actuelle)</span>}
+                          </button>
+                        );
+                      })}
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const clean = assignBranchDraft.trim();
+                          if (!clean) return;
+                          commitMove(clean, clean);
+                        }}
+                        className="inline-flex items-center gap-1"
+                      >
+                        <input
+                          type="text"
+                          value={assignBranchDraft}
+                          onChange={(e) => setAssignBranchDraft(e.target.value)}
+                          placeholder="+ Nouvelle variante…"
+                          className="w-36 rounded-full border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-2.5 py-1 text-[11px] text-slate-900 dark:text-zinc-100 outline-none focus:border-[#8C271E]"
+                        />
+                        {assignBranchDraft.trim() && (
+                          <button
+                            type="submit"
+                            className="rounded-full bg-[#8C271E] text-white px-2.5 py-1 text-[11px] font-semibold cursor-pointer"
+                          >
+                            Créer
+                          </button>
+                        )}
+                      </form>
+                    </div>
+
+                    {samePrefixCount > 0 && (
+                      <label className="inline-flex items-center gap-2 text-[11px] text-slate-600 dark:text-zinc-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={assignIncludeSiblings}
+                          onChange={(e) => setAssignIncludeSiblings(e.target.checked)}
+                          className="h-3.5 w-3.5 accent-[#8C271E] cursor-pointer"
+                        />
+                        <span>
+                          Inclure les {samePrefixCount} autre{samePrefixCount > 1 ? 's' : ''} version
+                          {samePrefixCount > 1 ? 's' : ''} du même préfixe
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                );
+              })()}
             </section>
 
             {/* Multiple Prod / Instrumental Versions Section */}
@@ -1503,6 +1631,16 @@ export function TrackDetailModal({
                     return (
                       <div
                         key={p.track.id}
+                        draggable={group.hasMultipleVariants}
+                        onDragStart={(e) => {
+                          setDraggingTrackId(p.track.id);
+                          e.dataTransfer.setData('text/plain', p.track.id);
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragEnd={() => {
+                          setDraggingTrackId(null);
+                          setDragOverVariantId(null);
+                        }}
                         className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
                           isSelectedProd
                             ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs shadow-emerald-600/25'
@@ -1603,6 +1741,27 @@ export function TrackDetailModal({
                             >
                               <Pencil size={10} />
                             </button>
+
+                            {group.allTrackIds.length > 1 && (
+                              <button
+                                type="button"
+                                title="Déplacer cette prod vers une variante"
+                                onClick={() => {
+                                  if (assignBranchTrackId === p.track.id) {
+                                    setAssignBranchTrackId(null);
+                                  } else {
+                                    setAssignBranchTrackId(p.track.id);
+                                    setAssignBranchDraft('');
+                                    setAssignIncludeSiblings(false);
+                                  }
+                                }}
+                                className={`px-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
+                                  isSelectedProd ? 'text-white' : 'text-emerald-700 dark:text-emerald-300'
+                                }`}
+                              >
+                                <Layers size={10.5} />
+                              </button>
+                            )}
 
                             {group.allTrackIds.length > 1 && (
                               <button

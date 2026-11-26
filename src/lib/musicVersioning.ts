@@ -625,20 +625,41 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
         },
       ];
     } else {
+      // Infer variant for unlabeled siblings sharing the exact same routing prefix
+      // (e.g. if "tequila brune 5" is in "sheddar", unlabeled "tequila brune 4/3/2/1" follow automatically!)
+      const inferredVariantByPrefix = new Map<string, string | null>();
+      for (const e of entries) {
+        const explicit = e.track.variantLabel?.trim();
+        if (!explicit) continue;
+        const pref = extractTrackRoutingPrefix(e.track);
+        if (!pref) continue;
+        const prev = inferredVariantByPrefix.get(pref);
+        if (prev === undefined) {
+          inferredVariantByPrefix.set(pref, explicit);
+        } else if (prev !== null && normalizeGroupKey(prev) !== normalizeGroupKey(explicit)) {
+          inferredVariantByPrefix.set(pref, null);
+        }
+      }
+
       const branchMap = new Map<
         string,
         { label: string; rawLabel: string | null; items: TrackVersionEntry[] }
       >();
       for (const e of entries) {
-        const cleanVar = e.track.variantLabel?.trim() || '';
-        const id = cleanVar ? normalizeGroupKey(cleanVar) || 'default' : 'default';
+        const explicitVar = e.track.variantLabel?.trim() || '';
+        const pref = extractTrackRoutingPrefix(e.track);
+        const inferredVar = !explicitVar && pref ? inferredVariantByPrefix.get(pref) || '' : '';
+        const cleanVar = explicitVar || inferredVar;
+        const normVar = cleanVar ? normalizeGroupKey(cleanVar) : '';
+        const isDefault = !normVar || normVar === 'principale';
+        const id = isDefault ? 'default' : normVar;
         const existing = branchMap.get(id);
         if (existing) {
           existing.items.push(e);
         } else {
           branchMap.set(id, {
-            label: cleanVar || 'Principale',
-            rawLabel: cleanVar || null,
+            label: isDefault ? 'Principale' : cleanVar,
+            rawLabel: isDefault ? null : cleanVar,
             items: [e],
           });
         }

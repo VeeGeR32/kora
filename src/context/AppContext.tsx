@@ -247,6 +247,12 @@ interface AppContextValue {
     oldRawLabel: string | null,
     newLabel: string
   ) => void;
+  moveTracksToVariant: (
+    groupTrackIds: string[],
+    targetTrackId: string,
+    targetRawLabel: string | null,
+    includeSamePrefixSiblings?: boolean
+  ) => number;
   detachTrackVariant: (variantTrackIds: string[], newSongTitle: string) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
@@ -3120,18 +3126,77 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const idSet = new Set(groupTrackIds);
       const cleanNew = newLabel.trim();
       const oldNorm = oldRawLabel ? normalizeGroupKey(oldRawLabel) : '';
+      const oldIsDefault = !oldNorm || oldNorm === 'principale';
       touch((prev) => ({
         ...prev,
         musicTracks: prev.musicTracks.map((t) => {
           if (!idSet.has(t.id)) return t;
           const curNorm = t.variantLabel?.trim() ? normalizeGroupKey(t.variantLabel.trim()) : '';
-          if (curNorm !== oldNorm) return t;
+          const curIsDefault = !curNorm || curNorm === 'principale';
+          if (oldIsDefault ? !curIsDefault : curNorm !== oldNorm) return t;
           return {
             ...t,
             variantLabel: cleanNew || undefined,
           };
         }),
       }));
+    },
+    []
+  );
+
+  const moveTracksToVariant = useCallback(
+    (
+      groupTrackIds: string[],
+      targetTrackId: string,
+      targetRawLabel: string | null,
+      includeSamePrefixSiblings = true
+    ): number => {
+      const idSet = new Set(groupTrackIds);
+      const cleanTarget = targetRawLabel?.trim() || '';
+      const targetNorm = cleanTarget ? normalizeGroupKey(cleanTarget) : '';
+      const isTargetDefault = !targetNorm || targetNorm === 'principale';
+      const curTracks = latestStateRef.current.musicTracks;
+      const anchor = curTracks.find((t) => t.id === targetTrackId);
+      if (!anchor) return 0;
+
+      const anchorPrefix = extractTrackRoutingPrefix(anchor);
+      const movingIds = new Set<string>([targetTrackId]);
+      if (includeSamePrefixSiblings && anchorPrefix) {
+        for (const t of curTracks) {
+          if (!idSet.has(t.id) || t.id === targetTrackId) continue;
+          if (extractTrackRoutingPrefix(t) === anchorPrefix) {
+            movingIds.add(t.id);
+          }
+        }
+      }
+
+      // If moving ONLY this single track back to Principale while same-prefix siblings stay in a named branch,
+      // stamp 'Principale' explicitly so prefix auto-inheritance doesn't pull it back.
+      const hasLabeledSiblingLeftBehind =
+        !includeSamePrefixSiblings &&
+        isTargetDefault &&
+        Boolean(anchorPrefix) &&
+        curTracks.some(
+          (t) =>
+            idSet.has(t.id) &&
+            !movingIds.has(t.id) &&
+            extractTrackRoutingPrefix(t) === anchorPrefix &&
+            Boolean(t.variantLabel?.trim())
+        );
+
+      const nextVariantVal = isTargetDefault
+        ? hasLabeledSiblingLeftBehind
+          ? 'Principale'
+          : undefined
+        : cleanTarget;
+
+      touch((prev) => ({
+        ...prev,
+        musicTracks: prev.musicTracks.map((t) =>
+          movingIds.has(t.id) ? { ...t, variantLabel: nextVariantVal } : t
+        ),
+      }));
+      return movingIds.size;
     },
     []
   );
@@ -3646,6 +3711,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setTrackGroupWorkflow,
         selectGroupPreferredVersion,
         renameTrackVariant,
+        moveTracksToVariant,
         detachTrackVariant,
         addMusicTrackTodo,
         toggleMusicTrackTodo,
