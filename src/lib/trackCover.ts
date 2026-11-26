@@ -139,7 +139,7 @@ export async function prepareAvatarDataUrl(file: File): Promise<string> {
   });
 }
 
-/** Compresses any uploaded cover image cleanly (supports WebP & high-quality resampling) */
+/** Center-crops & compresses any uploaded cover image into a crisp 1:1 square (supports WebP & high-quality resampling) */
 export async function compressCoverImage(
   file: File,
   maxSize = 1080,
@@ -151,15 +151,19 @@ export async function compressCoverImage(
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
+        const minSide = Math.min(img.width, img.height);
+        const sx = Math.max(0, Math.floor((img.width - minSide) / 2));
+        const sy = Math.max(0, Math.floor((img.height - minSide) / 2));
+        const targetSize = Math.max(1, Math.min(maxSize, minSide));
+
         const canvas = document.createElement('canvas');
-        const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.width = targetSize;
+        canvas.height = targetSize;
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, targetSize, targetSize);
         }
         if (preferWebp) {
           const webp = canvas.toDataURL('image/webp', quality);
@@ -175,6 +179,60 @@ export async function compressCoverImage(
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+const squareArtworkCache = new Map<string, string>();
+
+/**
+ * Ensures any cover image (even older non-square uploads) is center-cropped to a
+ * crisp 512x512 1:1 square before passing to iOS/OS MediaSession Now Playing artwork.
+ */
+export async function ensureSquareMediaArtwork(src: string): Promise<string> {
+  if (!src || typeof document === 'undefined') return src;
+  const cached = squareArtworkCache.get(src);
+  if (cached) return cached;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    if (!src.startsWith('data:') && !src.startsWith('blob:')) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h || Math.abs(w - h) <= 2) {
+          squareArtworkCache.set(src, src);
+          resolve(src);
+          return;
+        }
+        const minSide = Math.min(w, h);
+        const sx = Math.max(0, Math.floor((w - minSide) / 2));
+        const sy = Math.max(0, Math.floor((h - minSide) / 2));
+        const size = Math.min(512, minSide);
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+        }
+        const squared = canvas.toDataURL('image/jpeg', 0.9);
+        if (squareArtworkCache.size > 40) {
+          const firstKey = squareArtworkCache.keys().next().value;
+          if (firstKey) squareArtworkCache.delete(firstKey);
+        }
+        squareArtworkCache.set(src, squared);
+        resolve(squared);
+      } catch {
+        resolve(src);
+      }
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
   });
 }
 

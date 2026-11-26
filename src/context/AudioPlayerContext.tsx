@@ -12,6 +12,7 @@ import {
 import { downloadGoogleDriveAudioBlob, ensureGoogleDriveToken } from '../lib/googleDrive';
 import { getLocalDeviceInfo, type LocalDeviceInfo } from '../lib/deviceIdentity';
 import { groupMusicTracks } from '../lib/musicVersioning';
+import { ensureSquareMediaArtwork } from '../lib/trackCover';
 import {
   analyzeTrackAudioUrl,
   isTrackAnalyzed,
@@ -1406,6 +1407,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
   // Native iOS Lock Screen, Control Center & AirPods MediaSession integration
   useEffect(() => {
     if (!currentTrack || typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    let alive = true;
     try {
       const linkedProj = state.musicProjects.find(
         (p) => p.id === currentTrack.linkedProjectId || p.trackIds.includes(currentTrack.id)
@@ -1415,15 +1417,32 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         currentTrack.coverDataUrl ||
         currentTrack.cloudCoverUrl ||
         `${window.location.origin}/icon-512.png`;
-      const artwork: MediaImage[] = coverSrc
-        ? [{ src: coverSrc, sizes: '512x512', type: 'image/png' }]
-        : [];
+      const metaTitle = currentTrack.manualGroupTitle || currentTrack.title;
+      const metaArtist = state.preferences.name || currentTrack.artist || 'Rowav';
+      const metaAlbum = linkedProj?.title || 'Rowav Studio';
 
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.manualGroupTitle || currentTrack.title,
-        artist: state.preferences.name || currentTrack.artist || 'Rowav',
-        album: linkedProj?.title || 'Rowav Studio',
-        artwork,
+      const applyArtworkMeta = (srcUrl: string) => {
+        const mime = srcUrl.startsWith('data:image/jpeg')
+          ? 'image/jpeg'
+          : srcUrl.startsWith('data:image/webp')
+          ? 'image/webp'
+          : 'image/png';
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: metaTitle,
+          artist: metaArtist,
+          album: metaAlbum,
+          artwork: srcUrl ? [{ src: srcUrl, sizes: '512x512', type: mime }] : [],
+        });
+      };
+
+      applyArtworkMeta(coverSrc);
+      void ensureSquareMediaArtwork(coverSrc).then((squaredSrc) => {
+        if (!alive || !squaredSrc || squaredSrc === coverSrc) return;
+        try {
+          applyArtworkMeta(squaredSrc);
+        } catch {
+          // ignore
+        }
       });
       navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
 
@@ -1458,6 +1477,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     } catch {
       // ignore unsupported handlers
     }
+    return () => {
+      alive = false;
+    };
   }, [currentTrack, isPlaying, state.preferences.name, state.musicProjects, sendRemoteCommand, publishLocalLive]);
 
   // Also ensure MediaSession playbackState reflects remote playback state cleanly
