@@ -1583,12 +1583,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const shouldApplyFolderTitle = Boolean(
               item.manualGroupTitle && !existing.manualGroupTitle
             );
+            // Auto-heal any track whose manualGroupKey was accidentally stamped by folder auto-naming
+            // (so newly synced generic versions never split away from their sibling versions!)
+            const shouldClearAutoFolderKey = Boolean(
+              item.manualGroupTitle &&
+                existing.manualGroupKey &&
+                isGenericProjectFilename(existing.sourceFilename || existing.title || '') &&
+                existing.manualGroupKey === normalizeGroupKey(item.manualGroupTitle) &&
+                existing.manualGroupKey !==
+                  parseTrackVersion({
+                    title: existing.title,
+                    sourceFilename: existing.sourceFilename,
+                  }).groupKey
+            );
             const needsMetaUpdate =
               (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
               (item.modifiedAt && existing.modifiedAt !== item.modifiedAt) ||
               (item.driveYearFolder && existing.driveYearFolder !== item.driveYearFolder) ||
               (item.driveSourceId && existing.driveSourceId !== item.driveSourceId) ||
-              shouldApplyFolderTitle;
+              shouldApplyFolderTitle ||
+              shouldClearAutoFolderKey;
             if (needsMetaUpdate) {
               const oldAutoTitle = (existing.sourceFilename || '')
                 .replace(/\.[^/.]+$/, '')
@@ -1600,12 +1614,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               nextTracks[idx] = {
                 ...existing,
                 ...(shouldUpdateTitle ? { title: item.title } : {}),
-                ...(shouldApplyFolderTitle
-                  ? {
-                      manualGroupTitle: item.manualGroupTitle,
-                      manualGroupKey: existing.manualGroupKey || item.manualGroupKey,
-                    }
-                  : {}),
+                ...(shouldApplyFolderTitle ? { manualGroupTitle: item.manualGroupTitle } : {}),
+                ...(shouldClearAutoFolderKey ? { manualGroupKey: undefined } : {}),
                 sourceFilename: item.sourceFilename || existing.sourceFilename,
                 driveYearFolder: item.driveYearFolder || existing.driveYearFolder,
                 driveSourceId: item.driveSourceId || existing.driveSourceId,
@@ -1638,6 +1648,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 const shouldApplyFolderTitle = Boolean(
                   item.manualGroupTitle && !ex.manualGroupTitle
                 );
+                const shouldClearAutoFolderKey = Boolean(
+                  item.manualGroupTitle &&
+                    ex.manualGroupKey &&
+                    isGenericProjectFilename(ex.sourceFilename || ex.title || '') &&
+                    ex.manualGroupKey === normalizeGroupKey(item.manualGroupTitle) &&
+                    ex.manualGroupKey !==
+                      parseTrackVersion({
+                        title: ex.title,
+                        sourceFilename: ex.sourceFilename,
+                      }).groupKey
+                );
                 const oldAutoTitle = (ex.sourceFilename || '')
                   .replace(/\.[^/.]+$/, '')
                   .replace(/[_-]+/g, ' ')
@@ -1648,12 +1669,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 merged[i] = {
                   ...ex,
                   ...(shouldUpdateTitle ? { title: item.title } : {}),
-                  ...(shouldApplyFolderTitle
-                    ? {
-                        manualGroupTitle: item.manualGroupTitle,
-                        manualGroupKey: ex.manualGroupKey || item.manualGroupKey,
-                      }
-                    : {}),
+                  ...(shouldApplyFolderTitle ? { manualGroupTitle: item.manualGroupTitle } : {}),
+                  ...(shouldClearAutoFolderKey ? { manualGroupKey: undefined } : {}),
                   sourceFilename: item.sourceFilename || ex.sourceFilename,
                   driveYearFolder: item.driveYearFolder || ex.driveYearFolder,
                   driveSourceId: item.driveSourceId || ex.driveSourceId,
@@ -1835,20 +1852,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             f.parentFolderId && isGenericProjectFilename(f.name)
               ? songFolderNameById.get(f.parentFolderId)
               : undefined;
-          const folderSongKey = folderSongTitle ? normalizeGroupKey(folderSongTitle) : undefined;
+          // IMPORTANT: Only set manualGroupTitle (just like renameTrackGroup) — NEVER override manualGroupKey!
+          // That way all versions (projet42, projet42 v2, projet42 v3...) keep their natural groupKey
+          // and NEVER split into separate songs when a new version is imported!
           const parsed = parseTrackVersion({
             title: cleanTitle,
             sourceFilename: f.name,
-            ...(folderSongTitle ? { manualGroupTitle: folderSongTitle, manualGroupKey: folderSongKey } : {}),
+            ...(folderSongTitle ? { manualGroupTitle: folderSongTitle } : {}),
           });
           if (f.driveSourceId) {
             countBySource.set(f.driveSourceId, (countBySource.get(f.driveSourceId) || 0) + 1);
           }
           return {
             title: cleanTitle || f.name,
-            ...(folderSongTitle
-              ? { manualGroupTitle: folderSongTitle, manualGroupKey: folderSongKey }
-              : {}),
+            ...(folderSongTitle ? { manualGroupTitle: folderSongTitle } : {}),
             artist,
             googleDriveFileId: f.id,
             driveSourceId: f.driveSourceId,
