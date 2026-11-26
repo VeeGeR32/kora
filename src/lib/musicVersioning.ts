@@ -22,6 +22,18 @@ export interface TrackVersionEntry {
   timestampMs: number;
 }
 
+export interface TrackVariantBranch {
+  id: string; // 'default' or normalized variantLabel
+  label: string; // Display name e.g. 'Principale', 'Prod 276', 'Téquila Brune'
+  rawLabel: string | null; // null when stored as undefined on tracks
+  versions: TrackVersionEntry[];
+  prodTracks: TrackVersionEntry[];
+  latestTrack: MusicTrack;
+  prodTrack: MusicTrack | null;
+  allTrackIds: string[];
+  hasActiveSelection: boolean;
+}
+
 export interface TrackGroup {
   groupKey: string;
   baseTitle: string;
@@ -31,6 +43,9 @@ export interface TrackGroup {
   /** Dedicated linked prod/instrumental track (e.g. "Project_306_prod.mp3") when available */
   prodTrack: MusicTrack | null;
   prodTracks: TrackVersionEntry[];
+  /** Optional prod/direction branches (e.g. Prod 276 / Prod 273 / Téquila Brune) */
+  variants: TrackVariantBranch[];
+  hasMultipleVariants: boolean;
   /** Every track ID in this group (vocal versions + prod tracks) */
   allTrackIds: string[];
   /** Detected Google Drive year/season folder e.g. "2024/2025" */
@@ -125,6 +140,63 @@ export function normalizeGroupKey(raw: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
+}
+
+/**
+ * Extracts a stable, accent-insensitive routing prefix from an audio filename or title
+ * so future Drive exports automatically route into the exact same song + variant branch!
+ * Examples:
+ * - "Project_276.mp3" / "Projet 276 v4.mp3" / "Project_276_prod.mp3" -> "project_276"
+ * - "Project_273_2.mp3" / "Project_273_mix.mp3"                     -> "project_273"
+ * - "Project_273_tequila brune 5.mp3" / "Project_273_téquila brune 6.mp3" -> "project_273_tequila_brune"
+ */
+export function extractTrackRoutingPrefix(
+  track: Pick<MusicTrack, 'title' | 'sourceFilename'>
+): string {
+  let working = stripAudioExtension(track.sourceFilename || track.title || '');
+  working = working.replace(/^(?:copie\s+de\s+|copy\s+of\s+)/i, '').trim();
+  if (!working) return '';
+
+  // Handle "Project_273_tequila brune 5" vs "Project_273_5" vs "Project_276_prod"
+  const projectMatch = working.match(/^(project|projet)[\s_-]*(\d{1,4})(?:[\s_-]+(.+))?$/i);
+  if (projectMatch) {
+    const num = projectMatch[2];
+    let suffix = (projectMatch[3] || '').trim();
+    if (!suffix) return `project_${num}`;
+
+    // Peel trailing version / stage / prod suffixes from the sub-name
+    for (let i = 0; i < 5; i++) {
+      const before = suffix;
+      suffix = suffix
+        .replace(PAREN_SUFFIX_RE, '')
+        .replace(EXPLICIT_VERSION_RE, '')
+        .replace(PROD_DASH_SUFFIX_RE, '')
+        .replace(STUDIO_KEYWORDS_RE, '')
+        .replace(SEPARATED_NUM_RE, '')
+        .trim();
+      if (suffix === before) break;
+    }
+
+    // If remaining suffix is empty, a pure number, or a pure prod/stage keyword -> pure "project_XXX"
+    if (
+      !suffix ||
+      parseNumericTuple(suffix) !== null ||
+      isProdSuffixText(suffix) ||
+      Boolean(STUDIO_STAGE_SCORES[suffix.toLowerCase()])
+    ) {
+      return `project_${num}`;
+    }
+
+    const subKey = normalizeGroupKey(suffix);
+    return subKey ? `project_${num}_${subKey}` : `project_${num}`;
+  }
+
+  // Standard song titles: natural groupKey (without manual overrides)
+  const natural = parseTrackVersion({
+    title: track.title,
+    sourceFilename: track.sourceFilename,
+  });
+  return natural.groupKey;
 }
 
 function parseNumericTuple(raw: string): number[] | null {
@@ -535,6 +607,76 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
       entries.find((e) => e.track.description?.trim())?.track.description?.trim() ||
       undefined;
 
+    // Group entries into prod/direction variant branches when variantLabel is used
+    const hasAnyVariantLabel = entries.some((e) => Boolean(e.track.variantLabel?.trim()));
+    let variants: TrackVariantBranch[];
+    if (!hasAnyVariantLabel) {
+      variants = [
+        {
+          id: 'default',
+          label: 'Principale',
+          rawLabel: null,
+          versions: activeVersions,
+          prodTracks: prodEntries,
+          latestTrack: latest.track,
+          prodTrack,
+          allTrackIds,
+          hasActiveSelection: true,
+        },
+      ];
+    } else {
+      const branchMap = new Map<
+        string,
+        { label: string; rawLabel: string | null; items: TrackVersionEntry[] }
+      >();
+      for (const e of entries) {
+        const cleanVar = e.track.variantLabel?.trim() || '';
+        const id = cleanVar ? normalizeGroupKey(cleanVar) || 'default' : 'default';
+        const existing = branchMap.get(id);
+        if (existing) {
+          existing.items.push(e);
+        } else {
+          branchMap.set(id, {
+            label: cleanVar || 'Principale',
+            rawLabel: cleanVar || null,
+            items: [e],
+          });
+        }
+      }
+
+      variants = Array.from(branchMap.entries()).map(([id, b]) => {
+        const bSongs = b.items.filter((e) => !e.parsed.isProd).sort(compareVersionsDesc);
+        const bProds = b.items.filter((e) => e.parsed.isProd).sort(compareVersionsDesc);
+        const bActiveVersions = bSongs.length > 0 ? bSongs : bProds;
+        const bLatest =
+          bActiveVersions.find((e) => Boolean(e.track.isPreferredVersion)) || bActiveVersions[0];
+        const bProd =
+          (bProds.find((e) => Boolean(e.track.isPreferredVersion)) || bProds[0])?.track || null;
+        const bIds = b.items.map((e) => e.track.id);
+        const hasActiveSelection =
+          bIds.includes(latest.track.id) || Boolean(prodTrack && bIds.includes(prodTrack.id));
+        return {
+          id,
+          label: b.label,
+          rawLabel: b.rawLabel,
+          versions: bActiveVersions,
+          prodTracks: bProds,
+          latestTrack: bLatest.track,
+          prodTrack: bProd,
+          allTrackIds: bIds,
+          hasActiveSelection,
+        };
+      });
+
+      variants.sort((a, b) => {
+        if (a.id === 'default' && b.id !== 'default') return -1;
+        if (b.id === 'default' && a.id !== 'default') return 1;
+        const aMax = Math.max(...a.versions.map((v) => v.timestampMs), 0);
+        const bMax = Math.max(...b.versions.map((v) => v.timestampMs), 0);
+        return bMax - aMax;
+      });
+    }
+
     groups.push({
       groupKey,
       baseTitle,
@@ -543,6 +685,8 @@ export function groupMusicTracks(tracks: MusicTrack[]): TrackGroup[] {
       versions: activeVersions,
       prodTrack,
       prodTracks: prodEntries,
+      variants,
+      hasMultipleVariants: variants.length > 1,
       allTrackIds,
       yearFolder,
       isFavorite,

@@ -11,6 +11,10 @@ export interface LinkVersionModalState {
   sourceTrackId: string;
   /** Pre-select "Prod / Instru" mode when opened from "+ Ajouter une prod" */
   defaultAsProd?: boolean;
+  /** Pre-fill a branch/variant label when opened from a specific variant tab or "+ Variante" */
+  defaultVariantLabel?: string;
+  /** True when opened specifically to pull another song/project as a brand-new prod branch */
+  createNewVariantMode?: boolean;
 }
 
 interface LinkVersionModalProps {
@@ -22,7 +26,8 @@ interface LinkVersionModalProps {
     targetGroupKey: string,
     targetGroupTitle: string,
     customVersionLabel?: string,
-    asProd?: boolean
+    asProd?: boolean,
+    variantLabel?: string
   ) => void;
 }
 
@@ -34,11 +39,13 @@ export function LinkVersionModal({
 }: LinkVersionModalProps) {
   const [search, setSearch] = useState('');
   const [customLabel, setCustomLabel] = useState('');
+  const [variantDraft, setVariantDraft] = useState('');
   const [asProd, setAsProd] = useState(false);
 
   useEffect(() => {
     if (modal) {
       setAsProd(Boolean(modal.defaultAsProd));
+      setVariantDraft(modal.defaultVariantLabel || '');
       setSearch('');
       setCustomLabel('');
     }
@@ -84,28 +91,40 @@ export function LinkVersionModal({
 
   const handlePickCandidate = (candidate: TrackGroup) => {
     const trimmed = customLabel.trim();
+    const rawVariant = variantDraft.trim();
+    // In "+ Variante" mode, if user didn't type a branch name, auto-name the branch after the candidate (e.g. "Project 276")!
+    const resolvedVariant =
+      rawVariant || (modal.createNewVariantMode ? candidate.baseTitle : undefined);
+
     if (isAttachMode) {
-      // Attach source track into candidate group
+      // Attach source track (or entire branch) into candidate group
       onConfirmLink(
         [sourceTrack.id],
         candidate.groupKey,
         candidate.baseTitle,
         computeSuggestedProdLabel(candidate, trimmed),
-        asProd
+        asProd,
+        resolvedVariant
       );
     } else {
-      // Pull tracks from candidate group into modal.sourceGroup
-      const targetIds = asProd ? [candidate.latestTrack.id] : candidate.versions.map((v) => v.track.id);
+      // Pull ALL tracks (vocal versions + linked prods!) from candidate group into modal.sourceGroup
+      const targetIds = asProd
+        ? [candidate.latestTrack.id]
+        : candidate.allTrackIds.length > 0
+        ? candidate.allTrackIds
+        : candidate.versions.map((v) => v.track.id);
       onConfirmLink(
         targetIds,
         modal.sourceGroup.groupKey,
         modal.sourceGroup.baseTitle,
         computeSuggestedProdLabel(modal.sourceGroup, trimmed),
-        asProd
+        asProd,
+        resolvedVariant
       );
     }
     setSearch('');
     setCustomLabel('');
+    setVariantDraft('');
     onClose();
   };
 
@@ -210,6 +229,60 @@ export function LinkVersionModal({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Rechercher un son (ex. FOLIE, Project 271…)"
                 className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 pl-9 pr-3 py-2 text-xs outline-none focus:border-slate-400 dark:focus:border-zinc-600"
+              />
+            </div>
+
+            {/* Optional Branch / Prod Variant Picker */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Branche / Variante de prod {modal.createNewVariantMode ? '(nouvelle branche)' : '(optionnel)'}
+                </label>
+                {variantDraft && (
+                  <button
+                    type="button"
+                    onClick={() => setVariantDraft('')}
+                    className="text-[10px] text-slate-400 hover:text-rose-500 cursor-pointer"
+                  >
+                    Effacer
+                  </button>
+                )}
+              </div>
+
+              {!isAttachMode && modal.sourceGroup.variants.length > 1 && (
+                <div className="flex flex-wrap gap-1">
+                  {modal.sourceGroup.variants.map((br) => {
+                    const selected =
+                      (br.rawLabel || '') === variantDraft.trim() ||
+                      (br.id === 'default' && !variantDraft.trim());
+                    return (
+                      <button
+                        key={br.id}
+                        type="button"
+                        onClick={() => setVariantDraft(br.rawLabel || '')}
+                        className={`rounded-full px-2.5 py-0.5 text-[10.5px] font-medium transition cursor-pointer ${
+                          selected
+                            ? 'bg-[#8C271E] text-white'
+                            : 'bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {br.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <input
+                type="text"
+                value={variantDraft}
+                onChange={(e) => setVariantDraft(e.target.value)}
+                placeholder={
+                  modal.createNewVariantMode
+                    ? 'Nom de la variante (ex. Prod 276, Téquila Brune… sinon auto)'
+                    : 'Ex. Prod 276, Prod 273, Guitare… (laisse vide = Principale)'
+                }
+                className="w-full rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-900 px-3 py-1.5 text-xs outline-none focus:border-[#8C271E]"
               />
             </div>
 

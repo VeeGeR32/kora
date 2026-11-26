@@ -244,22 +244,35 @@ export function MusicView({
         const parsed = parseTrackVersion(t);
         const ts = new Date(t.modifiedAt || t.addedAt || 0).getTime() || 0;
         const todos = t.todos || [];
+        const entry = {
+          track: t,
+          parsed,
+          versionLabel: parsed.versionLabel,
+          isLatest: true,
+          timestampMs: ts,
+        };
         return {
           groupKey: `single_${t.id}`,
           baseTitle: t.manualGroupTitle || t.title,
           latestTrack: t,
           latestVersionLabel: parsed.versionLabel,
-          versions: [
-            {
-              track: t,
-              parsed,
-              versionLabel: parsed.versionLabel,
-              isLatest: true,
-              timestampMs: ts,
-            },
-          ],
+          versions: [entry],
           prodTrack: parsed.isProd ? t : null,
           prodTracks: [],
+          variants: [
+            {
+              id: 'default',
+              label: t.variantLabel?.trim() || 'Principale',
+              rawLabel: t.variantLabel?.trim() || null,
+              versions: [entry],
+              prodTracks: [],
+              latestTrack: t,
+              prodTrack: parsed.isProd ? t : null,
+              allTrackIds: [t.id],
+              hasActiveSelection: true,
+            },
+          ],
+          hasMultipleVariants: false,
           allTrackIds: [t.id],
           yearFolder: t.driveYearFolder,
           isFavorite: Boolean(t.isFavorite),
@@ -541,18 +554,23 @@ export function MusicView({
     targetGroupKey: string,
     targetGroupTitle: string,
     customVersionLabel?: string,
-    asProd?: boolean
+    asProd?: boolean,
+    variantLabel?: string
   ) => {
+    const cleanVariant = variantLabel?.trim() || undefined;
     for (const id of movingTrackIds) {
       updateMusicTrack(id, {
         manualGroupKey: targetGroupKey,
         manualGroupTitle: targetGroupTitle,
         ...(customVersionLabel ? { manualVersionLabel: customVersionLabel } : {}),
         ...(asProd ? { isProdOverride: true } : {}),
+        ...(cleanVariant ? { variantLabel: cleanVariant } : {}),
       });
     }
     notify(
-      asProd
+      cleanVariant
+        ? `Ajouté dans « ${targetGroupTitle} · ${cleanVariant} » ✓`
+        : asProd
         ? `Ajouté comme prod de « ${targetGroupTitle} » ✓`
         : `Associé comme version de « ${targetGroupTitle} » ✓`
     );
@@ -565,6 +583,7 @@ export function MusicView({
       manualGroupKey: `solo_${trackId}`,
       manualGroupTitle: target.title,
       manualVersionLabel: 'Original',
+      variantLabel: undefined,
       isProdOverride: undefined,
     });
     notify(`« ${target.title} » détaché en son indépendant ✓`);
@@ -968,15 +987,29 @@ export function MusicView({
             if (detailGroup) handleSelectVersion(detailGroup.groupKey, trackId, false);
           }}
           onOpenLyrics={openLinkedLyrics}
-          onRequestPullVersion={(g, tid) =>
-            setLinkModal({ mode: 'pull-into-group', sourceGroup: g, sourceTrackId: tid })
+          onRequestPullVersion={(g, tid, variantLabel) =>
+            setLinkModal({
+              mode: 'pull-into-group',
+              sourceGroup: g,
+              sourceTrackId: tid,
+              ...(variantLabel ? { defaultVariantLabel: variantLabel } : {}),
+            })
           }
-          onRequestPullProd={(g, tid) =>
+          onRequestPullProd={(g, tid, variantLabel) =>
             setLinkModal({
               mode: 'pull-into-group',
               sourceGroup: g,
               sourceTrackId: tid,
               defaultAsProd: true,
+              ...(variantLabel ? { defaultVariantLabel: variantLabel } : {}),
+            })
+          }
+          onRequestCreateVariant={(g, tid) =>
+            setLinkModal({
+              mode: 'pull-into-group',
+              sourceGroup: g,
+              sourceTrackId: tid,
+              createNewVariantMode: true,
             })
           }
           onRequestAttachToOther={(g, tid) =>

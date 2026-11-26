@@ -43,6 +43,7 @@ import {
   verifyDriveFolderAccess,
 } from '../lib/googleDrive';
 import {
+  extractTrackRoutingPrefix,
   getDeterministicGradientId,
   groupMusicTracks,
   normalizeGroupKey,
@@ -241,6 +242,12 @@ interface AppContextValue {
     patch: { status?: import('../types').TrackStatus; mood?: import('../types').TrackMood | null }
   ) => void;
   selectGroupPreferredVersion: (targetTrackId: string, kind: 'song' | 'prod') => void;
+  renameTrackVariant: (
+    groupTrackIds: string[],
+    oldRawLabel: string | null,
+    newLabel: string
+  ) => void;
+  detachTrackVariant: (variantTrackIds: string[], newSongTitle: string) => void;
   addMusicTrackTodo: (trackId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
   deleteMusicTrackTodo: (trackId: string, todoId: string) => void;
@@ -1846,26 +1853,79 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
+        // Build automatic prefix routing table from existing manually grouped / branched tracks!
+        // Example: once "Project_276" is linked to "Téquila Brune" (branch "Prod 276") and
+        // "Project_273_tequila brune" to branch "Téquila Brune", ANY future Drive export
+        // like "Project_276_5.mp3" or "Project_273_tequila brune 6.mp3" routes automatically!
+        type AutoRouteRule = {
+          manualGroupKey?: string;
+          manualGroupTitle?: string;
+          variantLabel?: string;
+        };
+        const routeByPrefix = new Map<string, AutoRouteRule | null>();
+        const existingTracksSnapshot = latestStateRef.current.musicTracks;
+        for (const ex of existingTracksSnapshot) {
+          if (!ex.manualGroupKey && !ex.variantLabel) continue;
+          const prefix = extractTrackRoutingPrefix({
+            title: ex.title,
+            sourceFilename: ex.sourceFilename,
+          });
+          if (!prefix) continue;
+          const rule: AutoRouteRule = {
+            ...(ex.manualGroupKey ? { manualGroupKey: ex.manualGroupKey } : {}),
+            ...(ex.manualGroupTitle ? { manualGroupTitle: ex.manualGroupTitle } : {}),
+            ...(ex.variantLabel ? { variantLabel: ex.variantLabel } : {}),
+          };
+          const prevRule = routeByPrefix.get(prefix);
+          if (prevRule === undefined) {
+            routeByPrefix.set(prefix, rule);
+          } else if (
+            prevRule !== null &&
+            (prevRule.manualGroupKey !== rule.manualGroupKey ||
+              (prevRule.variantLabel || '') !== (rule.variantLabel || ''))
+          ) {
+            // Ambiguous prefix pointing to different destinations -> disable auto-routing for safety
+            routeByPrefix.set(prefix, null);
+          }
+        }
+
+        const existingDriveIds = new Set(
+          existingTracksSnapshot
+            .map((t) => t.googleDriveFileId)
+            .filter((id): id is string => Boolean(id))
+        );
+
         const payload = files.map((f) => {
           const cleanTitle = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
           const folderSongTitle =
             f.parentFolderId && isGenericProjectFilename(f.name)
               ? songFolderNameById.get(f.parentFolderId)
               : undefined;
-          // IMPORTANT: Only set manualGroupTitle (just like renameTrackGroup) — NEVER override manualGroupKey!
-          // That way all versions (projet42, projet42 v2, projet42 v3...) keep their natural groupKey
-          // and NEVER split into separate songs when a new version is imported!
+          // Auto-route NEW incoming exports using learned prefix rules from existing branches
+          const filePrefix = extractTrackRoutingPrefix({
+            title: cleanTitle,
+            sourceFilename: f.name,
+          });
+          const learnedRoute =
+            !existingDriveIds.has(f.id) && filePrefix ? routeByPrefix.get(filePrefix) || null : null;
+
+          // IMPORTANT: Only set manualGroupTitle from folder (NEVER manualGroupKey);
+          // learnedRoute only applies to brand-new files matching an explicit user-linked prefix!
+          const effectiveGroupTitle = learnedRoute?.manualGroupTitle || folderSongTitle;
           const parsed = parseTrackVersion({
             title: cleanTitle,
             sourceFilename: f.name,
-            ...(folderSongTitle ? { manualGroupTitle: folderSongTitle } : {}),
+            ...(learnedRoute?.manualGroupKey ? { manualGroupKey: learnedRoute.manualGroupKey } : {}),
+            ...(effectiveGroupTitle ? { manualGroupTitle: effectiveGroupTitle } : {}),
           });
           if (f.driveSourceId) {
             countBySource.set(f.driveSourceId, (countBySource.get(f.driveSourceId) || 0) + 1);
           }
           return {
             title: cleanTitle || f.name,
-            ...(folderSongTitle ? { manualGroupTitle: folderSongTitle } : {}),
+            ...(learnedRoute?.manualGroupKey ? { manualGroupKey: learnedRoute.manualGroupKey } : {}),
+            ...(effectiveGroupTitle ? { manualGroupTitle: effectiveGroupTitle } : {}),
+            ...(learnedRoute?.variantLabel ? { variantLabel: learnedRoute.variantLabel } : {}),
             artist,
             googleDriveFileId: f.id,
             driveSourceId: f.driveSourceId,
@@ -2911,6 +2971,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         const allGroupIds = new Set(group.allTrackIds);
         const targetTrack = prev.musicTracks.find((t) => t.id === targetTrackId);
+        // When selecting a vocal version inside a named prod branch, also align the active prod to that branch's prod if it has one!
+        const targetVariant =
+          kind === 'song' && group.hasMultipleVariants
+            ? group.variants.find((v) => v.allTrackIds.includes(targetTrackId)) || null
+            : null;
+        const alignProdId =
+          targetVariant && targetVariant.prodTrack ? targetVariant.prodTrack.id : null;
+        const allProdIds = alignProdId ? new Set(group.prodTracks.map((p) => p.track.id)) : null;
+
         const linkedProjectId =
           targetTrack?.linkedProjectId ||
           group.versions.find((v) => Boolean(v.track.linkedProjectId))?.track.linkedProjectId;
@@ -2919,23 +2988,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           group.versions.find((v) => Boolean(v.track.linkedLyricsId))?.track.linkedLyricsId;
 
         const nextTracks = prev.musicTracks.map((t) => {
-          if (!scopeIds.has(t.id)) return t;
-          if (t.id === targetTrackId) {
-            return {
-              ...t,
-              isPreferredVersion: true,
-              ...(kind === 'song' && linkedProjectId && !t.linkedProjectId
-                ? { linkedProjectId }
-                : {}),
-              ...(kind === 'song' && linkedLyricsId && !t.linkedLyricsId
-                ? { linkedLyricsId }
-                : {}),
-            };
+          if (scopeIds.has(t.id)) {
+            if (t.id === targetTrackId) {
+              return {
+                ...t,
+                isPreferredVersion: true,
+                ...(kind === 'song' && linkedProjectId && !t.linkedProjectId
+                  ? { linkedProjectId }
+                  : {}),
+                ...(kind === 'song' && linkedLyricsId && !t.linkedLyricsId
+                  ? { linkedLyricsId }
+                  : {}),
+              };
+            }
+            if (t.isPreferredVersion) {
+              const copy = { ...t };
+              delete copy.isPreferredVersion;
+              return copy;
+            }
+            return t;
           }
-          if (t.isPreferredVersion) {
-            const copy = { ...t };
-            delete copy.isPreferredVersion;
-            return copy;
+          if (alignProdId && allProdIds?.has(t.id)) {
+            if (t.id === alignProdId) {
+              return { ...t, isPreferredVersion: true };
+            }
+            if (t.isPreferredVersion) {
+              const copy = { ...t };
+              delete copy.isPreferredVersion;
+              return copy;
+            }
           }
           return t;
         });
@@ -3033,6 +3114,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     },
     []
   );
+
+  const renameTrackVariant = useCallback(
+    (groupTrackIds: string[], oldRawLabel: string | null, newLabel: string) => {
+      const idSet = new Set(groupTrackIds);
+      const cleanNew = newLabel.trim();
+      const oldNorm = oldRawLabel ? normalizeGroupKey(oldRawLabel) : '';
+      touch((prev) => ({
+        ...prev,
+        musicTracks: prev.musicTracks.map((t) => {
+          if (!idSet.has(t.id)) return t;
+          const curNorm = t.variantLabel?.trim() ? normalizeGroupKey(t.variantLabel.trim()) : '';
+          if (curNorm !== oldNorm) return t;
+          return {
+            ...t,
+            variantLabel: cleanNew || undefined,
+          };
+        }),
+      }));
+    },
+    []
+  );
+
+  const detachTrackVariant = useCallback((variantTrackIds: string[], newSongTitle: string) => {
+    if (variantTrackIds.length === 0) return;
+    const idSet = new Set(variantTrackIds);
+    const cleanTitle = newSongTitle.trim() || 'Nouveau son';
+    const freshKey = `branch_${normalizeGroupKey(cleanTitle) || 'song'}_${Date.now().toString(36).slice(-4)}`;
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) => {
+        if (!idSet.has(t.id)) return t;
+        return {
+          ...t,
+          manualGroupKey: freshKey,
+          manualGroupTitle: cleanTitle,
+          variantLabel: undefined,
+        };
+      }),
+    }));
+  }, []);
 
   // Automatically reconcile project track versions whenever tracks or projects change
   // (e.g., on cloud hydration, after Drive sync, or after manual version linking/detaching).
@@ -3524,6 +3645,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setTrackGroupRatings,
         setTrackGroupWorkflow,
         selectGroupPreferredVersion,
+        renameTrackVariant,
+        detachTrackVariant,
         addMusicTrackTodo,
         toggleMusicTrackTodo,
         deleteMusicTrackTodo,

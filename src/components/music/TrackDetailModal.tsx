@@ -12,6 +12,7 @@ import {
   FileText,
   FolderKanban,
   GitBranch,
+  Layers,
   Link2,
   ListChecks,
   ListPlus,
@@ -64,8 +65,9 @@ interface TrackDetailModalProps {
   activeProjectId?: string | null;
   onSelectVersion: (trackId: string) => void;
   onOpenLyrics: (track: MusicTrack) => void;
-  onRequestPullVersion: (group: TrackGroup, trackId: string) => void;
-  onRequestPullProd?: (group: TrackGroup, trackId: string) => void;
+  onRequestPullVersion: (group: TrackGroup, trackId: string, variantLabel?: string) => void;
+  onRequestPullProd?: (group: TrackGroup, trackId: string, variantLabel?: string) => void;
+  onRequestCreateVariant?: (group: TrackGroup, trackId: string) => void;
   onRequestAttachToOther: (group: TrackGroup, trackId: string) => void;
   onDetachVersion: (trackId: string) => void;
   onOpenContextMenu?: (
@@ -98,6 +100,7 @@ export function TrackDetailModal({
   onOpenLyrics,
   onRequestPullVersion,
   onRequestPullProd,
+  onRequestCreateVariant,
   onRequestAttachToOther,
   onDetachVersion,
   onOpenContextMenu,
@@ -112,6 +115,8 @@ export function TrackDetailModal({
     setTrackGroupRatings,
     setTrackGroupWorkflow,
     selectGroupPreferredVersion,
+    renameTrackVariant,
+    detachTrackVariant,
     addMusicTrackTodo,
     toggleMusicTrackTodo,
     deleteMusicTrackTodo,
@@ -138,10 +143,30 @@ export function TrackDetailModal({
   const [showRatings, setShowRatings] = useState(false);
   const [abSyncTimecode, setAbSyncTimecode] = useState(true);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [viewedVariantId, setViewedVariantId] = useState<string | null>(null);
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  const [editingVariantDraft, setEditingVariantDraft] = useState('');
+  const [assignBranchTrackId, setAssignBranchTrackId] = useState<string | null>(null);
+  const [assignBranchDraft, setAssignBranchDraft] = useState('');
+  const [confirmDetachBranch, setConfirmDetachBranch] = useState<{
+    ids: string[];
+    label: string;
+  } | null>(null);
 
   useEffect(() => {
     setSongTitleDraft(group?.baseTitle || '');
   }, [group?.groupKey, group?.baseTitle]);
+
+  useEffect(() => {
+    if (!group) return;
+    const ownerBranch =
+      (selectedTrackId && group.variants.find((b) => b.allTrackIds.includes(selectedTrackId))) ||
+      group.variants.find((b) => b.hasActiveSelection) ||
+      group.variants[0];
+    setViewedVariantId(ownerBranch?.id || null);
+    setEditingVariantId(null);
+    setAssignBranchTrackId(null);
+  }, [group?.groupKey, selectedTrackId]);
 
   const activeEntry = useMemo(() => {
     if (!group) return null;
@@ -302,6 +327,17 @@ export function TrackDetailModal({
   );
   const allGroupTrackIds =
     group.allTrackIds.length > 0 ? group.allTrackIds : group.versions.map((v) => v.track.id);
+  const activeBranch =
+    group.variants.find((b) => b.id === viewedVariantId) ||
+    group.variants.find((b) => b.hasActiveSelection) ||
+    group.variants[0] ||
+    null;
+  const displayedVersions =
+    group.hasMultipleVariants && activeBranch ? activeBranch.versions : group.versions;
+  const displayedProds =
+    group.hasMultipleVariants && activeBranch ? activeBranch.prodTracks : group.prodTracks;
+  const activeBranchRawLabel =
+    group.hasMultipleVariants && activeBranch?.rawLabel ? activeBranch.rawLabel : undefined;
   const selectedProdTrack = group.prodTrack;
   const activeProdEntry =
     (selectedProdTrack &&
@@ -450,7 +486,9 @@ export function TrackDetailModal({
               </button>
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-900 px-2.5 py-1 font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-200 truncate">
                 <GitBranch size={11} className="text-[#8C271E] shrink-0" />
-                {activeEntry.versionLabel}
+                {group.hasMultipleVariants && track.variantLabel?.trim()
+                  ? `${track.variantLabel.trim()} · ${activeEntry.versionLabel}`
+                  : activeEntry.versionLabel}
               </span>
               {group.yearFolder && (
                 <span className="hidden sm:inline-flex rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-600 dark:text-zinc-300 px-2.5 py-1 font-mono text-[10px] font-semibold shrink-0">
@@ -1118,12 +1156,140 @@ export function TrackDetailModal({
               )}
             </section>
 
+            {/* Branches / Variantes par Prod (visible only when song has 2+ branches) */}
+            {group.hasMultipleVariants && activeBranch && (
+              <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/70 dark:bg-zinc-900/45 p-3.5 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
+                    <Layers size={12} className="text-[#8C271E]" />
+                    Variantes / Prods ({group.variants.length})
+                  </h3>
+                  <div className="flex items-center gap-1.5">
+                    {onRequestCreateVariant && (
+                      <button
+                        type="button"
+                        onClick={() => onRequestCreateVariant(group, track.id)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 hover:opacity-90 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
+                      >
+                        <Plus size={11} /> Variante
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setConfirmDetachBranch({
+                          ids: activeBranch.allTrackIds,
+                          label: activeBranch.label,
+                        })
+                      }
+                      title="Séparer toute cette variante en morceau indépendant"
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-zinc-800 hover:border-rose-400 hover:text-rose-500 text-slate-500 dark:text-zinc-400 px-2 py-1 text-[11px] font-medium transition cursor-pointer"
+                    >
+                      <Unlink size={10} /> Séparer en son
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {group.variants.map((br) => {
+                    const isViewing = br.id === activeBranch.id;
+                    const isEditingThis = editingVariantId === br.id;
+                    return (
+                      <div
+                        key={br.id}
+                        className={`inline-flex items-center rounded-xl border transition overflow-hidden ${
+                          isViewing
+                            ? 'bg-slate-900 dark:bg-white text-white dark:text-zinc-950 border-slate-900 dark:border-white shadow-xs'
+                            : 'bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600'
+                        }`}
+                      >
+                        {isEditingThis ? (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              const clean = editingVariantDraft.trim();
+                              if (clean) {
+                                renameTrackVariant(allGroupTrackIds, br.rawLabel, clean);
+                                setViewedVariantId(clean.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'default');
+                                notify(`Variante renommée en « ${clean} » ✓`);
+                              }
+                              setEditingVariantId(null);
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1"
+                          >
+                            <input
+                              autoFocus
+                              type="text"
+                              value={editingVariantDraft}
+                              onChange={(e) => setEditingVariantDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') setEditingVariantId(null);
+                              }}
+                              onBlur={() => setEditingVariantId(null)}
+                              placeholder="Ex. Prod 276…"
+                              className="w-28 bg-white dark:bg-zinc-900 text-slate-900 dark:text-zinc-100 rounded-md px-1.5 py-0.5 text-xs outline-none"
+                            />
+                            <button
+                              type="submit"
+                              onMouseDown={(e) => e.preventDefault()}
+                              className="p-0.5 rounded bg-[#8C271E] text-white cursor-pointer"
+                            >
+                              <Check size={11} />
+                            </button>
+                          </form>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setViewedVariantId(br.id);
+                                setAssignBranchTrackId(null);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold cursor-pointer"
+                            >
+                              {br.hasActiveSelection && (
+                                <span
+                                  title="Variante active globalement"
+                                  className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                                    isViewing ? 'bg-[#E04F42]' : 'bg-[#8C271E]'
+                                  }`}
+                                />
+                              )}
+                              <span className="truncate max-w-[140px]">{br.label}</span>
+                              <span className="font-mono text-[10px] opacity-65">
+                                {br.versions.length}
+                                {br.prodTracks.length > 0 ? `+${br.prodTracks.length}p` : ''}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              title="Renommer cette variante"
+                              onClick={() => {
+                                setEditingVariantId(br.id);
+                                setEditingVariantDraft(br.label);
+                              }}
+                              className="pr-2 pl-0.5 py-1.5 opacity-55 hover:opacity-100 transition cursor-pointer"
+                            >
+                              <Pencil size={10} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             {/* Versions Switcher + A/B Timecode Comparator */}
             <section className="space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                    <GitBranch size={12} /> Versions de {group.baseTitle} ({group.versions.length})
+                    <GitBranch size={12} />{' '}
+                    {group.hasMultipleVariants && activeBranch
+                      ? `Versions · ${activeBranch.label} (${displayedVersions.length})`
+                      : `Versions de ${group.baseTitle} (${displayedVersions.length})`}
                   </h3>
                   {(group.hasMultipleVersions || group.prodTracks.length > 0) && (
                     <button
@@ -1141,14 +1307,24 @@ export function TrackDetailModal({
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => onRequestPullVersion(group, track.id)}
+                    onClick={() => onRequestPullVersion(group, track.id, activeBranchRawLabel)}
                     className="inline-flex items-center gap-1 rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 hover:opacity-90 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
                   >
                     <Plus size={11} /> Ajouter une version
                   </button>
+                  {!group.hasMultipleVariants && onRequestCreateVariant && (
+                    <button
+                      type="button"
+                      onClick={() => onRequestCreateVariant(group, track.id)}
+                      title="Ajouter une autre direction / prod (ex. Projet 276) comme variante séparée de ce son"
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-zinc-800 hover:border-[#8C271E]/50 hover:text-[#8C271E] dark:hover:text-[#E56B5F] text-slate-600 dark:text-zinc-300 px-2 py-1 text-[11px] font-medium transition cursor-pointer"
+                    >
+                      <Layers size={11} /> + Variante
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onRequestAttachToOther(group, track.id)}
@@ -1160,10 +1336,11 @@ export function TrackDetailModal({
               </div>
 
               <div className="flex flex-wrap gap-1.5">
-                {group.versions.map((v) => {
+                {displayedVersions.map((v) => {
                   const selected = v.track.id === group.latestTrack.id;
                   const playingThis =
                     player.currentTrack?.id === v.track.id && player.isPlaying;
+                  const isAssigningBranch = assignBranchTrackId === v.track.id;
                   return (
                     <div
                       key={v.track.id}
@@ -1173,69 +1350,136 @@ export function TrackDetailModal({
                           : 'bg-slate-50 dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 border-slate-200/80 dark:border-zinc-800 hover:border-slate-400 dark:hover:border-zinc-600'
                       }`}
                     >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const keepSec = getCompareStartSec();
-                          selectGroupPreferredVersion(v.track.id, 'song');
-                          onSelectVersion(v.track.id);
-                          void player.playTrack(v.track, keepSec);
-                          notify(
-                            keepSec > 0.3
-                              ? `A/B → ${v.versionLabel} (${fmt(keepSec)}) ✓`
-                              : `Version « ${v.versionLabel} » sélectionnée partout ✓`
-                          );
-                        }}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
-                      >
-                        <span className="font-mono font-semibold">{v.versionLabel}</span>
-                        {(v.track.modifiedAt || v.track.addedAt) && (
-                          <span
-                            className={`font-mono text-[10px] ${
-                              selected ? 'opacity-70' : 'text-slate-400 dark:text-zinc-500'
-                            }`}
-                          >
-                            {fmtDate(v.track.modifiedAt || v.track.addedAt)}
-                          </span>
-                        )}
-                        {selected && group.hasMultipleVersions && (
-                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/20 text-white">
-                            Active
-                          </span>
-                        )}
-                        {playingThis && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        )}
-                      </button>
-
-                      {group.hasMultipleVersions && (
-                        <button
-                          type="button"
-                          title="Détacher cette version en son indépendant"
-                          onClick={() => onDetachVersion(v.track.id)}
-                          className={`pr-2 pl-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
-                            selected ? 'hover:text-rose-300 dark:hover:text-rose-600' : 'hover:text-rose-500'
-                          }`}
+                      {isAssigningBranch ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const clean = assignBranchDraft.trim();
+                            updateMusicTrack(v.track.id, {
+                              variantLabel: clean || undefined,
+                            });
+                            notify(
+                              clean
+                                ? `Déplacé dans la variante « ${clean} » ✓`
+                                : 'Replacé dans la variante Principale ✓'
+                            );
+                            setAssignBranchTrackId(null);
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-1"
                         >
-                          <Unlink size={11} />
-                        </button>
+                          <input
+                            autoFocus
+                            type="text"
+                            value={assignBranchDraft}
+                            onChange={(e) => setAssignBranchDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') setAssignBranchTrackId(null);
+                            }}
+                            onBlur={() => setAssignBranchTrackId(null)}
+                            list="rowav-existing-variants"
+                            placeholder="Nom variante…"
+                            className="w-28 bg-white dark:bg-zinc-900 text-slate-900 dark:text-zinc-100 rounded-md px-1.5 py-0.5 text-xs outline-none"
+                          />
+                          <button
+                            type="submit"
+                            onMouseDown={(e) => e.preventDefault()}
+                            className="p-0.5 rounded bg-emerald-600 text-white cursor-pointer"
+                          >
+                            <Check size={11} />
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const keepSec = getCompareStartSec();
+                              selectGroupPreferredVersion(v.track.id, 'song');
+                              onSelectVersion(v.track.id);
+                              void player.playTrack(v.track, keepSec);
+                              notify(
+                                keepSec > 0.3
+                                  ? `A/B → ${v.versionLabel} (${fmt(keepSec)}) ✓`
+                                  : `Version « ${v.versionLabel} » sélectionnée partout ✓`
+                              );
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
+                          >
+                            <span className="font-mono font-semibold">{v.versionLabel}</span>
+                            {(v.track.modifiedAt || v.track.addedAt) && (
+                              <span
+                                className={`font-mono text-[10px] ${
+                                  selected ? 'opacity-70' : 'text-slate-400 dark:text-zinc-500'
+                                }`}
+                              >
+                                {fmtDate(v.track.modifiedAt || v.track.addedAt)}
+                              </span>
+                            )}
+                            {selected && group.hasMultipleVersions && (
+                              <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/20 text-white">
+                                Active
+                              </span>
+                            )}
+                            {playingThis && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            )}
+                          </button>
+
+                          {group.hasMultipleVersions && (
+                            <button
+                              type="button"
+                              title="Classer / déplacer dans une variante de prod"
+                              onClick={() => {
+                                setAssignBranchTrackId(v.track.id);
+                                setAssignBranchDraft(v.track.variantLabel || '');
+                              }}
+                              className="px-1 py-1.5 opacity-55 hover:opacity-100 transition cursor-pointer"
+                            >
+                              <Layers size={10.5} />
+                            </button>
+                          )}
+
+                          {group.hasMultipleVersions && (
+                            <button
+                              type="button"
+                              title="Détacher cette version en son indépendant"
+                              onClick={() => onDetachVersion(v.track.id)}
+                              className={`pr-2 pl-1 py-1.5 opacity-60 hover:opacity-100 transition cursor-pointer ${
+                                selected ? 'hover:text-rose-300 dark:hover:text-rose-600' : 'hover:text-rose-500'
+                              }`}
+                            >
+                              <Unlink size={11} />
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   );
                 })}
               </div>
+
+              <datalist id="rowav-existing-variants">
+                {group.variants
+                  .filter((b) => Boolean(b.rawLabel))
+                  .map((b) => (
+                    <option key={b.id} value={b.label} />
+                  ))}
+              </datalist>
             </section>
 
             {/* Multiple Prod / Instrumental Versions Section */}
             <section className="space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-600/90 dark:text-emerald-400/90 flex items-center gap-1.5">
-                  <Music2 size={12} /> Versions de prod ({group.prodTracks.length})
+                  <Music2 size={12} />{' '}
+                  {group.hasMultipleVariants && activeBranch
+                    ? `Prods · ${activeBranch.label} (${displayedProds.length})`
+                    : `Versions de prod (${displayedProds.length})`}
                 </h3>
                 {onRequestPullProd && (
                   <button
                     type="button"
-                    onClick={() => onRequestPullProd(group, track.id)}
+                    onClick={() => onRequestPullProd(group, track.id, activeBranchRawLabel)}
                     className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 text-white shadow-xs shadow-emerald-600/20 hover:bg-emerald-500 px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer"
                   >
                     <Plus size={11} /> Ajouter une prod
@@ -1243,13 +1487,15 @@ export function TrackDetailModal({
                 )}
               </div>
 
-              {group.prodTracks.length === 0 ? (
+              {displayedProds.length === 0 ? (
                 <p className="text-[11px] text-slate-400 dark:text-zinc-500">
-                  Aucune prod liée pour l’instant — ajoute une ou plusieurs versions d’instru pour basculer facilement entre elles.
+                  {group.hasMultipleVariants && activeBranch
+                    ? `Aucune prod liée à « ${activeBranch.label} » pour l’instant.`
+                    : 'Aucune prod liée pour l’instant — ajoute une ou plusieurs versions d’instru pour basculer facilement entre elles.'}
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
-                  {group.prodTracks.map((p) => {
+                  {displayedProds.map((p) => {
                     const isSelectedProd = p.track.id === group.prodTrack?.id;
                     const isThisProdCurrent = player.currentTrack?.id === p.track.id;
                     const playingThisProd = isThisProdCurrent && player.isPlaying;
@@ -1850,6 +2096,23 @@ export function TrackDetailModal({
             if (group.versions.length <= 1) onClose();
           }}
           onCancel={() => setConfirmDeleteOpen(false)}
+        />
+
+        <AppleConfirmDialog
+          open={Boolean(confirmDetachBranch)}
+          title={`Séparer « ${confirmDetachBranch?.label || ''} » en son indépendant ?`}
+          description="Toutes les versions et prods de cette variante formeront un nouveau morceau séparé dans ta bibliothèque."
+          confirmLabel="Séparer"
+          onConfirm={() => {
+            if (!confirmDetachBranch) return;
+            detachTrackVariant(
+              confirmDetachBranch.ids,
+              `${group.baseTitle} (${confirmDetachBranch.label})`
+            );
+            notify(`Variante « ${confirmDetachBranch.label} » séparée en son indépendant ✓`);
+            setConfirmDetachBranch(null);
+          }}
+          onCancel={() => setConfirmDetachBranch(null)}
         />
 
         <ShareOptionsModal

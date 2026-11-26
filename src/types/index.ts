@@ -289,6 +289,7 @@ export interface MusicTrack {
   manualGroupKey?: string; // User-assigned version group override (e.g. attach track as version of another song)
   manualGroupTitle?: string; // Optional custom display title for the manual group
   manualVersionLabel?: string; // Optional custom version label (e.g. "Mix final", "Acoustique", "Prod v2")
+  variantLabel?: string; // Optional branch/prod variant name (e.g. "Prod 276", "Téquila Brune") grouping vocal versions + prod together
   isProdOverride?: boolean; // Explicit override marking this track as a prod/instrumental version (or vocal if false)
   isPreferredVersion?: boolean; // User-selected active version (song or prod) chosen on the Song Page and persisted everywhere
   modifiedAt?: string; // Drive modifiedTime or last file edit ISO
