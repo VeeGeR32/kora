@@ -140,7 +140,7 @@ export function SocialHubView({
   const [editGradient, setEditGradient] = useState('sunset');
 
   // Direct Messaging state
-  const [activeChatUid, setActiveChatUid] = useState<string>('artist_nox');
+  const [activeChatUid, setActiveChatUid] = useState<string>('');
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
 

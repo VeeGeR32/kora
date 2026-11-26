@@ -4,16 +4,22 @@ import {
   ChevronDown,
   Disc3,
   Loader2,
+  Lock,
+  MessageSquare,
   Pause,
   Play,
   Repeat,
   RotateCcw,
   RotateCw,
+  Send,
   SkipBack,
   SkipForward,
 } from 'lucide-react';
 import {
   fetchPublicShare,
+  postPublicShareComment,
+  PublicShareLockedError,
+  type PublicShareComment,
   type PublicSharePayload,
   type PublicSharedTrack,
 } from '../../lib/publicShare';
@@ -54,6 +60,24 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
   const [data, setData] = useState<PublicSharePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lockedMeta, setLockedMeta] = useState<{
+    title: string;
+    artist: string;
+    kind: 'track' | 'project';
+    message: string;
+  } | null>(null);
+  const [passcodeInput, setPasscodeInput] = useState('');
+  const [unlockedPasscode, setUnlockedPasscode] = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+
+  const [comments, setComments] = useState<PublicShareComment[]>([]);
+  const [commentAuthor, setCommentAuthor] = useState(() =>
+    typeof window !== 'undefined' ? window.localStorage.getItem('rowav_share_author') || '' : ''
+  );
+  const [commentText, setCommentText] = useState('');
+  const [postingComment, setPostingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [showCommentsPanel, setShowCommentsPanel] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -83,14 +107,17 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
   const loopRef = useRef(loop);
   loopRef.current = loop;
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError(null);
-    fetchPublicShare(token)
-      .then((payload) => {
-        if (!active) return;
+  const loadShare = useCallback(
+    async (passcode?: string) => {
+      if (passcode) setUnlocking(true);
+      else setLoading(true);
+      setError(null);
+      try {
+        const payload = await fetchPublicShare(token, passcode);
         setData(payload);
+        setComments(payload.comments || []);
+        setLockedMeta(null);
+        if (passcode) setUnlockedPasscode(passcode);
         if (payload.kind === 'track') {
           setExpanded(true);
         }
@@ -100,17 +127,28 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
             : payload.tracks[0]
             ? `${payload.tracks[0].title} · ${payload.artist}`
             : 'Rowav Music Studio';
-      })
-      .catch((err) => {
-        if (active) setError((err as Error).message || 'Lien invalide.');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [token]);
+      } catch (err) {
+        if (err instanceof PublicShareLockedError) {
+          setLockedMeta({
+            title: err.title,
+            artist: err.artist,
+            kind: err.kind,
+            message: err.message,
+          });
+        } else {
+          setError((err as Error).message || 'Lien invalide.');
+        }
+      } finally {
+        setLoading(false);
+        setUnlocking(false);
+      }
+    },
+    [token]
+  );
+
+  useEffect(() => {
+    void loadShare();
+  }, [loadShare]);
 
   const tracks = data?.tracks || [];
   const activeTrack: PublicSharedTrack | null = tracks[activeIdx] || null;
@@ -356,6 +394,54 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
     return <PublicShareSkeleton />;
   }
 
+  if (lockedMeta) {
+    return (
+      <div className="min-h-[100dvh] bg-gradient-to-b from-zinc-900 via-[#0e0e11] to-black text-white flex flex-col items-center justify-center p-5">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!passcodeInput.trim()) return;
+            void loadShare(passcodeInput.trim());
+          }}
+          className="w-full max-w-sm rounded-[28px] bg-[#121216] border border-white/10 shadow-2xl p-6 space-y-5 text-center"
+        >
+          <div className="mx-auto h-12 w-12 rounded-2xl bg-[#8C271E]/20 text-[#F08B82] flex items-center justify-center">
+            <Lock size={20} />
+          </div>
+          <div className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              {lockedMeta.artist} · {lockedMeta.kind === 'project' ? 'Projet privé' : 'Son privé'}
+            </p>
+            <h1 className="text-lg font-bold tracking-tight text-white">{lockedMeta.title}</h1>
+            <p className="text-xs text-zinc-400">{lockedMeta.message}</p>
+          </div>
+          <div className="space-y-2.5">
+            <input
+              autoFocus
+              type="password"
+              value={passcodeInput}
+              onChange={(e) => setPasscodeInput(e.target.value)}
+              placeholder="Entrer le code d’accès…"
+              className="w-full rounded-xl bg-black/50 border border-white/15 px-3.5 py-2.5 text-sm text-center text-white placeholder:text-zinc-500 outline-none focus:border-[#E04F42]"
+            />
+            <button
+              type="submit"
+              disabled={unlocking || !passcodeInput.trim()}
+              className="w-full rounded-xl bg-[#8C271E] hover:bg-[#A32E24] text-white py-2.5 text-xs font-semibold disabled:opacity-50 transition cursor-pointer inline-flex items-center justify-center gap-2"
+            >
+              {unlocking ? <Loader2 size={14} className="animate-spin" /> : null}
+              <span>{unlocking ? 'Vérification…' : 'Déverrouiller l’écoute'}</span>
+            </button>
+          </div>
+          <div className="inline-flex items-center gap-1.5 text-[11px] text-zinc-500">
+            <KoraLogo size={14} />
+            <span>Partagé via Rowav</span>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
   if (error || !data || tracks.length === 0) {
     return (
       <div className="min-h-[100dvh] bg-[#0b0b0d] text-white flex flex-col items-center justify-center p-6 text-center gap-4">
@@ -381,6 +467,127 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
     .filter(Boolean)
     .join(' · ');
   const totalProjectSec = tracks.reduce((acc, t) => acc + (t.durationSec || 0), 0);
+
+  const trackComments = activeTrack
+    ? comments
+        .filter((c) => c.trackId === activeTrack.id)
+        .sort((a, b) => a.timeSec - b.timeSec)
+    : [];
+
+  const handlePostComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTrack || !commentText.trim() || postingComment) return;
+    setPostingComment(true);
+    setCommentError(null);
+    const author = commentAuthor.trim() || 'Auditeur';
+    if (typeof window !== 'undefined' && commentAuthor.trim()) {
+      window.localStorage.setItem('rowav_share_author', commentAuthor.trim());
+    }
+    try {
+      const updated = await postPublicShareComment({
+        token,
+        passcode: unlockedPasscode || undefined,
+        trackId: activeTrack.id,
+        timeSec: Math.round(getLiveTime()),
+        authorName: author,
+        text: commentText.trim(),
+      });
+      setComments(updated);
+      setCommentText('');
+    } catch (err) {
+      setCommentError((err as Error).message || 'Erreur lors de l’envoi.');
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const renderCommentsBox = (dark: boolean) => {
+    if (!data.allowComments || !activeTrack) return null;
+    const liveSec = Math.round(getLiveTime());
+    return (
+      <div
+        className={`w-full rounded-2xl border p-4 space-y-3 ${
+          dark
+            ? 'bg-[#121216] border-white/10 text-white'
+            : 'bg-zinc-50 border-zinc-200/80 text-zinc-900'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold">
+            <MessageSquare size={13} className="text-[#E04F42]" />
+            Retours horodatés ({trackComments.length})
+          </span>
+          <span className="font-mono text-[10px] opacity-60">
+            Position : {fmt(liveSec)}
+          </span>
+        </div>
+
+        <form onSubmit={(e) => void handlePostComment(e)} className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={commentAuthor}
+              onChange={(e) => setCommentAuthor(e.target.value)}
+              placeholder="Ton prénom / pseudo"
+              maxLength={40}
+              className={`w-32 sm:w-36 rounded-xl border px-2.5 py-1.5 text-xs outline-none ${
+                dark
+                  ? 'bg-black/40 border-white/12 text-white placeholder:text-zinc-500 focus:border-[#E04F42]'
+                  : 'bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-[#8C271E]'
+              }`}
+            />
+            <input
+              type="text"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder={`Note à ${fmt(liveSec)} (mix, couplet, 808…)`}
+              maxLength={500}
+              className={`flex-1 min-w-0 rounded-xl border px-2.5 py-1.5 text-xs outline-none ${
+                dark
+                  ? 'bg-black/40 border-white/12 text-white placeholder:text-zinc-500 focus:border-[#E04F42]'
+                  : 'bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-[#8C271E]'
+              }`}
+            />
+            <button
+              type="submit"
+              disabled={postingComment || !commentText.trim()}
+              aria-label="Envoyer le retour"
+              className="h-8 w-8 rounded-xl bg-[#8C271E] hover:bg-[#A32E24] text-white flex items-center justify-center shrink-0 disabled:opacity-40 transition cursor-pointer"
+            >
+              {postingComment ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+            </button>
+          </div>
+          {commentError && <p className="text-[11px] text-rose-400">{commentError}</p>}
+        </form>
+
+        {trackComments.length > 0 && (
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+            {trackComments.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  seekTo(c.timeSec);
+                  triggerHapticTick(8);
+                }}
+                className={`w-full text-left rounded-xl px-2.5 py-2 transition cursor-pointer flex items-start gap-2 ${
+                  dark ? 'bg-white/[0.04] hover:bg-white/[0.09]' : 'bg-white hover:bg-zinc-100 border border-zinc-200/70'
+                }`}
+              >
+                <span className="rounded-full bg-[#8C271E]/20 text-[#F08B82] dark:text-[#F08B82] px-2 py-0.5 font-mono text-[10px] font-bold shrink-0 mt-0.5">
+                  {fmt(c.timeSec)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold opacity-85 truncate">{c.authorName}</p>
+                  <p className="text-xs opacity-75 leading-snug break-words">{c.text}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ===== VIEW A: SINGLE TRACK OR EXPANDED PLAYER ([UNTITLED] OBSIDIAN CARD) =====
   const renderObsidianPlayerCard = (canCollapse: boolean) => (
@@ -538,6 +745,24 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
         )}
       </div>
 
+      {data.allowComments && (
+        <div className="w-full space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowCommentsPanel((v) => !v)}
+            className="w-full h-9 px-4 rounded-full bg-white/8 hover:bg-white/14 border border-white/10 text-xs font-semibold text-zinc-200 inline-flex items-center justify-center gap-2 transition cursor-pointer"
+          >
+            <MessageSquare size={13} className="text-[#F08B82]" />
+            <span>
+              {showCommentsPanel
+                ? 'Masquer les retours'
+                : `Retours horodatés (${trackComments.length})`}
+            </span>
+          </button>
+          {showCommentsPanel && renderCommentsBox(true)}
+        </div>
+      )}
+
       {canCollapse ? (
         <button
           type="button"
@@ -687,6 +912,9 @@ export function PublicSharePage({ token }: PublicSharePageProps) {
             );
           })}
         </div>
+
+        {/* Timestamped Feedback Section for Project Listeners */}
+        {data.allowComments && <div className="pt-2">{renderCommentsBox(false)}</div>}
       </div>
 
       {/* Floating [untitled] Mini Pill */}

@@ -188,6 +188,98 @@ function fromFirestoreValue(val) {
   return null;
 }
 
+function toFirestoreValue(val) {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === 'boolean') return { booleanValue: val };
+  if (typeof val === 'number') {
+    if (Number.isInteger(val)) return { integerValue: String(val) };
+    return { doubleValue: val };
+  }
+  if (typeof val === 'string') return { stringValue: val };
+  if (Array.isArray(val)) {
+    return { arrayValue: { values: val.map(toFirestoreValue) } };
+  }
+  if (typeof val === 'object') {
+    const fields = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) fields[k] = toFirestoreValue(v);
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+
+function getShareDocId(parsed) {
+  return `${parsed.kind}_${parsed.uid}_${parsed.id}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+}
+
+function hashSharePasscode(sa, shareDocId, rawCode) {
+  const clean = String(rawCode || '').trim();
+  if (!clean) return null;
+  return crypto
+    .createHmac('sha256', getSigningSecret(sa))
+    .update(`passcode|${shareDocId}|${clean}`)
+    .digest('hex');
+}
+
+function verifySharePasscode(sa, shareDocId, expectedHash, providedCode) {
+  if (!expectedHash) return true;
+  const candidate = hashSharePasscode(sa, shareDocId, providedCode);
+  if (!candidate) return false;
+  const a = Buffer.from(candidate, 'utf8');
+  const b = Buffer.from(String(expectedHash), 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+async function loadShareMeta(sa, shareDocId) {
+  try {
+    const token = await getServiceAccountToken(sa, 'https://www.googleapis.com/auth/datastore');
+    const docUrl = `https://firestore.googleapis.com/v1/projects/${sa.project_id}/databases/(default)/documents/public_shares/${encodeURIComponent(
+      shareDocId
+    )}`;
+    const res = await fetch(docUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 404) {
+      return { passcodeHash: null, allowComments: true, comments: [] };
+    }
+    if (!res.ok) return { passcodeHash: null, allowComments: true, comments: [] };
+    const rawDoc = await res.json();
+    const parsed = fromFirestoreValue({ mapValue: { fields: rawDoc.fields || {} } }) || {};
+    return {
+      passcodeHash: typeof parsed.passcodeHash === 'string' && parsed.passcodeHash ? parsed.passcodeHash : null,
+      allowComments: parsed.allowComments !== false,
+      comments: Array.isArray(parsed.comments) ? parsed.comments : [],
+    };
+  } catch {
+    return { passcodeHash: null, allowComments: true, comments: [] };
+  }
+}
+
+async function saveShareMeta(sa, shareDocId, meta) {
+  const token = await getServiceAccountToken(sa, 'https://www.googleapis.com/auth/datastore');
+  const docUrl = `https://firestore.googleapis.com/v1/projects/${sa.project_id}/databases/(default)/documents/public_shares/${encodeURIComponent(
+    shareDocId
+  )}`;
+  const body = {
+    fields: {
+      passcodeHash: toFirestoreValue(meta.passcodeHash || null),
+      allowComments: toFirestoreValue(meta.allowComments !== false),
+      comments: toFirestoreValue(Array.isArray(meta.comments) ? meta.comments.slice(-100) : []),
+      updatedAt: toFirestoreValue(Date.now()),
+    },
+  };
+  const res = await fetch(docUrl, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`Impossible de sauvegarder les métadonnées de partage (${res.status})`);
+  }
+}
+
 async function fetchOwnerAppState(sa, targetUid) {
   const token = await getServiceAccountToken(sa, 'https://www.googleapis.com/auth/datastore');
   const docUrl = `https://firestore.googleapis.com/v1/projects/${sa.project_id}/databases/(default)/documents/users/${encodeURIComponent(
@@ -348,7 +440,7 @@ async function streamDriveAudio(req, res, sa, fileId) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Range, X-Share-Passcode');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -364,8 +456,55 @@ export default async function handler(req, res) {
   try {
     const sa = parseServiceAccount(saRaw);
 
-    // ===== POST /api/share — Authenticated user creates a signed permanent share link =====
+    // ===== POST /api/share =====
     if (req.method === 'POST') {
+      const body = req.body || {};
+
+      // Public listener action: add a timestamped feedback comment
+      if (body.action === 'add_comment') {
+        const token = String(body.token || '');
+        const parsed = verifyShareToken(sa, token, legacyDefaultUid);
+        if (!parsed || !parsed.uid) {
+          return res.status(403).json({ ok: false, error: 'Lien de partage invalide.' });
+        }
+        const shareDocId = getShareDocId(parsed);
+        const meta = await loadShareMeta(sa, shareDocId);
+        const providedPasscode = String(
+          req.headers['x-share-passcode'] || body.passcode || ''
+        ).trim();
+        if (!verifySharePasscode(sa, shareDocId, meta.passcodeHash, providedPasscode)) {
+          return res.status(401).json({ ok: false, requiresPasscode: true, error: 'Code d’accès requis.' });
+        }
+        if (meta.allowComments === false) {
+          return res.status(403).json({ ok: false, error: 'Les commentaires sont désactivés sur ce lien.' });
+        }
+
+        const text = String(body.text || '').trim().slice(0, 500);
+        if (!text) {
+          return res.status(400).json({ ok: false, error: 'Commentaire vide.' });
+        }
+        const authorName = String(body.authorName || 'Auditeur').trim().slice(0, 40) || 'Auditeur';
+        const trackId = String(body.trackId || parsed.id).trim().slice(0, 120);
+        const rawSec = Number(body.timeSec);
+        const timeSec = Number.isFinite(rawSec) ? Math.max(0, Math.min(7200, Math.round(rawSec))) : 0;
+
+        const comment = {
+          id: `cmt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+          trackId,
+          timeSec,
+          authorName,
+          text,
+          createdAt: new Date().toISOString(),
+        };
+        const nextComments = [...(meta.comments || []), comment].slice(-100);
+        await saveShareMeta(sa, shareDocId, {
+          ...meta,
+          comments: nextComments,
+        });
+        return res.status(200).json({ ok: true, comment, comments: nextComments });
+      }
+
+      // Authenticated owner actions (create/update share link, read feedback comments)
       const authHeader = String(req.headers.authorization || '');
       const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
       if (!idToken) {
@@ -373,13 +512,56 @@ export default async function handler(req, res) {
       }
       const verified = await verifyFirebaseIdToken(idToken, sa.project_id);
 
-      const { kind, id } = req.body || {};
+      const { kind, id } = body;
       if ((kind !== 'track' && kind !== 'project') || typeof id !== 'string' || !id.trim()) {
         return res.status(400).json({ ok: false, error: 'Paramètres kind/id invalides.' });
       }
 
-      const token = signShareToken(sa, verified.sub, kind, id.trim());
-      return res.status(200).json({ ok: true, token });
+      const cleanId = id.trim();
+      const token = signShareToken(sa, verified.sub, kind, cleanId);
+      const shareDocId = getShareDocId({ kind, uid: verified.sub, id: cleanId });
+      const existingMeta = await loadShareMeta(sa, shareDocId);
+
+      if (body.action === 'get_owner_meta') {
+        return res.status(200).json({
+          ok: true,
+          token,
+          hasPasscode: Boolean(existingMeta.passcodeHash),
+          allowComments: existingMeta.allowComments !== false,
+          comments: existingMeta.comments || [],
+        });
+      }
+
+      let nextPasscodeHash = existingMeta.passcodeHash;
+      let shouldSave = false;
+      if (body.clearPasscode === true) {
+        nextPasscodeHash = null;
+        shouldSave = true;
+      } else if (typeof body.passcode === 'string' && body.passcode.trim()) {
+        nextPasscodeHash = hashSharePasscode(sa, shareDocId, body.passcode.trim());
+        shouldSave = true;
+      }
+      let nextAllowComments = existingMeta.allowComments !== false;
+      if (typeof body.allowComments === 'boolean') {
+        nextAllowComments = body.allowComments;
+        shouldSave = true;
+      }
+
+      if (shouldSave) {
+        await saveShareMeta(sa, shareDocId, {
+          passcodeHash: nextPasscodeHash,
+          allowComments: nextAllowComments,
+          comments: existingMeta.comments || [],
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        token,
+        hasPasscode: Boolean(nextPasscodeHash),
+        allowComments: nextAllowComments,
+        comments: existingMeta.comments || [],
+      });
     }
 
     // ===== GET /api/share?token=... (&stream=trackId) — Public Listener =====
@@ -390,10 +572,33 @@ export default async function handler(req, res) {
         return res.status(403).json({ ok: false, error: 'Lien de partage invalide ou expiré.' });
       }
 
-      const state = await fetchOwnerAppState(sa, parsed.uid);
+      const shareDocId = getShareDocId(parsed);
+      const [state, shareMeta] = await Promise.all([
+        fetchOwnerAppState(sa, parsed.uid),
+        loadShareMeta(sa, shareDocId),
+      ]);
       const resolved = resolveSharedTracks(state, parsed);
       if (!resolved) {
         return res.status(404).json({ ok: false, error: 'Ce son ou projet n’existe plus.' });
+      }
+
+      const ownerName = (state.preferences?.name || '').trim() || 'Artiste';
+      const providedPasscode = String(
+        req.headers['x-share-passcode'] || req.query?.passcode || ''
+      ).trim();
+
+      if (!verifySharePasscode(sa, shareDocId, shareMeta.passcodeHash, providedPasscode)) {
+        return res.status(401).json({
+          ok: false,
+          requiresPasscode: true,
+          kind: resolved.kind,
+          artist: ownerName,
+          title:
+            resolved.kind === 'project'
+              ? resolved.project?.title || 'Projet protégé'
+              : resolved.tracks[0]?.manualGroupTitle || resolved.tracks[0]?.title || 'Son protégé',
+          error: providedPasscode ? 'Code d’accès incorrect.' : 'Ce lien est protégé par un code d’accès.',
+        });
       }
 
       const streamTrackId = req.query?.stream ? String(req.query.stream) : null;
@@ -414,8 +619,11 @@ export default async function handler(req, res) {
         });
       }
 
-      const ownerName = (state.preferences?.name || '').trim() || 'Artiste';
       const projectCover = resolved.project?.coverDataUrl || null;
+      const passcodeQuery =
+        shareMeta.passcodeHash && providedPasscode
+          ? `&passcode=${encodeURIComponent(providedPasscode)}`
+          : '';
       const publicTracks = resolved.tracks.map((t) => ({
         id: t.id,
         title: t.manualGroupTitle || t.title,
@@ -428,17 +636,20 @@ export default async function handler(req, res) {
         streamable: Boolean(t.googleDriveFileId || t.cloudAudioUrl),
         audioUrl:
           t.googleDriveFileId || t.cloudAudioUrl
-            ? `/api/share?token=${encodeURIComponent(token)}&stream=${encodeURIComponent(t.id)}`
+            ? `/api/share?token=${encodeURIComponent(token)}&stream=${encodeURIComponent(t.id)}${passcodeQuery}`
             : null,
       }));
 
-      res.setHeader('Cache-Control', 'public, max-age=60');
+      res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json({
         ok: true,
         kind: resolved.kind,
         artist: ownerName,
         project: resolved.project,
         tracks: publicTracks,
+        hasPasscode: Boolean(shareMeta.passcodeHash),
+        allowComments: shareMeta.allowComments !== false,
+        comments: shareMeta.comments || [],
       });
     }
 

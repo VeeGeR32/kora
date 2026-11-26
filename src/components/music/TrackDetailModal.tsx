@@ -1,10 +1,13 @@
 ﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
+  ArrowLeftRight,
   Camera,
   Check,
+  ChevronDown,
   ChevronLeft,
   Disc3,
+  Download,
   ExternalLink,
   FileText,
   FolderKanban,
@@ -12,11 +15,13 @@ import {
   Link2,
   ListChecks,
   ListPlus,
+  Loader2,
   Music2,
   Pause,
   Pencil,
   Play,
   Plus,
+  Repeat,
   Search,
   Share2,
   Star,
@@ -29,10 +34,10 @@ import {
 import type { MusicTrack, TrackStatus } from '../../types';
 import { useApp } from '../../context/AppContext';
 import { useAudioPlayer } from '../../context/AudioPlayerContext';
-import { getMediaObjectUrl } from '../../lib/mediaDb';
+import { formatBytes, getMediaObjectUrl } from '../../lib/mediaDb';
 import { isTrackAnalyzed } from '../../lib/audioAnalyzer';
 import { triggerHapticTick } from '../../lib/haptics';
-import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { ShareOptionsModal } from './ShareOptionsModal';
 import {
   countLyricsFixTags,
   findLinkedLyricsForTrack,
@@ -86,8 +91,6 @@ function fmtDate(iso?: string): string {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-const BAR_COUNT = 96;
-
 export function TrackDetailModal({
   group,
   selectedTrackId,
@@ -132,6 +135,9 @@ export function TrackDetailModal({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [editingProdId, setEditingProdId] = useState<string | null>(null);
   const [editingProdDraft, setEditingProdDraft] = useState('');
+  const [showRatings, setShowRatings] = useState(false);
+  const [abSyncTimecode, setAbSyncTimecode] = useState(true);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   useEffect(() => {
     setSongTitleDraft(group?.baseTitle || '');
@@ -177,30 +183,15 @@ export function TrackDetailModal({
   const coverUrl =
     effectiveCover?.coverDataUrl || blobCoverUrl || effectiveCover?.cloudCoverUrl || null;
 
-  const waveformBars = useMemo(() => {
-    const id = track?.id || 'kora';
-    let seed = id.split('').reduce((a, c) => a + c.charCodeAt(0), 31);
-    return Array.from({ length: BAR_COUNT }, (_, idx) => {
-      seed = (seed * 9301 + 49297) % 233280;
-      const base = 18 + Math.round((seed / 233280) * 82);
-      const edge = Math.min(1, Math.min(idx + 3, BAR_COUNT - idx + 2) / 7);
-      return Math.max(14, Math.round(base * (0.5 + 0.5 * edge)));
-    });
-  }, [track?.id]);
-
-  // 60fps Left-to-Right SoundCloud Waveform refs & state (0:00 glued left -> 100% right)
-  const tapePlayedRef = useRef<HTMLDivElement | null>(null);
-  const playheadRef = useRef<HTMLDivElement | null>(null);
+  // 60fps Spotify-style linear progress bar refs & state
+  const progressFillRef = useRef<HTMLDivElement | null>(null);
+  const progressThumbRef = useRef<HTMLDivElement | null>(null);
   const timeCurrentRef = useRef<HTMLSpanElement | null>(null);
   const timeTotalRef = useRef<HTMLSpanElement | null>(null);
-  const scrubPillTextRef = useRef<HTMLSpanElement | null>(null);
   const scrubbingRef = useRef(false);
   const scrubTimeRef = useRef(0);
   const [scrubbing, setScrubbing] = useState(false);
-  const dragRef = useRef<{
-    pointerId: number;
-    lastTickBar: number;
-  } | null>(null);
+  const dragRef = useRef<{ pointerId: number } | null>(null);
 
   const isCurrentTrack = Boolean(track && player.currentTrack?.id === track.id);
   const isPlayingTrack = isCurrentTrack && player.isPlaying;
@@ -217,9 +208,12 @@ export function TrackDetailModal({
   const applyVisualFrame = (t: number, dur: number) => {
     const r = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
     const pct = r * 100;
-    const clip = `inset(0 ${(100 - pct).toFixed(3)}% 0 0)`;
-    if (tapePlayedRef.current) tapePlayedRef.current.style.clipPath = clip;
-    if (playheadRef.current) playheadRef.current.style.left = `${pct.toFixed(3)}%`;
+    if (progressFillRef.current) {
+      progressFillRef.current.style.transform = `scaleX(${r.toFixed(5)})`;
+    }
+    if (progressThumbRef.current) {
+      progressThumbRef.current.style.left = `${pct.toFixed(3)}%`;
+    }
 
     const curLabel = fmt(t);
     const totalLabel = dur > 0 ? fmt(dur) : '—';
@@ -228,10 +222,6 @@ export function TrackDetailModal({
     }
     if (timeTotalRef.current && timeTotalRef.current.textContent !== totalLabel) {
       timeTotalRef.current.textContent = totalLabel;
-    }
-    const pillLabel = `${curLabel} / ${totalLabel}`;
-    if (scrubPillTextRef.current && scrubPillTextRef.current.textContent !== pillLabel) {
-      scrubPillTextRef.current.textContent = pillLabel;
     }
   };
 
@@ -253,30 +243,6 @@ export function TrackDetailModal({
     rafId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(rafId);
   }, [track?.id, isCurrentTrack, isPlayingTrack, effectiveDurationVal, player]);
-
-  const playedBarsEl = useMemo(
-    () =>
-      waveformBars.map((h, i) => (
-        <div
-          key={i}
-          style={{ height: `${h}%` }}
-          className="flex-1 min-w-[1.5px] max-w-[4px] rounded-full bg-[#8C271E] dark:bg-[#E04F42]"
-        />
-      )),
-    [waveformBars]
-  );
-
-  const unplayedBarsEl = useMemo(
-    () =>
-      waveformBars.map((h, i) => (
-        <div
-          key={i}
-          style={{ height: `${h}%` }}
-          className="flex-1 min-w-[1.5px] max-w-[4px] rounded-full bg-[#8C271E]/22 dark:bg-[#E04F42]/25"
-        />
-      )),
-    [waveformBars]
-  );
 
   const isDetailOpen = Boolean(group && activeEntry && track);
   useEffect(() => {
@@ -348,6 +314,49 @@ export function TrackDetailModal({
   );
   const isPlayingProd = isCurrentProd && player.isPlaying;
   const prodPlaybackQueue = activeProdTrack ? [track, activeProdTrack] : [track];
+  const isGroupLoadedInPlayer = Boolean(
+    player.currentTrack && allGroupTrackIds.includes(player.currentTrack.id)
+  );
+  const getCompareStartSec = () => {
+    if (!abSyncTimecode || !isGroupLoadedInPlayer) return 0;
+    const live = player.getLiveTime();
+    return Number.isFinite(live) && live > 0.3 ? live : 0;
+  };
+  const offlineBytes = player.offlineTrackSizes[track.id];
+  const isTrackOffline = offlineBytes !== undefined;
+  const isDownloadingOffline = player.downloadingOfflineIds.has(track.id);
+  const canDownloadOffline = Boolean(track.mediaId || track.googleDriveFileId || track.cloudAudioUrl);
+
+  const handleCycleAbLoop = () => {
+    if (!isCurrent) {
+      void player.playTrack(track, 0, group.versions.map((v) => v.track));
+      player.setAbLoop({ start: 0, end: null });
+      notify('Point A fixé à 0:00 — clique à nouveau pour poser B');
+      return;
+    }
+    const liveT = player.getLiveTime();
+    const { start, end } = player.abLoop;
+    if (start === null) {
+      player.setAbLoop({ start: liveT, end: null });
+      notify(`Point A fixé à ${fmt(liveT)} — clique à nouveau pour poser B`);
+    } else if (end === null) {
+      let a = start;
+      let b = liveT;
+      if (Math.abs(b - a) < 0.6) {
+        b = Math.min(effectiveDuration || a + 8, a + 8);
+      } else if (b < a) {
+        [a, b] = [b, a];
+      }
+      player.setAbLoop({ start: a, end: b });
+      player.seek(a);
+      applyVisualFrame(a, effectiveDuration);
+      notify(`Boucle A–B active (${fmt(a)} → ${fmt(b)})`);
+    } else {
+      player.setAbLoop({ start: null, end: null });
+      notify('Boucle A–B désactivée');
+    }
+    triggerHapticTick(8);
+  };
 
   const handleUploadCover = async (file: File | undefined) => {
     if (!file) return;
@@ -631,7 +640,11 @@ export function TrackDetailModal({
                       onClick={() =>
                         isCurrentProd
                           ? player.togglePlay()
-                          : void player.playTrack(activeProdTrack, 0, prodPlaybackQueue)
+                          : void player.playTrack(
+                              activeProdTrack,
+                              getCompareStartSec(),
+                              prodPlaybackQueue
+                            )
                       }
                       className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer ${
                         isPlayingProd
@@ -654,6 +667,45 @@ export function TrackDetailModal({
                           </span>
                         </>
                       )}
+                    </button>
+                  )}
+
+                  {canDownloadOffline && (
+                    <button
+                      type="button"
+                      disabled={isDownloadingOffline}
+                      onClick={() => {
+                        if (isTrackOffline) {
+                          void player.removeTrackOffline(track.id);
+                        } else {
+                          void player.downloadTrackOffline(track);
+                        }
+                      }}
+                      title={
+                        isTrackOffline
+                          ? 'Stocké hors-ligne — cliquer pour libérer le cache'
+                          : 'Télécharger ce son pour l’écouter sans connexion'
+                      }
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium transition cursor-pointer disabled:opacity-60 ${
+                        isTrackOffline
+                          ? 'bg-emerald-500/14 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/22'
+                          : 'border border-slate-200 dark:border-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900'
+                      }`}
+                    >
+                      {isDownloadingOffline ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : isTrackOffline ? (
+                        <Check size={13} />
+                      ) : (
+                        <Download size={13} className="text-slate-500 dark:text-zinc-400" />
+                      )}
+                      <span>
+                        {isDownloadingOffline
+                          ? 'Téléch…'
+                          : isTrackOffline
+                          ? `Hors-ligne${offlineBytes > 0 ? ` · ${formatBytes(offlineBytes)}` : ''}`
+                          : 'Hors-ligne'}
+                      </span>
                     </button>
                   )}
 
@@ -720,26 +772,12 @@ export function TrackDetailModal({
 
                   <button
                     type="button"
-                    onClick={async () => {
+                    onClick={() => {
                       if (!track.googleDriveFileId && !track.cloudAudioUrl) {
                         notify('Ce son est local uniquement — importe-le depuis Drive pour le partager.');
                         return;
                       }
-                      try {
-                        const res = await shareOrCopyPublicLink({
-                          kind: 'track',
-                          id: track.id,
-                          title: group.baseTitle,
-                          firebaseConfig: state.preferences.firebaseConfig,
-                        });
-                        notify(
-                          res.method === 'native'
-                            ? 'Lien public partagé ✓'
-                            : 'Lien public copié ✓ (écoute sans compte)'
-                        );
-                      } catch (err) {
-                        notify(`Partage : ${(err as Error).message}`);
-                      }
+                      setShareModalOpen(true);
                     }}
                     className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-zinc-800 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-900 transition cursor-pointer"
                   >
@@ -750,17 +788,8 @@ export function TrackDetailModal({
               </div>
             </div>
 
-            {/* 60fps Scrolling Tape Waveform (Exact same precision player bar as MiniAudioPlayer!) */}
+            {/* Sleek Spotify-Style Linear Progress Bar + Fast A–B Loop */}
             <section className="w-full py-1 space-y-2">
-              <div className="h-4 flex items-center justify-center">
-                <span
-                  ref={scrubPillTextRef}
-                  className={`rounded-full bg-[#8C271E] text-white px-3 py-0.5 font-mono text-[11px] font-bold tabular-nums transition-opacity duration-100 ${
-                    scrubbing ? 'opacity-100' : 'opacity-0 pointer-events-none'
-                  }`}
-                />
-              </div>
-
               <div
                 onPointerDown={(e) => {
                   const dur = effectiveDuration || 180;
@@ -768,16 +797,12 @@ export function TrackDetailModal({
                   const rect = e.currentTarget.getBoundingClientRect();
                   const ratio = rect.width ? Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) : 0;
                   const nextSec = ratio * dur;
-                  const startBar = Math.floor(ratio * BAR_COUNT);
-                  dragRef.current = {
-                    pointerId: e.pointerId,
-                    lastTickBar: startBar,
-                  };
+                  dragRef.current = { pointerId: e.pointerId };
                   scrubTimeRef.current = nextSec;
                   scrubbingRef.current = true;
                   setScrubbing(true);
                   applyVisualFrame(nextSec, dur);
-                  triggerHapticTick(10);
+                  triggerHapticTick(8);
                 }}
                 onPointerMove={(e) => {
                   const drag = dragRef.current;
@@ -788,12 +813,6 @@ export function TrackDetailModal({
                   const nextSec = ratio * dur;
                   scrubTimeRef.current = nextSec;
                   applyVisualFrame(nextSec, dur);
-
-                  const barIndex = Math.floor(ratio * BAR_COUNT);
-                  if (barIndex !== drag.lastTickBar) {
-                    drag.lastTickBar = barIndex;
-                    triggerHapticTick(24);
-                  }
                 }}
                 onPointerUp={(e) => {
                   const drag = dragRef.current;
@@ -815,7 +834,7 @@ export function TrackDetailModal({
                       group.versions.map((v) => v.track)
                     );
                   }
-                  triggerHapticTick(10);
+                  triggerHapticTick(8);
                 }}
                 onPointerCancel={(e) => {
                   const drag = dragRef.current;
@@ -828,30 +847,102 @@ export function TrackDetailModal({
                   setScrubbing(false);
                 }}
                 style={{ touchAction: 'none' }}
-                className="relative w-full h-12 cursor-pointer select-none"
+                className="group/bar relative w-full h-8 flex items-center cursor-pointer select-none"
                 title="Cliquer ou glisser pour naviguer dans le son"
               >
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px]">
-                  {unplayedBarsEl}
-                </div>
-
                 <div
-                  ref={tapePlayedRef}
-                  style={{ clipPath: 'inset(0 100% 0 0)' }}
-                  className="pointer-events-none absolute inset-0 flex items-center justify-between gap-[2px] will-change-[clip-path]"
+                  className={`relative w-full rounded-full bg-slate-200/90 dark:bg-zinc-800 transition-[height] duration-100 overflow-hidden ${
+                    scrubbing ? 'h-2' : 'h-1.5 group-hover/bar:h-2'
+                  }`}
                 >
-                  {playedBarsEl}
+                  {isCurrent &&
+                    effectiveDuration > 0 &&
+                    player.abLoop.start !== null &&
+                    player.abLoop.end !== null && (
+                      <div
+                        style={{
+                          left: `${Math.min(100, (player.abLoop.start / effectiveDuration) * 100)}%`,
+                          width: `${Math.max(
+                            0.5,
+                            ((player.abLoop.end - player.abLoop.start) / effectiveDuration) * 100
+                          )}%`,
+                        }}
+                        className="absolute inset-y-0 bg-amber-500/45 dark:bg-amber-400/45 pointer-events-none z-10"
+                      />
+                    )}
+                  <div
+                    ref={progressFillRef}
+                    style={{ transform: 'scaleX(0)' }}
+                    className="h-full w-full origin-left bg-[#8C271E] dark:bg-[#E04F42] will-change-transform"
+                  />
                 </div>
 
+                {isCurrent && effectiveDuration > 0 && player.abLoop.start !== null && (
+                  <div
+                    style={{
+                      left: `${Math.min(100, (player.abLoop.start / effectiveDuration) * 100)}%`,
+                    }}
+                    className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3.5 w-0.5 rounded-full bg-amber-500 z-10"
+                  />
+                )}
+                {isCurrent && effectiveDuration > 0 && player.abLoop.end !== null && (
+                  <div
+                    style={{
+                      left: `${Math.min(100, (player.abLoop.end / effectiveDuration) * 100)}%`,
+                    }}
+                    className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3.5 w-0.5 rounded-full bg-amber-500 z-10"
+                  />
+                )}
+
                 <div
-                  ref={playheadRef}
+                  ref={progressThumbRef}
                   style={{ left: '0%' }}
-                  className="pointer-events-none absolute top-0.5 bottom-0.5 w-[2.5px] -translate-x-1/2 rounded-full bg-[#8C271E] dark:bg-[#E04F42] shadow-xs z-20"
+                  className={`pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#8C271E] dark:bg-white shadow-sm transition-transform duration-100 will-change-[left] z-20 ${
+                    scrubbing
+                      ? 'h-4 w-4 scale-100'
+                      : 'h-3 w-3 scale-90 group-hover/bar:scale-110'
+                  }`}
                 />
               </div>
 
-              <div className="flex items-center justify-between font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1rem]">
+              <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums min-h-[1.25rem]">
                 <span ref={timeCurrentRef}>{isCurrent ? fmt(player.currentTime) : '0:00'}</span>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleCycleAbLoop}
+                    title="Boucle A–B rapide : 1er clic = point A · 2e clic = point B · 3e clic = annuler"
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-sans text-[10.5px] font-semibold transition cursor-pointer ${
+                      isCurrent && player.abLoop.start !== null
+                        ? 'bg-amber-500/16 text-amber-700 dark:text-amber-300 border border-amber-500/35'
+                        : 'bg-slate-100 dark:bg-zinc-900 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                    }`}
+                  >
+                    <Repeat size={10} />
+                    {isCurrent && player.abLoop.start !== null && player.abLoop.end !== null ? (
+                      <span className="font-mono">
+                        A {fmt(player.abLoop.start)} – B {fmt(player.abLoop.end)}
+                      </span>
+                    ) : isCurrent && player.abLoop.start !== null ? (
+                      <span className="font-mono">A {fmt(player.abLoop.start)} → B ?</span>
+                    ) : (
+                      <span>Boucle A–B</span>
+                    )}
+                  </button>
+                  {isCurrent && player.abLoop.start !== null && (
+                    <button
+                      type="button"
+                      onClick={() => player.setAbLoop({ start: null, end: null })}
+                      title="Effacer la boucle A–B"
+                      aria-label="Effacer la boucle A–B"
+                      className="h-5 w-5 rounded-full bg-slate-100 dark:bg-zinc-900 text-slate-400 hover:text-rose-500 inline-flex items-center justify-center cursor-pointer"
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
+
                 <span ref={timeTotalRef}>{effectiveDuration > 0 ? fmt(effectiveDuration) : '—'}</span>
               </div>
 
@@ -872,7 +963,7 @@ export function TrackDetailModal({
                             group.versions.map((v) => v.track)
                           );
                         }
-                        triggerHapticTick(10);
+                        triggerHapticTick(8);
                       }}
                       className="rounded-full bg-slate-900/8 dark:bg-white/10 hover:bg-slate-900/14 dark:hover:bg-white/20 px-2.5 py-0.5 font-mono text-[10px] text-slate-700 dark:text-zinc-200 transition cursor-pointer"
                     >
@@ -883,185 +974,186 @@ export function TrackDetailModal({
               )}
             </section>
 
-            {/* 5-Stage Strict Sequential Production Pipeline + Mood Tag */}
-            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/60 dark:bg-zinc-900/40 px-4 py-3.5 space-y-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    Pipeline · Étape {TRACK_STATUS_META[workflow.status].step}/5
-                  </span>
-                  <p className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
-                    {TRACK_STATUS_META[workflow.status].label}{' '}
-                    <span className="font-normal text-slate-400">
-                      — {TRACK_STATUS_META[workflow.status].hint}
-                    </span>
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    disabled={currentStepIdx <= 0}
-                    onClick={() => {
-                      const prevSt = TRACK_PIPELINE_ORDER[currentStepIdx - 1];
-                      if (!prevSt) return;
-                      setTrackGroupWorkflow(allGroupTrackIds, { status: prevSt });
-                      notify(`Étape : ${TRACK_STATUS_META[prevSt].label}`);
-                    }}
-                    className="rounded-lg border border-slate-200 dark:border-zinc-800 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-30 transition cursor-pointer"
-                  >
-                    ← Préc.
-                  </button>
-                  <button
-                    type="button"
-                    disabled={currentStepIdx >= TRACK_PIPELINE_ORDER.length - 1}
-                    onClick={() => {
-                      const nextSt = TRACK_PIPELINE_ORDER[currentStepIdx + 1];
-                      if (!nextSt) return;
-                      if (nextSt === 'rec-final' && fixTagCount > 0) {
-                        notify(
-                          `Attention : encore ${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] dans les paroles`
-                        );
-                      }
-                      setTrackGroupWorkflow(allGroupTrackIds, { status: nextSt });
-                      if (!(nextSt === 'rec-final' && fixTagCount > 0)) {
-                        notify(`Étape : ${TRACK_STATUS_META[nextSt].label} ✓`);
-                      }
-                    }}
-                    className="rounded-lg bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 px-2.5 py-1 text-[11px] font-semibold hover:opacity-90 disabled:opacity-30 transition cursor-pointer"
-                  >
-                    Suiv. →
-                  </button>
-                </div>
+            {/* Free 1-Click Status Picker (no rigid sequential lock) */}
+            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/60 dark:bg-zinc-900/40 px-4 py-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  Statut
+                </span>
+                <span className="text-[11px] font-medium text-slate-500 dark:text-zinc-400 truncate">
+                  {TRACK_STATUS_META[workflow.status].label} · {TRACK_STATUS_META[workflow.status].hint}
+                </span>
               </div>
 
-              {/* Strict 6-Stage Progress Track (v0 Brouillon -> v4 Masterisé, adjacent steps clickable) */}
-              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1">
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                 {TRACK_PIPELINE_ORDER.map((st, idx) => {
                   const meta = TRACK_STATUS_META[st];
                   const active = idx === currentStepIdx;
-                  const done = idx < currentStepIdx;
-                  const canJump = Math.abs(idx - currentStepIdx) <= 1;
                   return (
                     <button
                       key={st}
                       type="button"
-                      disabled={!canJump}
                       onClick={() => {
-                        if (!canJump || active) return;
+                        if (active) return;
                         if (st === 'rec-final' && fixTagCount > 0) {
                           notify(
                             `Attention : encore ${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] dans les paroles`
                           );
                         }
                         setTrackGroupWorkflow(allGroupTrackIds, { status: st });
+                        notify(`Statut : ${meta.label} ✓`);
                       }}
-                      title={
-                        canJump
-                          ? `${meta.step}. ${meta.label} — ${meta.hint}`
-                          : `Avance étape par étape vers ${meta.label}`
-                      }
-                      className={`rounded-xl px-1.5 py-1.5 text-center transition ${
+                      title={`${meta.label} — ${meta.hint}`}
+                      className={`rounded-xl px-2 py-1.5 text-center transition cursor-pointer ${
                         active
                           ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20 font-semibold'
-                          : done
-                          ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-medium'
-                          : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400'
-                      } ${canJump && !active ? 'cursor-pointer hover:border-slate-400' : 'cursor-default opacity-75'}`}
+                          : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-600 dark:text-zinc-300 hover:border-[#8C271E]/45 hover:text-slate-900 dark:hover:text-white'
+                      }`}
                     >
-                      <span className="block font-mono text-[9px] opacity-65">{meta.step}</span>
-                      <span className="block text-[10px] truncate">{meta.shortLabel}</span>
+                      <span className="block text-[11px] truncate">{meta.shortLabel}</span>
                     </button>
                   );
                 })}
               </div>
             </section>
 
-            {/* Minimalist Dual Ratings (Note actuelle + Potentiel /10) */}
-            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/60 dark:bg-zinc-900/40 px-4 py-3.5 space-y-3">
-              {/* Row 1: Note actuelle */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
-                    Note actuelle
+            {/* Collapsible Optional Ratings (Note actuelle + Potentiel /10) */}
+            <section className="rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/60 dark:bg-zinc-900/40 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowRatings((v) => !v)}
+                className="w-full px-4 py-2.5 flex items-center justify-between gap-2 text-left hover:bg-slate-100/60 dark:hover:bg-zinc-800/40 transition cursor-pointer"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <TrendingUp size={13} className="text-[#8C271E] shrink-0" />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-zinc-200">
+                    Notes & Potentiel
                   </span>
-                  <span className="font-mono text-xs font-semibold tabular-nums text-slate-900 dark:text-zinc-100">
-                    {ratings.current !== null ? `${ratings.current}/10` : '—'}
-                  </span>
+                  {ratings.current !== null || ratings.potential !== null ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 px-2 py-0.5 font-mono text-[10.5px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200">
+                      {ratings.current !== null && <span>{ratings.current}/10</span>}
+                      {ratings.current !== null && ratings.potential !== null && (
+                        <span className="opacity-35">·</span>
+                      )}
+                      {ratings.potential !== null && (
+                        <span className="text-[#8C271E] dark:text-[#E56B5F]">
+                          ↗ {ratings.potential}/10
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-slate-400">Optionnel</span>
+                  )}
                 </div>
-                <div className="grid grid-cols-10 gap-1">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => {
-                    const active = ratings.current === val;
-                    const filled = ratings.current !== null && val <= ratings.current;
-                    return (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() =>
-                          setTrackGroupRatings(allGroupTrackIds, {
-                            ratingCurrent: active ? null : val,
-                          })
-                        }
-                        className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
-                          active
-                            ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20'
-                            : filled
-                            ? 'bg-[#8C271E]/14 text-[#8C271E] dark:text-[#E56B5F]'
-                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                <ChevronDown
+                  size={14}
+                  className={`text-slate-400 transition-transform ${showRatings ? 'rotate-180' : ''}`}
+                />
+              </button>
 
-              {/* Row 2: Potentiel */}
-              <div className="space-y-1.5 pt-2 border-t border-slate-200/60 dark:border-zinc-800/70">
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
-                    <TrendingUp size={12} className="text-[#8C271E]" />
-                    Potentiel
-                  </span>
-                  <span className="font-mono text-xs font-semibold tabular-nums text-[#8C271E]">
-                    {ratings.potential !== null ? `${ratings.potential}/10` : '—'}
-                  </span>
+              {showRatings && (
+                <div className="px-4 pb-3.5 pt-1 border-t border-slate-200/60 dark:border-zinc-800/70 space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
+                        Note actuelle
+                      </span>
+                      <span className="font-mono text-xs font-semibold tabular-nums text-slate-900 dark:text-zinc-100">
+                        {ratings.current !== null ? `${ratings.current}/10` : '—'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-10 gap-1">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => {
+                        const active = ratings.current === val;
+                        const filled = ratings.current !== null && val <= ratings.current;
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() =>
+                              setTrackGroupRatings(allGroupTrackIds, {
+                                ratingCurrent: active ? null : val,
+                              })
+                            }
+                            className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
+                              active
+                                ? 'bg-[#8C271E] text-white shadow-xs shadow-[#8C271E]/20'
+                                : filled
+                                ? 'bg-[#8C271E]/14 text-[#8C271E] dark:text-[#E56B5F]'
+                                : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-slate-900 dark:hover:text-zinc-100'
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200/60 dark:border-zinc-800/70">
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
+                        <TrendingUp size={12} className="text-[#8C271E]" />
+                        Potentiel
+                      </span>
+                      <span className="font-mono text-xs font-semibold tabular-nums text-[#8C271E]">
+                        {ratings.potential !== null ? `${ratings.potential}/10` : '—'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-10 gap-1">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => {
+                        const active = ratings.potential === val;
+                        const filled = ratings.potential !== null && val <= ratings.potential;
+                        return (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() =>
+                              setTrackGroupRatings(allGroupTrackIds, {
+                                ratingPotential: active ? null : val,
+                              })
+                            }
+                            className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
+                              active
+                                ? 'bg-[#8C271E] text-white'
+                                : filled
+                                ? 'bg-[#8C271E]/18 text-[#8C271E] dark:text-[#E56B5F]'
+                                : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-[#8C271E]'
+                            }`}
+                          >
+                            {val}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-10 gap-1">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((val) => {
-                    const active = ratings.potential === val;
-                    const filled = ratings.potential !== null && val <= ratings.potential;
-                    return (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() =>
-                          setTrackGroupRatings(allGroupTrackIds, {
-                            ratingPotential: active ? null : val,
-                          })
-                        }
-                        className={`h-7 rounded-lg font-mono text-[11px] font-semibold transition cursor-pointer ${
-                          active
-                            ? 'bg-[#8C271E] text-white'
-                            : filled
-                            ? 'bg-[#8C271E]/18 text-[#8C271E] dark:text-[#E56B5F]'
-                            : 'bg-white dark:bg-zinc-900/90 border border-slate-200/70 dark:border-zinc-800 text-slate-400 hover:text-[#8C271E]'
-                        }`}
-                      >
-                        {val}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              )}
             </section>
 
-            {/* Versions Switcher + Manual Linking / Detaching */}
+            {/* Versions Switcher + A/B Timecode Comparator */}
             <section className="space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <GitBranch size={12} /> Versions de {group.baseTitle} ({group.versions.length})
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <GitBranch size={12} /> Versions de {group.baseTitle} ({group.versions.length})
+                  </h3>
+                  {(group.hasMultipleVersions || group.prodTracks.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => setAbSyncTimecode((v) => !v)}
+                      title="Comparateur A/B : conserve exactement la seconde de lecture quand tu bascules entre versions ou prods"
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition cursor-pointer ${
+                        abSyncTimecode
+                          ? 'bg-[#8C271E]/12 text-[#8C271E] dark:text-[#E56B5F] border border-[#8C271E]/25'
+                          : 'bg-slate-100 dark:bg-zinc-900 text-slate-400'
+                      }`}
+                    >
+                      <ArrowLeftRight size={9} />
+                      A/B synchro
+                    </button>
+                  )}
+                </div>
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
@@ -1097,10 +1189,15 @@ export function TrackDetailModal({
                       <button
                         type="button"
                         onClick={() => {
+                          const keepSec = getCompareStartSec();
                           selectGroupPreferredVersion(v.track.id, 'song');
                           onSelectVersion(v.track.id);
-                          void player.playTrack(v.track, 0, [v.track]);
-                          notify(`Version « ${v.versionLabel} » sélectionnée partout ✓`);
+                          void player.playTrack(v.track, keepSec, [v.track]);
+                          notify(
+                            keepSec > 0.3
+                              ? `A/B → ${v.versionLabel} (${fmt(keepSec)}) ✓`
+                              : `Version « ${v.versionLabel} » sélectionnée partout ✓`
+                          );
                         }}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium cursor-pointer"
                       >
@@ -1220,13 +1317,16 @@ export function TrackDetailModal({
                             <button
                               type="button"
                               onClick={() => {
+                                const keepSec = getCompareStartSec();
                                 selectGroupPreferredVersion(p.track.id, 'prod');
                                 if (isThisProdCurrent) {
                                   player.togglePlay();
                                 } else {
-                                  void player.playTrack(p.track, 0, [track, p.track]);
+                                  void player.playTrack(p.track, keepSec, [track, p.track]);
                                 }
-                                if (!isSelectedProd) {
+                                if (keepSec > 0.3 && !isThisProdCurrent) {
+                                  notify(`A/B → ${p.versionLabel} (${fmt(keepSec)}) ✓`);
+                                } else if (!isSelectedProd) {
                                   notify(`Prod « ${p.versionLabel} » sélectionnée partout ✓`);
                                 }
                               }}
@@ -1763,6 +1863,14 @@ export function TrackDetailModal({
             if (group.versions.length <= 1) onClose();
           }}
           onCancel={() => setConfirmDeleteOpen(false)}
+        />
+
+        <ShareOptionsModal
+          open={shareModalOpen}
+          kind="track"
+          id={track.id}
+          title={group.baseTitle}
+          onClose={() => setShareModalOpen(false)}
         />
       </motion.div>
     </AnimatePresence>

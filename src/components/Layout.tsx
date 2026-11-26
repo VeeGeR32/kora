@@ -11,6 +11,7 @@ import {
   Home,
   ListMusic,
   Moon,
+  Search,
   Settings,
   Sun,
   Undo2,
@@ -20,6 +21,7 @@ import { useApp } from '../context/AppContext';
 import { useAudioPlayer } from '../context/AudioPlayerContext';
 import { groupMusicTracks } from '../lib/musicVersioning';
 import { KoraLogo } from './ui/KoraLogo';
+import { GlobalSearchModal } from './GlobalSearchModal';
 import { MiniAudioPlayer } from './music/MiniAudioPlayer';
 import type { MusicSubTab } from './music/MusicView';
 
@@ -53,6 +55,7 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('kora_sidebar_collapsed') === '1';
   });
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -64,9 +67,14 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
     };
   }, [sidebarCollapsed]);
 
-  // Ctrl+B / Cmd+B toggles desktop sidebar
+  // Ctrl+B / Cmd+B toggles sidebar · Ctrl+K / Cmd+K opens Global Search
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
         const target = e.target as HTMLElement | null;
         if (
@@ -175,6 +183,26 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
               </button>
             )}
           </div>
+
+          {/* Global Instant Search Trigger (Ctrl+K) */}
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            title="Recherche globale : sons, projets, packs & paroles (Ctrl+K)"
+            className={`w-full flex items-center ${
+              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+            } rounded-xl py-2 text-xs font-medium text-slate-500 dark:text-zinc-400 bg-slate-100/80 dark:bg-zinc-900/70 hover:bg-slate-200/70 dark:hover:bg-zinc-800/80 border border-slate-200/60 dark:border-zinc-800/70 transition cursor-pointer`}
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Search size={14} className="shrink-0" />
+              {!sidebarCollapsed && <span className="truncate">Rechercher…</span>}
+            </span>
+            {!sidebarCollapsed && (
+              <kbd className="font-mono text-[9.5px] px-1.5 py-0.5 rounded bg-white dark:bg-zinc-800 border border-slate-200/80 dark:border-zinc-700 text-slate-400">
+                ⌘K
+              </kbd>
+            )}
+          </button>
 
           {/* 5-Section Music Navigation */}
           <nav className="space-y-1">
@@ -363,6 +391,15 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
           <div className="flex items-center gap-1">
             <button
               type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Recherche globale"
+              title="Rechercher un son, projet ou parole"
+              className="rounded-xl p-2 text-slate-600 dark:text-zinc-300"
+            >
+              <Search size={16} />
+            </button>
+            <button
+              type="button"
               onClick={() => onPageChange(activePage === 'docs' ? 'dashboard' : 'docs')}
               aria-label="Guide & Documentation"
               title="Guide & Documentation"
@@ -435,6 +472,9 @@ export function Layout({ activePage, onPageChange, children }: LayoutProps) {
 
       {/* Persistent Global Mini Audio Player */}
       <MiniAudioPlayer />
+
+      {/* Global Search Modal (Ctrl+K) */}
+      <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       {/* Mobile Docked 4-Tab Music Bottom Bar (always visible above sub-pages, below maximized player) */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-[45] bg-white/95 dark:bg-[#0e0e11]/95 backdrop-blur-xl border-t border-slate-200/80 dark:border-zinc-800/90 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around">

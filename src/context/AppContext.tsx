@@ -70,7 +70,6 @@ import {
   uploadCloudMedia,
 } from '../lib/firebase';
 import { deleteMediaBlob, saveMediaBlob } from '../lib/mediaDb';
-import { evaluateScheduledNotifications } from '../lib/notifications';
 import {
   setCachedPrimaryDriveFolderId,
   setCachedUserDriveWriteToken,
@@ -523,16 +522,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     meta.content = color;
   }, [state.preferences.theme]);
-
-  // Smart iPhone / PWA Notification Scheduler (runs every 30s when enabled)
-  useEffect(() => {
-    if (!state.preferences.notifications?.enabled) return;
-    void evaluateScheduledNotifications(latestStateRef.current);
-    const timer = window.setInterval(() => {
-      void evaluateScheduledNotifications(latestStateRef.current);
-    }, 30_000);
-    return () => window.clearInterval(timer);
-  }, [state.preferences.notifications?.enabled]);
 
   // Listen to Firebase Auth state & resolve any pending Google redirect sign-in
   useEffect(() => {

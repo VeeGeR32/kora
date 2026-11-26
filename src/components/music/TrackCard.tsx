@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Check,
   Disc3,
   GitBranch,
   ListChecks,
@@ -11,11 +12,10 @@ import {
 } from 'lucide-react';
 import type { MusicTrack } from '../../types';
 import { useApp } from '../../context/AppContext';
+import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { getMediaObjectUrl } from '../../lib/mediaDb';
 import type { TrackGroup } from '../../lib/musicVersioning';
 import {
-  countLyricsFixTags,
-  findLinkedLyricsForTrack,
   resolveEffectiveTrackCover,
   resolveTrackRatings,
   resolveTrackWorkflow,
@@ -70,11 +70,13 @@ export function TrackCard({
   compact = false,
 }: TrackCardProps) {
   const { state } = useApp();
+  const { offlineTrackSizes } = useAudioPlayer();
   const activeEntry =
     (selectedTrackId ? group.versions.find((v) => v.track.id === selectedTrackId) : null) ||
     group.versions[0];
 
   const track = activeEntry.track;
+  const isOffline = offlineTrackSizes[track.id] !== undefined;
   const [blobCoverUrl, setBlobCoverUrl] = useState<string | null>(null);
 
   const effectiveCover = useMemo(
@@ -102,20 +104,6 @@ export function TrackCard({
 
   const coverUrl = effectiveCover.coverDataUrl || blobCoverUrl || effectiveCover.cloudCoverUrl || null;
 
-  const linkedLyrics = useMemo(
-    () =>
-      findLinkedLyricsForTrack(
-        track,
-        state.lyricsDocs,
-        group.allTrackIds,
-        group.versions.map((v) => v.track)
-      ),
-    [track, state.lyricsDocs, group.allTrackIds, group.versions]
-  );
-  const fixTagCount = useMemo(
-    () => (linkedLyrics ? countLyricsFixTags(linkedLyrics.content) : 0),
-    [linkedLyrics]
-  );
   const workflow = useMemo(
     () =>
       resolveTrackWorkflow(
@@ -274,10 +262,19 @@ export function TrackCard({
               {statusMeta.shortLabel}
             </span>
 
+            {isOffline && (
+              <span
+                title="Disponible hors-ligne sur cet appareil"
+                className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-emerald-500/14 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 text-[9.5px] font-semibold"
+              >
+                <Check size={9} strokeWidth={2.8} />
+              </span>
+            )}
+
             {(ratings.current !== null || ratings.potential !== null) && (
               <span
-                title={`Note actuelle : ${ratings.current ?? '—'}/10 · Potentiel : ${ratings.potential ?? '—'}/10`}
-                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-700 dark:text-zinc-200"
+                title={`Note : ${ratings.current ?? '—'}/10 · Potentiel : ${ratings.potential ?? '—'}/10`}
+                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-zinc-800/90 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-slate-600 dark:text-zinc-300"
               >
                 {ratings.current !== null && <span>{ratings.current}</span>}
                 {ratings.current !== null && ratings.potential !== null && (
@@ -286,15 +283,6 @@ export function TrackCard({
                 {ratings.potential !== null && (
                   <span className="text-[#8C271E] dark:text-[#E56B5F]">↗{ratings.potential}</span>
                 )}
-              </span>
-            )}
-
-            {fixTagCount > 0 && (
-              <span
-                title={`${fixTagCount} balise${fixTagCount > 1 ? 's' : ''} [FIX] restante${fixTagCount > 1 ? 's' : ''} dans le texte`}
-                className="shrink-0 rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 font-mono text-[10px] font-semibold"
-              >
-                [FIX] ×{fixTagCount}
               </span>
             )}
 

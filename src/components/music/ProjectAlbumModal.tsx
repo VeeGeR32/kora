@@ -4,11 +4,13 @@ import {
   Archive,
   ArrowUp,
   Camera,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Disc3,
+  Download,
   FolderOpen,
   GitBranch,
   Globe,
@@ -37,7 +39,8 @@ import { useAudioPlayer } from '../../context/AudioPlayerContext';
 import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import { CheckCircle } from '../ui/CheckCircle';
 import { PROJECT_GRADIENTS } from './MiniAudioPlayer';
-import { shareOrCopyPublicLink } from '../../lib/publicShare';
+import { formatBytes } from '../../lib/mediaDb';
+import { ShareOptionsModal } from './ShareOptionsModal';
 import { postSocialAction } from '../../lib/socialApi';
 import { triggerHapticTick } from '../../lib/haptics';
 import {
@@ -165,6 +168,7 @@ export function ProjectAlbumModal({
   const [renamingTrackId, setRenamingTrackId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [sharing, setSharing] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
   // Press-and-hold fluid drag-and-drop reorder state
   const [draggingTrackId, setDraggingTrackId] = useState<string | null>(null);
@@ -854,6 +858,66 @@ export function ProjectAlbumModal({
                     <Shuffle size={13} /> Aléatoire
                   </button>
 
+                  {(() => {
+                    const eligible = projectTracks.filter((t) =>
+                      Boolean(t.mediaId || t.googleDriveFileId || t.cloudAudioUrl)
+                    );
+                    if (eligible.length === 0) return null;
+                    const offlineCount = eligible.filter(
+                      (t) => player.offlineTrackSizes[t.id] !== undefined
+                    ).length;
+                    const totalOfflineBytes = eligible.reduce(
+                      (acc, t) => acc + (player.offlineTrackSizes[t.id] || 0),
+                      0
+                    );
+                    const isAllOffline = offlineCount === eligible.length;
+                    const isAnyDownloading = eligible.some((t) =>
+                      player.downloadingOfflineIds.has(t.id)
+                    );
+                    return (
+                      <button
+                        type="button"
+                        disabled={isAnyDownloading}
+                        onClick={() => {
+                          if (isAllOffline) {
+                            void Promise.all(
+                              eligible.map((t) => player.removeTrackOffline(t.id))
+                            );
+                          } else {
+                            void player.downloadProjectOffline(eligible, project.title);
+                          }
+                        }}
+                        title={
+                          isAllOffline
+                            ? 'Tout le projet est hors-ligne — cliquer pour libérer le cache'
+                            : 'Télécharger tous les sons du projet hors-ligne'
+                        }
+                        className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition cursor-pointer disabled:opacity-60 ${
+                          isAllOffline
+                            ? 'bg-emerald-500/14 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 hover:bg-emerald-500/22'
+                            : 'bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100'
+                        }`}
+                      >
+                        {isAnyDownloading ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : isAllOffline ? (
+                          <Check size={13} />
+                        ) : (
+                          <Download size={13} />
+                        )}
+                        <span>
+                          {isAnyDownloading
+                            ? `Téléch. (${offlineCount}/${eligible.length})`
+                            : isAllOffline
+                            ? `Hors-ligne${totalOfflineBytes > 0 ? ` · ${formatBytes(totalOfflineBytes)}` : ''}`
+                            : offlineCount > 0
+                            ? `Hors-ligne (${offlineCount}/${eligible.length})`
+                            : 'Hors-ligne'}
+                        </span>
+                      </button>
+                    );
+                  })()}
+
                   <button
                     type="button"
                     disabled={sharing}
@@ -910,31 +974,11 @@ export function ProjectAlbumModal({
 
                   <button
                     type="button"
-                    disabled={sharing}
-                    onClick={async () => {
-                      setSharing(true);
-                      try {
-                        const res = await shareOrCopyPublicLink({
-                          kind: 'project',
-                          id: project.id,
-                          title: project.title,
-                          firebaseConfig: state.preferences.firebaseConfig,
-                        });
-                        notify(
-                          res.method === 'native'
-                            ? `Projet « ${project.title} » partagé ✓`
-                            : `Lien public du projet copié ✓ (écoute sans compte)`
-                        );
-                      } catch (err) {
-                        notify(`Partage : ${(err as Error).message}`);
-                      } finally {
-                        setSharing(false);
-                      }
-                    }}
-                    title="Partager ce projet (lien d’écoute publique sans compte)"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer disabled:opacity-50"
+                    onClick={() => setShareModalOpen(true)}
+                    title="Partager ce projet (code d’accès optionnel & retours horodatés)"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
                   >
-                    {sharing ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+                    <Link2 size={13} />
                     <span>Lien public</span>
                   </button>
 
@@ -1813,6 +1857,14 @@ export function ProjectAlbumModal({
             onClose();
           }}
           onCancel={() => setConfirmDeleteOpen(false)}
+        />
+
+        <ShareOptionsModal
+          open={shareModalOpen}
+          kind="project"
+          id={project.id}
+          title={project.title}
+          onClose={() => setShareModalOpen(false)}
         />
       </motion.div>
     </AnimatePresence>

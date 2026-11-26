@@ -83,6 +83,7 @@ export function MiniAudioPlayer() {
     repeatMode,
     shuffle,
     expanded,
+    abLoop,
     hasNext,
     hasPrev,
     getLiveTime,
@@ -97,6 +98,7 @@ export function MiniAudioPlayer() {
     cycleRepeatMode,
     toggleShuffle,
     setExpanded,
+    setAbLoop,
     closePlayer,
     requestOpenTrackPage,
     requestOpenLyricsDoc,
@@ -1215,9 +1217,15 @@ export function MiniAudioPlayer() {
                             <button
                               type="button"
                               onClick={() => {
-                                void playTrack(alternateProdOrSong.target, 0, queue);
+                                const keepSec = getLiveTime();
+                                void playTrack(
+                                  alternateProdOrSong.target,
+                                  keepSec > 0.3 ? keepSec : 0,
+                                  queue
+                                );
                                 triggerHapticTick(8);
                               }}
+                              title="Comparateur A/B : bascule Son ↔ Prod au même timecode"
                               className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer ${
                                 alternateProdOrSong.isCurrentlyProd
                                   ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
@@ -1262,12 +1270,43 @@ export function MiniAudioPlayer() {
                               scrubbing ? 'h-1.5' : 'h-1 group-hover/bar:h-1.5'
                             }`}
                           >
+                            {effectiveDuration > 0 &&
+                              abLoop.start !== null &&
+                              abLoop.end !== null && (
+                                <div
+                                  style={{
+                                    left: `${Math.min(100, (abLoop.start / effectiveDuration) * 100)}%`,
+                                    width: `${Math.max(
+                                      0.5,
+                                      ((abLoop.end - abLoop.start) / effectiveDuration) * 100
+                                    )}%`,
+                                  }}
+                                  className="absolute inset-y-0 bg-amber-500/55 dark:bg-amber-400/55 pointer-events-none z-10"
+                                />
+                              )}
                             <div
                               ref={progressFillRef}
                               style={{ transform: 'scaleX(0)' }}
                               className="h-full w-full origin-left bg-[#8C271E] dark:bg-[#E04F42] will-change-transform"
                             />
                           </div>
+
+                          {effectiveDuration > 0 && abLoop.start !== null && (
+                            <div
+                              style={{
+                                left: `${Math.min(100, (abLoop.start / effectiveDuration) * 100)}%`,
+                              }}
+                              className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-0.5 rounded-full bg-amber-500 z-10"
+                            />
+                          )}
+                          {effectiveDuration > 0 && abLoop.end !== null && (
+                            <div
+                              style={{
+                                left: `${Math.min(100, (abLoop.end / effectiveDuration) * 100)}%`,
+                              }}
+                              className="pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-0.5 rounded-full bg-amber-500 z-10"
+                            />
+                          )}
 
                           <div
                             ref={progressThumbRef}
@@ -1286,8 +1325,67 @@ export function MiniAudioPlayer() {
                             <span className="h-2.5 w-9 rounded-full bg-slate-200 dark:bg-white/15 animate-pulse" />
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
+                          <div className="flex items-center justify-between gap-2 font-mono text-[11px] text-slate-500 dark:text-zinc-400 tabular-nums">
                             <span ref={timeCurrentRef}>0:00</span>
+
+                            {!isRemotePlayback && (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const liveT = getLiveTime();
+                                    if (abLoop.start === null) {
+                                      setAbLoop({ start: liveT, end: null });
+                                      notify(`Point A fixé à ${fmt(liveT)} — clique à nouveau pour B`);
+                                    } else if (abLoop.end === null) {
+                                      let a = abLoop.start;
+                                      let b = liveT;
+                                      if (Math.abs(b - a) < 0.6) {
+                                        b = Math.min(effectiveDuration || a + 8, a + 8);
+                                      } else if (b < a) {
+                                        [a, b] = [b, a];
+                                      }
+                                      setAbLoop({ start: a, end: b });
+                                      seek(a);
+                                      applyVisualFrame(a, effectiveDuration);
+                                      notify(`Boucle A–B active (${fmt(a)} → ${fmt(b)})`);
+                                    } else {
+                                      setAbLoop({ start: null, end: null });
+                                      notify('Boucle A–B désactivée');
+                                    }
+                                    triggerHapticTick(8);
+                                  }}
+                                  title="Boucle A–B rapide : 1er clic = A · 2e clic = B · 3e clic = annuler"
+                                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[10px] font-semibold transition cursor-pointer ${
+                                    abLoop.start !== null
+                                      ? 'bg-amber-500/18 text-amber-700 dark:text-amber-300 border border-amber-500/35'
+                                      : 'bg-slate-900/6 dark:bg-white/8 text-slate-500 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                                  }`}
+                                >
+                                  <Repeat size={9.5} />
+                                  {abLoop.start !== null && abLoop.end !== null ? (
+                                    <span className="font-mono">
+                                      {fmt(abLoop.start)}–{fmt(abLoop.end)}
+                                    </span>
+                                  ) : abLoop.start !== null ? (
+                                    <span className="font-mono">A {fmt(abLoop.start)}</span>
+                                  ) : (
+                                    <span>A–B</span>
+                                  )}
+                                </button>
+                                {abLoop.start !== null && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAbLoop({ start: null, end: null })}
+                                    aria-label="Effacer boucle A-B"
+                                    className="h-4.5 w-4.5 rounded-full bg-slate-900/8 dark:bg-white/10 text-slate-500 hover:text-rose-500 inline-flex items-center justify-center cursor-pointer"
+                                  >
+                                    <X size={9} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
                             <span ref={timeTotalRef}>
                               {effectiveDuration > 0 ? fmt(effectiveDuration) : '—'}
                             </span>

@@ -483,7 +483,8 @@ export interface LivePlaybackCommand {
     | 'playTrack'
     | 'stop'
     | 'setRepeat'
-    | 'setShuffle';
+    | 'setShuffle'
+    | 'setQueue';
   timeSec?: number;
   trackId?: string;
   queueIds?: string[];

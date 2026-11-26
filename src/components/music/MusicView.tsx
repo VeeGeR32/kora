@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   ArrowDownAZ,
@@ -28,23 +28,48 @@ import {
   type TrackGroup,
 } from '../../lib/musicVersioning';
 import { socialTrackToMusicTrack } from '../../lib/socialApi';
-import { LyricsStudio } from './LyricsStudio';
-import { PlaylistPage } from './PlaylistModal';
-import { ProjectAlbumModal } from './ProjectAlbumModal';
-import { ProjectCreationModal } from './ProjectCreationModal';
-import { SocialHubView } from './SocialHubView';
 import {
   StudioGlobalContextMenu,
   type StudioContextMenuTarget,
 } from './StudioGlobalContextMenu';
 import { TrackCard } from './TrackCard';
 import { TrackContextMenu, type TrackContextMenuState } from './TrackContextMenu';
-import { TrackDetailModal } from './TrackDetailModal';
 import { LinkVersionModal, type LinkVersionModalState } from './LinkVersionModal';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
-import { SettingsPage } from '../SettingsModal';
-import { DocumentationPage } from '../DocumentationPage';
 import { TrackCardSkeletonGrid } from '../ui/Skeleton';
+
+const LyricsStudio = lazy(() =>
+  import('./LyricsStudio').then((m) => ({ default: m.LyricsStudio }))
+);
+const PlaylistPage = lazy(() =>
+  import('./PlaylistModal').then((m) => ({ default: m.PlaylistPage }))
+);
+const ProjectAlbumModal = lazy(() =>
+  import('./ProjectAlbumModal').then((m) => ({ default: m.ProjectAlbumModal }))
+);
+const ProjectCreationModal = lazy(() =>
+  import('./ProjectCreationModal').then((m) => ({ default: m.ProjectCreationModal }))
+);
+const SocialHubView = lazy(() =>
+  import('./SocialHubView').then((m) => ({ default: m.SocialHubView }))
+);
+const TrackDetailModal = lazy(() =>
+  import('./TrackDetailModal').then((m) => ({ default: m.TrackDetailModal }))
+);
+const SettingsPage = lazy(() =>
+  import('../SettingsModal').then((m) => ({ default: m.SettingsPage }))
+);
+const DocumentationPage = lazy(() =>
+  import('../DocumentationPage').then((m) => ({ default: m.DocumentationPage }))
+);
+
+function LazyViewFallback() {
+  return (
+    <div className="py-16 flex items-center justify-center">
+      <div className="h-6 w-6 rounded-full border-2 border-[#8C271E] border-t-transparent animate-spin" />
+    </div>
+  );
+}
 import {
   findLinkedLyricsForTrack,
   getProjectTrackIndividualCovers,
@@ -898,6 +923,7 @@ export function MusicView({
       </div>
 
       {/* ================= IN-APP SUB-PAGES (full-width directly under top header!) ================= */}
+      <Suspense fallback={<LazyViewFallback />}>
       {isSettingsOpen ? (
         <SettingsPage onOpenProfile={() => setSubTab('profile')} />
       ) : isDocsOpen ? (
@@ -1012,6 +1038,7 @@ export function MusicView({
           }}
         />
       ) : null}
+      </Suspense>
 
       {!hasActiveSubPage && (
         <>
@@ -1613,46 +1640,50 @@ export function MusicView({
 
       {/* ================= TAB 3: TEXTES STUDIO ÉCRITURE ================= */}
       {subTab === 'lyrics' && (
-        <LyricsStudio
-          initialDocId={null}
-          openRequest={lyricsOpenRequest}
-          resetNonce={navResetNonce}
-          backLabel={lyricsReturnContext ? 'Retour' : 'Textes'}
-          onOpenDocContextMenu={(e, doc) => {
-            setContextMenu(null);
-            setStudioContextMenu({
-              kind: 'lyrics',
-              doc,
-              x: e.clientX,
-              y: e.clientY,
-            });
-          }}
-          onCloseDoc={() => {
-            setLyricsOpenRequest(null);
-            updateLastSession({ selectedLyricsId: undefined });
-            if (lyricsReturnContext) {
-              const ctx = lyricsReturnContext;
-              setLyricsReturnContext(null);
-              onSubTabChange(ctx.prevSubTab);
-              setOpenProjectId(ctx.openProjectId);
-              setDetailTarget(ctx.detailTarget);
-            }
-          }}
-        />
+        <Suspense fallback={<LazyViewFallback />}>
+          <LyricsStudio
+            initialDocId={null}
+            openRequest={lyricsOpenRequest}
+            resetNonce={navResetNonce}
+            backLabel={lyricsReturnContext ? 'Retour' : 'Textes'}
+            onOpenDocContextMenu={(e, doc) => {
+              setContextMenu(null);
+              setStudioContextMenu({
+                kind: 'lyrics',
+                doc,
+                x: e.clientX,
+                y: e.clientY,
+              });
+            }}
+            onCloseDoc={() => {
+              setLyricsOpenRequest(null);
+              updateLastSession({ selectedLyricsId: undefined });
+              if (lyricsReturnContext) {
+                const ctx = lyricsReturnContext;
+                setLyricsReturnContext(null);
+                onSubTabChange(ctx.prevSubTab);
+                setOpenProjectId(ctx.openProjectId);
+                setDetailTarget(ctx.detailTarget);
+              }
+            }}
+          />
+        </Suspense>
       )}
 
       {/* ================= TAB 4 & 5: ROWAV SOCIAL & PROFIL ARTISTE PORTFOLIO ================= */}
       {(subTab === 'social' || subTab === 'profile') && (
-        <SocialHubView
-          initialMode={subTab === 'profile' ? 'profile' : 'discover'}
-          initialArtistUid={
-            subTab === 'profile' ? null : socialTargetArtistUid
-          }
-          initialSocialTrack={subTab === 'profile' ? null : socialTargetTrack}
-          onClearInitialSocialTrack={() => setSocialTargetTrack(null)}
-          onOpenOwnProject={(projId) => setOpenProjectId(projId)}
-          onOpenPlaylist={(plId) => setOpenPlaylistId(plId)}
-        />
+        <Suspense fallback={<LazyViewFallback />}>
+          <SocialHubView
+            initialMode={subTab === 'profile' ? 'profile' : 'discover'}
+            initialArtistUid={
+              subTab === 'profile' ? null : socialTargetArtistUid
+            }
+            initialSocialTrack={subTab === 'profile' ? null : socialTargetTrack}
+            onClearInitialSocialTrack={() => setSocialTargetTrack(null)}
+            onOpenOwnProject={(projId) => setOpenProjectId(projId)}
+            onOpenPlaylist={(plId) => setOpenPlaylistId(plId)}
+          />
+        </Suspense>
       )}
         </>
       )}

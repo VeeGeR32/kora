@@ -166,303 +166,46 @@ function toFirestoreValue(val) {
   return { stringValue: String(val) };
 }
 
-/**
- * Generates a warm, studio-quality 16-second stereo lo-fi synth & drum loop WAV
- * so seeded community tracks play immediately in MiniAudioPlayer with real waveform animation.
- */
-function buildStudioDemoWavBuffer(seedStr) {
-  const sampleRate = 22050;
-  const durationSec = 14;
-  const numSamples = sampleRate * durationSec;
-  const numChannels = 1;
-  const bytesPerSample = 2;
-  const dataSize = numSamples * numChannels * bytesPerSample;
-  const buf = Buffer.alloc(44 + dataSize);
+const DEMO_ARTIST_UIDS = new Set(['artist_nox', 'artist_sora', 'artist_leo', 'artist_kairo']);
 
-  // WAV header
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + dataSize, 4);
-  buf.write('WAVE', 8);
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);
-  buf.writeUInt16LE(1, 20); // PCM
-  buf.writeUInt16LE(numChannels, 22);
-  buf.writeUInt32LE(sampleRate, 24);
-  buf.writeUInt32LE(sampleRate * numChannels * bytesPerSample, 28);
-  buf.writeUInt16LE(numChannels * bytesPerSample, 32);
-  buf.writeUInt16LE(16, 34);
-  buf.write('data', 36);
-  buf.writeUInt32LE(dataSize, 40);
-
-  let hash = 0;
-  for (let i = 0; i < seedStr.length; i++) {
-    hash = (hash * 31 + seedStr.charCodeAt(i)) >>> 0;
-  }
-
-  const progressions = [
-    [220.0, 261.63, 196.0, 174.61], // Am - C - G - F
-    [196.0, 233.08, 174.61, 146.83], // Gm - Bb - F - Dm
-    [246.94, 293.66, 220.0, 196.0], // Bm - D - A - G
-    [164.81, 196.0, 220.0, 146.83], // Em - G - Am - Dm
-  ];
-  const chords = progressions[hash % progressions.length];
-  const bpm = 86 + (hash % 24);
-  const beatDur = 60 / bpm;
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const barIdx = Math.floor(t / (beatDur * 2)) % chords.length;
-    const root = chords[barIdx];
-    const fifth = root * 1.4983;
-    const third = root * 1.1892;
-
-    // Warm electric piano / synth pad
-    const env = 0.65 + 0.35 * Math.sin(2 * Math.PI * (0.5 / beatDur) * t);
-    const pad =
-      (Math.sin(2 * Math.PI * root * t) * 0.45 +
-        Math.sin(2 * Math.PI * third * t) * 0.3 +
-        Math.sin(2 * Math.PI * fifth * t) * 0.25) *
-      env;
-
-    // Subtle sub bass + kick pulse every beat
-    const beatPhase = (t % beatDur) / beatDur;
-    const kickFreq = 55 + 95 * Math.exp(-beatPhase * 18);
-    const kickEnv = Math.exp(-beatPhase * 9);
-    const kick = Math.sin(2 * Math.PI * kickFreq * beatPhase * beatDur) * kickEnv * 0.55;
-
-    // Gentle hi-hat tick on half-beats
-    const halfPhase = (t % (beatDur / 2)) / (beatDur / 2);
-    const hatEnv = Math.exp(-halfPhase * 38);
-    const noise = (((i * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff - 0.5) * 2;
-    const hat = noise * hatEnv * 0.12;
-
-    const sample = Math.max(-0.92, Math.min(0.92, (pad * 0.48 + kick + hat) * 0.78));
-    buf.writeInt16LE(Math.round(sample * 32767), 44 + i * 2);
-  }
-
-  return buf;
-}
-
-function createInitialSeedHub() {
-  const now = new Date().toISOString();
-  const profiles = {
-    artist_nox: {
-      uid: 'artist_nox',
-      name: 'Nox Studio',
-      handle: '@nox.studio',
-      bio: 'Producteur & Ingé son · Paris / Belleville · Synthés analogiques, boîtes à rythmes & textures nocturnes.',
-      coverGradient: 'sunset',
-      location: 'Paris, FR',
-      genres: ['Cloud Rap', 'Synthwave', 'Alternative'],
-      followersIds: ['artist_sora', 'artist_leo'],
-      followingIds: ['artist_sora'],
-      updatedAt: now,
-    },
-    artist_sora: {
-      uid: 'artist_sora',
-      name: 'Sora',
-      handle: '@sora.wav',
-      bio: 'Auteure-compositrice · R&B minimaliste,toplines nocturnes et harmonies vocales.',
-      coverGradient: 'violet',
-      location: 'Lyon, FR',
-      genres: ['R&B', 'Neo-Soul', 'Lo-Fi'],
-      followersIds: ['artist_nox', 'artist_leo', 'artist_kairo'],
-      followingIds: ['artist_nox', 'artist_leo'],
-      updatedAt: now,
-    },
-    artist_leo: {
-      uid: 'artist_leo',
-      name: 'Léo Vance',
-      handle: '@leovance',
-      bio: 'Beatmaker & Réalisateur artistique · 808 saturées, pianos feutrés et prises live.',
-      coverGradient: 'ocean',
-      location: 'Bruxelles, BE',
-      genres: ['Rap FR', 'Melodic Trap', 'Boom Bap'],
-      followersIds: ['artist_sora'],
-      followingIds: ['artist_nox', 'artist_sora'],
-      updatedAt: now,
-    },
-  };
-
-  const projects = [
-    {
-      id: 'sproj_nox_1',
-      sourceProjectId: 'demo_nox_1',
-      ownerUid: 'artist_nox',
-      ownerName: 'Nox Studio',
-      title: 'LUMIÈRE NOIRE VOL. 2',
-      kind: 'ep',
-      description: '5 maquettes enregistrées de nuit entre janvier et mars. Mix analogique & basse Moog.',
-      coverGradient: 'sunset',
-      releaseDate: '2026-03-14',
-      likedByUids: ['artist_sora', 'artist_leo'],
-      publishedAt: '2026-03-14T21:30:00.000Z',
-      tracks: [
-        {
-          id: 'strk_nox_1',
-          ownerUid: 'artist_nox',
-          ownerName: 'Nox Studio',
-          projectId: 'sproj_nox_1',
-          projectTitle: 'LUMIÈRE NOIRE VOL. 2',
-          title: 'Périphérique 4h',
-          artist: 'Nox Studio',
-          versionLabel: 'v4 · Master',
-          coverGradient: 'sunset',
-          audioUrl: '/api/social?demoAudio=strk_nox_1',
-          durationSec: 164,
-          bpm: 128,
-          mood: 'Sombre',
-          likedByUids: ['artist_sora', 'artist_leo'],
-          ratingsByUid: { artist_sora: 9, artist_leo: 9 },
-          publishedAt: '2026-03-14T21:30:00.000Z',
-        },
-        {
-          id: 'strk_nox_2',
-          ownerUid: 'artist_nox',
-          ownerName: 'Nox Studio',
-          projectId: 'sproj_nox_1',
-          projectTitle: 'LUMIÈRE NOIRE VOL. 2',
-          title: 'Pluie sur Belleville',
-          artist: 'Nox Studio feat. Sora',
-          versionLabel: 'v3 · Mix',
-          coverGradient: 'sunset',
-          audioUrl: '/api/social?demoAudio=strk_nox_2',
-          durationSec: 192,
-          bpm: 94,
-          mood: 'Mélancolique',
-          likedByUids: ['artist_sora', 'artist_leo', 'artist_kairo'],
-          ratingsByUid: { artist_sora: 10, artist_leo: 9 },
-          publishedAt: '2026-03-14T21:30:00.000Z',
-        },
-        {
-          id: 'strk_nox_3',
-          ownerUid: 'artist_nox',
-          ownerName: 'Nox Studio',
-          projectId: 'sproj_nox_1',
-          projectTitle: 'LUMIÈRE NOIRE VOL. 2',
-          title: 'Cassette Fantôme',
-          artist: 'Nox Studio',
-          versionLabel: 'v2',
-          coverGradient: 'amber',
-          audioUrl: '/api/social?demoAudio=strk_nox_3',
-          durationSec: 148,
-          bpm: 118,
-          mood: 'Planant',
-          likedByUids: ['artist_sora'],
-          ratingsByUid: { artist_sora: 8 },
-          publishedAt: '2026-03-14T21:30:00.000Z',
-        },
-      ],
-    },
-    {
-      id: 'sproj_sora_1',
-      sourceProjectId: 'demo_sora_1',
-      ownerUid: 'artist_sora',
-      ownerName: 'Sora',
-      title: 'HEURES BLEUES',
-      kind: 'mixtape',
-      description: 'Textures R&B intimistes, voix doublées au Neumann et Rhodes vintage.',
-      coverGradient: 'violet',
-      releaseDate: '2026-02-28',
-      likedByUids: ['artist_nox', 'artist_leo'],
-      publishedAt: '2026-02-28T19:00:00.000Z',
-      tracks: [
-        {
-          id: 'strk_sora_1',
-          ownerUid: 'artist_sora',
-          ownerName: 'Sora',
-          projectId: 'sproj_sora_1',
-          projectTitle: 'HEURES BLEUES',
-          title: 'Velours Minuit',
-          artist: 'Sora',
-          versionLabel: 'v5 · Final',
-          coverGradient: 'violet',
-          audioUrl: '/api/social?demoAudio=strk_sora_1',
-          durationSec: 178,
-          bpm: 88,
-          mood: 'Planant',
-          likedByUids: ['artist_nox', 'artist_leo'],
-          ratingsByUid: { artist_nox: 9, artist_leo: 10 },
-          publishedAt: '2026-02-28T19:00:00.000Z',
-        },
-        {
-          id: 'strk_sora_2',
-          ownerUid: 'artist_sora',
-          ownerName: 'Sora',
-          projectId: 'sproj_sora_1',
-          projectTitle: 'HEURES BLEUES',
-          title: 'Laisser Passer l’Orage',
-          artist: 'Sora',
-          versionLabel: 'v3',
-          coverGradient: 'rose',
-          audioUrl: '/api/social?demoAudio=strk_sora_2',
-          durationSec: 204,
-          bpm: 82,
-          mood: 'Mélancolique',
-          likedByUids: ['artist_nox'],
-          ratingsByUid: { artist_nox: 9 },
-          publishedAt: '2026-02-28T19:00:00.000Z',
-        },
-      ],
-    },
-    {
-      id: 'sproj_leo_1',
-      sourceProjectId: 'demo_leo_1',
-      ownerUid: 'artist_leo',
-      ownerName: 'Léo Vance',
-      title: 'BÉTON & VELOURS',
-      kind: 'album',
-      description: 'Sélection de prods et morceaux enregistrés en session studio fermée.',
-      coverGradient: 'ocean',
-      releaseDate: '2026-01-20',
-      likedByUids: ['artist_nox', 'artist_sora'],
-      publishedAt: '2026-01-20T18:15:00.000Z',
-      tracks: [
-        {
-          id: 'strk_leo_1',
-          ownerUid: 'artist_leo',
-          ownerName: 'Léo Vance',
-          projectId: 'sproj_leo_1',
-          projectTitle: 'BÉTON & VELOURS',
-          title: 'Sans Retour',
-          artist: 'Léo Vance',
-          versionLabel: 'v6 · Master',
-          coverGradient: 'ocean',
-          audioUrl: '/api/social?demoAudio=strk_leo_1',
-          durationSec: 156,
-          bpm: 142,
-          mood: 'Banger',
-          likedByUids: ['artist_nox', 'artist_sora'],
-          ratingsByUid: { artist_nox: 9, artist_sora: 8 },
-          publishedAt: '2026-01-20T18:15:00.000Z',
-        },
-        {
-          id: 'strk_leo_2',
-          ownerUid: 'artist_leo',
-          ownerName: 'Léo Vance',
-          projectId: 'sproj_leo_1',
-          projectTitle: 'BÉTON & VELOURS',
-          title: 'Dernier Étage',
-          artist: 'Léo Vance',
-          versionLabel: 'v2 · Maquette',
-          coverGradient: 'emerald',
-          audioUrl: '/api/social?demoAudio=strk_leo_2',
-          durationSec: 171,
-          bpm: 136,
-          mood: 'Énergique',
-          likedByUids: ['artist_sora'],
-          ratingsByUid: { artist_sora: 8 },
-          publishedAt: '2026-01-20T18:15:00.000Z',
-        },
-      ],
-    },
-  ];
-
+function createEmptyHub() {
   return {
-    profiles,
-    projects,
+    profiles: {},
+    projects: [],
     messages: [],
     updatedAt: Date.now(),
+  };
+}
+
+function stripLegacyDemoData(hub) {
+  const rawProfiles = hub.profiles && typeof hub.profiles === 'object' ? hub.profiles : {};
+  const cleanProfiles = {};
+  for (const [uid, prof] of Object.entries(rawProfiles)) {
+    if (DEMO_ARTIST_UIDS.has(uid)) continue;
+    cleanProfiles[uid] = {
+      ...prof,
+      followersIds: Array.isArray(prof?.followersIds)
+        ? prof.followersIds.filter((id) => !DEMO_ARTIST_UIDS.has(id))
+        : [],
+      followingIds: Array.isArray(prof?.followingIds)
+        ? prof.followingIds.filter((id) => !DEMO_ARTIST_UIDS.has(id))
+        : [],
+    };
+  }
+  const cleanProjects = (Array.isArray(hub.projects) ? hub.projects : []).filter(
+    (p) =>
+      p &&
+      !DEMO_ARTIST_UIDS.has(p.ownerUid) &&
+      !(typeof p.sourceProjectId === 'string' && p.sourceProjectId.startsWith('demo_'))
+  );
+  const cleanMessages = (Array.isArray(hub.messages) ? hub.messages : []).filter(
+    (m) => m && !DEMO_ARTIST_UIDS.has(m.fromUid) && !DEMO_ARTIST_UIDS.has(m.toUid)
+  );
+  return {
+    profiles: cleanProfiles,
+    projects: cleanProjects,
+    messages: cleanMessages,
+    updatedAt: hub.updatedAt || Date.now(),
   };
 }
 
@@ -474,26 +217,16 @@ async function loadHubDoc(projectId, dsToken) {
     headers: { Authorization: `Bearer ${dsToken}` },
   });
   if (res.status === 404) {
-    const initial = createInitialSeedHub();
+    const initial = createEmptyHub();
     await saveHubDoc(projectId, dsToken, initial);
     return initial;
   }
   if (!res.ok) {
-    return createInitialSeedHub();
+    return createEmptyHub();
   }
   const docJson = await res.json();
   const parsed = fromFirestoreValue({ mapValue: { fields: docJson.fields || {} } }) || {};
-  if (!parsed.profiles || !Array.isArray(parsed.projects) || parsed.projects.length === 0) {
-    const initial = createInitialSeedHub();
-    await saveHubDoc(projectId, dsToken, initial);
-    return initial;
-  }
-  return {
-    profiles: parsed.profiles || {},
-    projects: Array.isArray(parsed.projects) ? parsed.projects : [],
-    messages: Array.isArray(parsed.messages) ? parsed.messages : [],
-    updatedAt: parsed.updatedAt || Date.now(),
-  };
+  return stripLegacyDemoData(parsed);
 }
 
 async function saveHubDoc(projectId, dsToken, hubData) {
@@ -633,17 +366,6 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
-  }
-
-  // Built-in studio demo audio synthesizer for seeded community tracks
-  const demoAudioSeed = typeof req.query?.demoAudio === 'string' ? req.query.demoAudio : '';
-  if (req.method === 'GET' && demoAudioSeed) {
-    const wavBuf = buildStudioDemoWavBuffer(demoAudioSeed);
-    res.setHeader('Content-Type', 'audio/wav');
-    res.setHeader('Content-Length', String(wavBuf.length));
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.status(200).send(wavBuf);
   }
 
   const sa = parseServiceAccount();
@@ -963,33 +685,6 @@ export default async function handler(req, res) {
         createdAt: nowIso,
       };
       hub.messages = [...(Array.isArray(hub.messages) ? hub.messages : []), msg].slice(-400);
-
-      // If messaging one of the seeded studio artists for the first time in this thread, send a realistic studio reply
-      if (['artist_nox', 'artist_sora', 'artist_leo'].includes(toUid)) {
-        const existingReplies = hub.messages.filter(
-          (m) => m.fromUid === toUid && m.toUid === viewerUid
-        );
-        if (existingReplies.length < 2) {
-          const autoReplies = {
-            artist_nox:
-              'Merci pour le message ! Je viens d’écouter tes dernières maquettes sur Rowav, le mix est super propre. Partant pour bosser sur une prod ensemble quand tu veux.',
-            artist_sora:
-              'Hey ! Trop cool de connecter sur Rowav Studio. Si tu cherches une topline ou des harmonies sur un de tes projets, fais-moi signe !',
-            artist_leo:
-              'Salut ! Bien reçu, l’ambiance de tes sons est grave lourde. Hésite pas à partager ton prochain projet sur le hub !',
-          };
-          hub.messages.push({
-            id: `msg_${Date.now() + 1}_reply`,
-            fromUid: toUid,
-            fromName: targetProfile.name,
-            fromAvatarUrl: targetProfile.avatarUrl,
-            toUid: viewerUid,
-            toName: myProfile.name,
-            text: autoReplies[toUid] || 'Merci pour ton message !',
-            createdAt: new Date(Date.now() + 500).toISOString(),
-          });
-        }
-      }
 
       await saveHubDoc(sa.project_id, dsToken, hub);
       return res.status(200).json({

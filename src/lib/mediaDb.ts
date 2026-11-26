@@ -7,6 +7,12 @@
 const DB_NAME = 'kora_media_db_v1';
 const STORE_NAME = 'blobs';
 
+export const OFFLINE_TRACK_PREFIX = 'offline_trk_';
+
+export function getOfflineTrackKey(trackId: string): string {
+  return `${OFFLINE_TRACK_PREFIX}${trackId}`;
+}
+
 export interface StoredMedia {
   id: string;
   blob: Blob;
@@ -103,6 +109,35 @@ export async function deleteMediaBlob(id: string): Promise<void> {
   } catch {
     // Ignore deletion errors
   }
+}
+
+export async function listOfflineMediaMeta(): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
+        const key = String(cursor.key || '');
+        if (key.startsWith(OFFLINE_TRACK_PREFIX)) {
+          const val = cursor.value as StoredMedia | undefined;
+          const trackId = key.slice(OFFLINE_TRACK_PREFIX.length);
+          result[trackId] = val?.size || val?.blob?.size || 0;
+        }
+        cursor.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    // Ignore IDB read issues (e.g. private browsing)
+  }
+  return result;
 }
 
 export function formatBytes(bytes: number): string {

@@ -1,6 +1,14 @@
 ﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { LivePlaybackCommand, LivePlaybackState, MusicTrack } from '../types';
-import { getMediaObjectUrl, saveMediaBlob } from '../lib/mediaDb';
+import {
+  deleteMediaBlob,
+  formatBytes,
+  getMediaBlob,
+  getMediaObjectUrl,
+  getOfflineTrackKey,
+  listOfflineMediaMeta,
+  saveMediaBlob,
+} from '../lib/mediaDb';
 import { downloadGoogleDriveAudioBlob, ensureGoogleDriveToken } from '../lib/googleDrive';
 import { getLocalDeviceInfo, type LocalDeviceInfo } from '../lib/deviceIdentity';
 import { groupMusicTracks } from '../lib/musicVersioning';
@@ -99,6 +107,12 @@ interface AudioPlayerContextValue {
     track: MusicTrack,
     options?: { force?: boolean; knownUrl?: string }
   ) => Promise<TrackAudioAnalysis | null>;
+  // Persistent Offline Storage (IndexedDB)
+  offlineTrackSizes: Record<string, number>;
+  downloadingOfflineIds: Set<string>;
+  downloadTrackOffline: (track: MusicTrack) => Promise<boolean>;
+  removeTrackOffline: (trackId: string) => Promise<void>;
+  downloadProjectOffline: (tracks: MusicTrack[], projectTitle?: string) => Promise<void>;
 }
 
 const AudioPlayerContext = createContext<AudioPlayerContextValue | null>(null);
@@ -136,6 +150,18 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     start: null,
     end: null,
   });
+  const [offlineTrackSizes, setOfflineTrackSizes] = useState<Record<string, number>>({});
+  const [downloadingOfflineIds, setDownloadingOfflineIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    let alive = true;
+    void listOfflineMediaMeta().then((meta) => {
+      if (alive) setOfflineTrackSizes(meta);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Deduplicated song catalog (1 entry per song group = latest version) so auto-play / shuffle NEVER replays v1/v2/v3 back-to-back!
   const { dedupedLibraryTracks, groupKeyByTrackId } = useMemo(() => {
@@ -349,6 +375,12 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
 
       const memHit = memoryUrlCacheRef.current.get(cacheKey);
       if (memHit) return memHit;
+
+      const offlineUrl = await getMediaObjectUrl(getOfflineTrackKey(track.id));
+      if (offlineUrl) {
+        putInMemoryUrlCache(cacheKey, offlineUrl);
+        return offlineUrl;
+      }
 
       if (track.mediaId) {
         const idbUrl = await getMediaObjectUrl(track.mediaId);
@@ -689,6 +721,8 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
         nextRemote = { ...nextRemote, shuffle: extra.shuffle };
         shuffleRef.current = extra.shuffle;
         setShuffle(extra.shuffle);
+      } else if (type === 'setQueue' && Array.isArray(extra?.queueIds)) {
+        nextRemote = { ...nextRemote, queueIds: extra.queueIds };
       }
       remoteSessionRef.current = nextRemote;
       setRemoteSession(nextRemote);
@@ -1264,7 +1298,10 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       }
 
       const { start, end } = abLoopRef.current;
-      if (end !== null && t >= end) {
+      if (start !== null && end !== null && end > start && t >= end) {
+        audio.currentTime = start;
+        if (audio.paused) void audio.play().catch(() => {});
+      } else if (end !== null && t >= end) {
         if (repeatModeRef.current !== 'off') {
           audio.currentTime = start ?? 0;
           void audio.play().catch(() => {});
@@ -1730,6 +1767,20 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       } else {
         publishLocalLive({ ackCommandId: cmd.id });
       }
+    } else if (cmd.type === 'setQueue' && Array.isArray(cmd.queueIds)) {
+      const byId = new Map(state.musicTracks.map((t) => [t.id, t]));
+      const nextQ = cmd.queueIds
+        .map((id) => byId.get(id))
+        .filter((t): t is MusicTrack => Boolean(t));
+      if (nextQ.length > 0) {
+        queueRef.current = nextQ;
+        baseQueueRef.current = nextQ;
+        setQueue(nextQ);
+        if (currentTrackRef.current) {
+          prefetchUpcomingTracks(currentTrackRef.current.id, nextQ);
+        }
+      }
+      publishLocalLive({ ackCommandId: cmd.id });
     } else if (cmd.type === 'stop') {
       pendingAckCommandIdRef.current = undefined;
       closePlayer();
@@ -1841,7 +1892,9 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       queueRef.current = base;
       baseQueueRef.current = base;
       setQueue(base);
-      if (!remoteSessionRef.current) {
+      if (remoteSessionRef.current) {
+        sendRemoteCommand('setQueue', { queueIds: base.map((t) => t.id) });
+      } else {
         publishLocalLive();
         prefetchUpcomingTracks(cur.id, base);
       }
@@ -1851,7 +1904,7 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
           : `« ${label} » ajouté à la file d’attente ✓`
       );
     },
-    [playTrack, publishLocalLive, prefetchUpcomingTracks, notify]
+    [playTrack, publishLocalLive, prefetchUpcomingTracks, sendRemoteCommand, notify]
   );
 
   const removeFromQueue = useCallback(
@@ -1865,12 +1918,14 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       queueRef.current = base;
       baseQueueRef.current = base;
       setQueue(base);
-      if (!remoteSessionRef.current && cur) {
+      if (remoteSessionRef.current) {
+        sendRemoteCommand('setQueue', { queueIds: base.map((t) => t.id) });
+      } else if (cur) {
         publishLocalLive();
         prefetchUpcomingTracks(cur.id, base);
       }
     },
-    [publishLocalLive, prefetchUpcomingTracks]
+    [publishLocalLive, prefetchUpcomingTracks, sendRemoteCommand]
   );
 
   const moveInQueue = useCallback(
@@ -1892,12 +1947,14 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       baseQueueRef.current = base;
       setQueue(base);
       const cur = currentTrackRef.current;
-      if (!remoteSessionRef.current && cur) {
+      if (remoteSessionRef.current) {
+        sendRemoteCommand('setQueue', { queueIds: base.map((t) => t.id) });
+      } else if (cur) {
         publishLocalLive();
         prefetchUpcomingTracks(cur.id, base);
       }
     },
-    [publishLocalLive, prefetchUpcomingTracks]
+    [publishLocalLive, prefetchUpcomingTracks, sendRemoteCommand]
   );
 
   const clearUpcomingQueue = useCallback(() => {
@@ -1906,11 +1963,115 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
     queueRef.current = next;
     baseQueueRef.current = next;
     setQueue(next);
-    if (!remoteSessionRef.current && cur) {
+    if (remoteSessionRef.current) {
+      sendRemoteCommand('setQueue', { queueIds: next.map((t) => t.id) });
+    } else if (cur) {
       publishLocalLive();
     }
     notify('File d’attente vidée');
-  }, [publishLocalLive, notify]);
+  }, [publishLocalLive, sendRemoteCommand, notify]);
+
+  const downloadTrackOffline = useCallback(
+    async (track: MusicTrack): Promise<boolean> => {
+      if (!track.mediaId && !track.googleDriveFileId && !track.cloudAudioUrl) {
+        notify('Aucun fichier audio téléchargeable pour ce son.');
+        return false;
+      }
+      setDownloadingOfflineIds((prev) => {
+        const next = new Set(prev);
+        next.add(track.id);
+        return next;
+      });
+      try {
+        let blob: Blob | null = null;
+        if (track.mediaId) {
+          const stored = await getMediaBlob(track.mediaId);
+          if (stored?.blob) blob = stored.blob;
+        }
+        if (!blob && track.googleDriveFileId) {
+          const cachedDrive = await getMediaBlob(`drive_${track.googleDriveFileId}`);
+          if (cachedDrive?.blob) {
+            blob = cachedDrive.blob;
+          } else {
+            const token = await ensureGoogleDriveToken(state.preferences.firebaseConfig);
+            blob = await downloadGoogleDriveAudioBlob(token, track.googleDriveFileId);
+          }
+        }
+        if (!blob && track.cloudAudioUrl) {
+          const res = await fetch(track.cloudAudioUrl);
+          if (res.ok) blob = await res.blob();
+        }
+        if (!blob) {
+          notify('Impossible de télécharger ce son hors-ligne.');
+          return false;
+        }
+        const key = getOfflineTrackKey(track.id);
+        await saveMediaBlob(key, blob, `${track.manualGroupTitle || track.title}.mp3`);
+        const objUrl = await getMediaObjectUrl(key);
+        if (objUrl) {
+          putInMemoryUrlCache(getTrackCacheKey(track), objUrl);
+        }
+        setOfflineTrackSizes((prev) => ({ ...prev, [track.id]: blob!.size }));
+        notify(
+          `« ${track.manualGroupTitle || track.title} » disponible hors-ligne (${formatBytes(blob.size)}) ✓`
+        );
+        return true;
+      } catch (err) {
+        notify(`Téléchargement hors-ligne : ${(err as Error).message}`);
+        return false;
+      } finally {
+        setDownloadingOfflineIds((prev) => {
+          const next = new Set(prev);
+          next.delete(track.id);
+          return next;
+        });
+      }
+    },
+    [state.preferences.firebaseConfig, putInMemoryUrlCache, notify]
+  );
+
+  const removeTrackOffline = useCallback(
+    async (trackId: string) => {
+      await deleteMediaBlob(getOfflineTrackKey(trackId));
+      setOfflineTrackSizes((prev) => {
+        const next = { ...prev };
+        delete next[trackId];
+        return next;
+      });
+      notify('Supprimé du cache hors-ligne');
+    },
+    [notify]
+  );
+
+  const downloadProjectOffline = useCallback(
+    async (tracks: MusicTrack[], projectTitle?: string) => {
+      const eligible = tracks.filter(
+        (t) =>
+          offlineTrackSizes[t.id] === undefined &&
+          Boolean(t.mediaId || t.googleDriveFileId || t.cloudAudioUrl)
+      );
+      if (eligible.length === 0) {
+        notify(
+          projectTitle
+            ? `« ${projectTitle} » est déjà disponible hors-ligne ✓`
+            : 'Tous les morceaux sont déjà hors-ligne ✓'
+        );
+        return;
+      }
+      notify(`Téléchargement hors-ligne de ${eligible.length} titre${eligible.length > 1 ? 's' : ''}…`);
+      let okCount = 0;
+      for (const t of eligible) {
+        const ok = await downloadTrackOffline(t);
+        if (ok) okCount++;
+      }
+      if (okCount > 0) {
+        notify(
+          `${okCount} titre${okCount > 1 ? 's' : ''} prêt${okCount > 1 ? 's' : ''} hors-ligne ✓`
+        );
+      }
+    },
+    [offlineTrackSizes, downloadTrackOffline, notify]
+  );
 
   const contextValue = useMemo<AudioPlayerContextValue>(
     () => ({
@@ -1967,6 +2128,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       isRemotePlayback,
       transferToThisDevice,
       analyzeTrackAudio,
+      offlineTrackSizes,
+      downloadingOfflineIds,
+      downloadTrackOffline,
+      removeTrackOffline,
+      downloadProjectOffline,
     }),
     [
       currentTrack,
@@ -2021,6 +2187,11 @@ export function AudioPlayerProvider({ children }: { children: React.ReactNode })
       isRemotePlayback,
       transferToThisDevice,
       analyzeTrackAudio,
+      offlineTrackSizes,
+      downloadingOfflineIds,
+      downloadTrackOffline,
+      removeTrackOffline,
+      downloadProjectOffline,
     ]
   );
 
