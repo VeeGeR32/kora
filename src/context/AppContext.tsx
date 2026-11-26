@@ -81,6 +81,7 @@ import {
 
 const STORAGE_KEY = 'kora_app_state_v2';
 const LEGACY_KEY = 'tempo_app_state_v1';
+const OFFLINE_UID_KEY = 'rowav_offline_uid_v1';
 
 export interface ToastMessage {
   id: string;
@@ -97,6 +98,8 @@ interface AppContextValue {
   // Firebase Cloud Sync
   cloudUser: User | null;
   authReady: boolean;
+  isOfflineMode: boolean;
+  offlineSessionReady: boolean;
   authError: string | null;
   clearAuthError: () => void;
   cloudConfigured: boolean;
@@ -433,7 +436,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const [cloudUser, setCloudUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  );
+  const [hasCachedOfflineSession, setHasCachedOfflineSession] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return Boolean(localStorage.getItem(OFFLINE_UID_KEY));
+    } catch {
+      return false;
+    }
+  });
   const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [lastCloudSyncAt, setLastCloudSyncAt] = useState<number | null>(null);
@@ -561,12 +586,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAuthError(formatAuthError(err));
       }
     });
-    return listenAuthState(resolvedFbConfig, (user) => {
+    // Offline safety: if iPhone/PC launches in Airplane Mode with a previously signed-in local cache,
+    // never hang on the boot skeleton waiting for Firebase Auth network round-trip!
+    const offlineTimer =
+      typeof navigator !== 'undefined' && !navigator.onLine && hasCachedOfflineSession
+        ? window.setTimeout(() => setAuthReady(true), 450)
+        : null;
+
+    const unsub = listenAuthState(resolvedFbConfig, (user) => {
+      if (offlineTimer !== null) window.clearTimeout(offlineTimer);
       setCloudUser(user);
-      if (user) setAuthError(null);
+      if (user) {
+        setAuthError(null);
+        setHasCachedOfflineSession(true);
+        try {
+          localStorage.setItem(OFFLINE_UID_KEY, user.uid);
+        } catch {
+          // ignore
+        }
+      }
       setAuthReady(true);
     });
-  }, [cloudConfigured, resolvedFbConfig?.apiKey, resolvedFbConfig?.projectId]);
+    return () => {
+      if (offlineTimer !== null) window.clearTimeout(offlineTimer);
+      unsub();
+    };
+  }, [cloudConfigured, resolvedFbConfig?.apiKey, resolvedFbConfig?.projectId, hasCachedOfflineSession]);
 
   // Hydrate from Firestore FIRST on sign-in, then subscribe to live remote updates
   useEffect(() => {
@@ -970,9 +1015,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(LEGACY_KEY);
+      localStorage.removeItem(OFFLINE_UID_KEY);
     } catch {
       // ignore
     }
+    setHasCachedOfflineSession(false);
     const clean = { ...createEmptyState(), updatedAt: 0 };
     latestStateRef.current = clean;
     setState(clean);
@@ -3820,6 +3867,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         notify,
         cloudUser,
         authReady,
+        isOfflineMode: !isOnline,
+        offlineSessionReady: !isOnline && hasCachedOfflineSession,
         authError,
         clearAuthError,
         cloudConfigured,

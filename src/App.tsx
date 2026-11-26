@@ -13,6 +13,7 @@ function KoraMusicApp() {
     cloudConfigured,
     cloudUser,
     authReady,
+    offlineSessionReady,
     updateLastSession,
   } = useApp();
   const player = useAudioPlayer();
@@ -133,11 +134,11 @@ function KoraMusicApp() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [setActivePage]);
 
-  if (cloudConfigured && !authReady) {
+  if (cloudConfigured && !authReady && !offlineSessionReady) {
     return <AppBootSkeleton />;
   }
 
-  if (cloudConfigured && !cloudUser) {
+  if (cloudConfigured && !cloudUser && !offlineSessionReady) {
     return <AuthGate />;
   }
 
