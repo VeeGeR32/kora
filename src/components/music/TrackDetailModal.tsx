@@ -25,6 +25,7 @@ import {
   Repeat,
   Search,
   Share2,
+  Sparkles,
   Star,
   Tag,
   Trash2,
@@ -62,6 +63,7 @@ import {
 import { AppleConfirmDialog } from '../ui/AppleConfirmDialog';
 import { CheckCircle } from '../ui/CheckCircle';
 import { getGradientClass, PROJECT_GRADIENTS } from './MiniAudioPlayer';
+import { QuickNotesPanel } from './QuickNotesPanel';
 
 interface TrackDetailModalProps {
   group: TrackGroup | null;
@@ -126,6 +128,10 @@ export function TrackDetailModal({
     updateMusicTrackTodo,
     toggleMusicTrackTodo,
     deleteMusicTrackTodo,
+    addMusicTrackNote,
+    updateMusicTrackNote,
+    deleteMusicTrackNote,
+    promoteMusicTrackNoteToTodo,
     addTrackMarker,
     deleteTrackMarker,
     deleteMusicTrack,
@@ -137,6 +143,7 @@ export function TrackDetailModal({
 
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [todoInput, setTodoInput] = useState('');
+  const [todoCardTab, setTodoCardTab] = useState<'todo' | 'notes'>('todo');
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [editingTodoDraft, setEditingTodoDraft] = useState('');
   const [markerLabel, setMarkerLabel] = useState('');
@@ -1801,37 +1808,77 @@ export function TrackDetailModal({
               />
             </section>
 
-            {/* TODO Checklist (just like a Project!) */}
+            {/* TODO & Pense-bête / Inspis Card (Single unified compact card!) */}
             <section className="space-y-3 rounded-2xl border border-slate-200/80 dark:border-zinc-800/80 bg-slate-50/50 dark:bg-zinc-900/35 p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ListChecks size={14} className="text-slate-500 dark:text-zinc-400" />
-                  <h3 className="text-xs font-semibold text-slate-900 dark:text-zinc-100">
-                    TODO du son
-                  </h3>
-                  {todos.length > 0 && (
-                    <span className="font-mono text-[11px] text-slate-400">
-                      {doneTodos}/{todos.length}
-                    </span>
-                  )}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="inline-flex items-center gap-1 rounded-xl bg-slate-200/60 dark:bg-zinc-900 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setTodoCardTab('todo')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
+                      todoCardTab === 'todo'
+                        ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    <ListChecks size={13} />
+                    <span>TODO</span>
+                    {todos.length > 0 && (
+                      <span className="font-mono text-[10px] opacity-65">
+                        {doneTodos}/{todos.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTodoCardTab('notes')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
+                      todoCardTab === 'notes'
+                        ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    <Sparkles size={12} className="text-amber-500" />
+                    <span>Pense-bête</span>
+                    {(track.quickNotes?.length || 0) > 0 && (
+                      <span className="font-mono text-[10px] opacity-65">
+                        {track.quickNotes?.length}
+                      </span>
+                    )}
+                  </button>
                 </div>
-                {todos.length > 0 && (
+
+                {todoCardTab === 'todo' && todos.length > 0 && (
                   <span className="font-mono text-[11px] font-semibold text-slate-700 dark:text-zinc-300">
                     {todoPct}%
                   </span>
                 )}
               </div>
 
-              {todos.length > 0 && (
-                <div className="h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-zinc-800 overflow-hidden">
-                  <div
-                    style={{ width: `${todoPct}%` }}
-                    className="h-full rounded-full bg-[#8C271E] transition-all duration-300"
-                  />
-                </div>
-              )}
+              {todoCardTab === 'notes' ? (
+                <QuickNotesPanel
+                  notes={track.quickNotes || []}
+                  placeholder="+ Noter une inspi, une idée de couplet/mix ou coller un lien…"
+                  onAdd={(txt, refId) => addMusicTrackNote(track.id, txt, refId)}
+                  onUpdate={(nid, txt) => updateMusicTrackNote(track.id, nid, txt)}
+                  onDelete={(nid) => deleteMusicTrackNote(track.id, nid)}
+                  onPromoteToTodo={(nid) => {
+                    promoteMusicTrackNoteToTodo(track.id, nid);
+                    setTodoCardTab('todo');
+                  }}
+                />
+              ) : (
+                <>
+                  {todos.length > 0 && (
+                    <div className="h-1.5 w-full rounded-full bg-slate-200/80 dark:bg-zinc-800 overflow-hidden">
+                      <div
+                        style={{ width: `${todoPct}%` }}
+                        className="h-full rounded-full bg-[#8C271E] transition-all duration-300"
+                      />
+                    </div>
+                  )}
 
-              <div className="space-y-1.5">
+                  <div className="space-y-1.5">
                 {todos.length === 0 ? (
                   <p className="text-[11px] text-slate-400 py-1">
                     Aucune tâche pour ce son — ajoute tes prochaines modifs (ex. « Revoir la 808 », « Enregistrer refrain »).
@@ -1957,6 +2004,8 @@ export function TrackDetailModal({
                   <Plus size={13} /> Ajouter
                 </button>
               </form>
+                </>
+              )}
             </section>
 
             {/* Metadata Grid: BPM, Key, Project */}

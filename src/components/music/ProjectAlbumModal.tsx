@@ -29,6 +29,7 @@ import {
   Search,
   Shuffle,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   Unlock,
   X,
@@ -55,6 +56,7 @@ import { groupMusicTracks, type TrackGroup } from '../../lib/musicVersioning';
 import { TRACK_STATUS_META } from '../../utils/theme';
 import { ProjectCoverArtwork } from './ProjectCoverArtwork';
 import { ProjectSprintView } from './ProjectSprintView';
+import { QuickNotesPanel } from './QuickNotesPanel';
 
 interface ProjectAlbumModalProps {
   projectId: string | null;
@@ -128,6 +130,10 @@ export function ProjectAlbumModal({
     addMusicProjectStep,
     updateMusicProjectStep,
     deleteMusicProjectStep,
+    addMusicProjectNote,
+    updateMusicProjectNote,
+    deleteMusicProjectNote,
+    promoteMusicProjectNoteToStep,
     deleteMusicProject,
     updateMusicTrack,
     updateMusicTrackTodo,
@@ -140,6 +146,7 @@ export function ProjectAlbumModal({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const todoSectionRef = useRef<HTMLDivElement>(null);
   const [todoInput, setTodoInput] = useState('');
+  const [todoCardTab, setTodoCardTab] = useState<'todo' | 'notes'>('todo');
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editingStepDraft, setEditingStepDraft] = useState('');
   const [editingRolledTodoKey, setEditingRolledTodoKey] = useState<string | null>(null);
@@ -1744,23 +1751,72 @@ export function ProjectAlbumModal({
               ref={todoSectionRef}
               className="pt-4 border-t border-slate-100 dark:border-zinc-900 space-y-3"
             >
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <ListChecks size={14} /> TODO du projet
-                </h3>
-                <span className="font-mono text-xs font-semibold text-slate-700 dark:text-zinc-300">
-                  {doneSteps}/{totalSteps} ({todoPct}%)
-                </span>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="inline-flex items-center gap-1 rounded-xl bg-slate-100 dark:bg-zinc-900 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setTodoCardTab('todo')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
+                      todoCardTab === 'todo'
+                        ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    <ListChecks size={13} />
+                    <span>TODO</span>
+                    <span className="font-mono text-[10px] opacity-65">
+                      {doneSteps}/{totalSteps}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTodoCardTab('notes')}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition cursor-pointer ${
+                      todoCardTab === 'notes'
+                        ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs'
+                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    <Sparkles size={12} className="text-amber-500" />
+                    <span>Pense-bête & Inspis</span>
+                    {(project.quickNotes?.length || 0) > 0 && (
+                      <span className="font-mono text-[10px] opacity-65">
+                        {project.quickNotes?.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
+
+                {todoCardTab === 'todo' && (
+                  <span className="font-mono text-xs font-semibold text-slate-700 dark:text-zinc-300">
+                    {todoPct}%
+                  </span>
+                )}
               </div>
 
-              <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 overflow-hidden">
-                <div
-                  className="h-full bg-[#8C271E] rounded-full transition-all duration-300"
-                  style={{ width: `${todoPct}%` }}
+              {todoCardTab === 'notes' ? (
+                <QuickNotesPanel
+                  notes={project.quickNotes || []}
+                  placeholder="+ Noter une inspi pour ce projet, coller un lien ou lier un son ref…"
+                  emptyHint="Ton espace pense-bête / moodboard pour ce projet : note une direction artistique, colle des liens d’inspi ou lie un de tes sons en référence (écoutable en 1 clic)."
+                  onAdd={(txt, refId) => addMusicProjectNote(project.id, txt, refId)}
+                  onUpdate={(nid, txt) => updateMusicProjectNote(project.id, nid, txt)}
+                  onDelete={(nid) => deleteMusicProjectNote(project.id, nid)}
+                  onPromoteToTodo={(nid) => {
+                    promoteMusicProjectNoteToStep(project.id, nid);
+                    setTodoCardTab('todo');
+                  }}
                 />
-              </div>
+              ) : (
+                <>
+                  <div className="h-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 overflow-hidden">
+                    <div
+                      className="h-full bg-[#8C271E] rounded-full transition-all duration-300"
+                      style={{ width: `${todoPct}%` }}
+                    />
+                  </div>
 
-              <div className="space-y-1">
+                  <div className="space-y-1">
                 {project.steps.map((step) => {
                   const isEditing = editingStepId === step.id;
                   return (
@@ -1977,6 +2033,8 @@ export function ProjectAlbumModal({
                   </button>
                 )}
               </form>
+                </>
+              )}
             </section>
               </>
             )}

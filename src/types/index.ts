@@ -271,6 +271,13 @@ export interface MusicTrackTodo {
   done: boolean;
 }
 
+export interface MusicNoteItem {
+  id: string;
+  text: string;
+  linkedTrackId?: string; // Optional reference song from user's library (playable directly)
+  createdAt: string;
+}
+
 export interface MusicTrack {
   id: string;
   title: string;
@@ -308,6 +315,7 @@ export interface MusicTrack {
   ratingPotential?: number; // 1..10 note potentiel du morceau
   description?: string;
   todos?: MusicTrackTodo[];
+  quickNotes?: MusicNoteItem[];
   linkedLyricsId?: string;
   linkedProjectId?: string;
   addedAt: string;
@@ -401,6 +409,7 @@ export interface MusicProject {
   globalMixDoneAt?: string;
   finalSequenceDoneAt?: string;
   harmonizationChecklist?: MusicProjectStep[];
+  quickNotes?: MusicNoteItem[];
   notes?: string;
 }
 

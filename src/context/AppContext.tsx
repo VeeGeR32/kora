@@ -258,6 +258,10 @@ interface AppContextValue {
   updateMusicTrackTodo: (trackId: string, todoId: string, label: string) => void;
   toggleMusicTrackTodo: (trackId: string, todoId: string) => void;
   deleteMusicTrackTodo: (trackId: string, todoId: string) => void;
+  addMusicTrackNote: (trackId: string, text: string, linkedTrackId?: string) => void;
+  updateMusicTrackNote: (trackId: string, noteId: string, text: string) => void;
+  deleteMusicTrackNote: (trackId: string, noteId: string) => void;
+  promoteMusicTrackNoteToTodo: (trackId: string, noteId: string) => void;
   addTrackMarker: (trackId: string, marker: Omit<AudioMarker, 'id'>) => void;
   deleteTrackMarker: (trackId: string, markerId: string) => void;
   deleteMusicTrack: (id: string) => void;
@@ -290,6 +294,10 @@ interface AppContextValue {
   addMusicProjectStep: (projectId: string, label: string, dueDate?: string) => void;
   updateMusicProjectStep: (projectId: string, stepId: string, label: string) => void;
   deleteMusicProjectStep: (projectId: string, stepId: string) => void;
+  addMusicProjectNote: (projectId: string, text: string, linkedTrackId?: string) => void;
+  updateMusicProjectNote: (projectId: string, noteId: string, text: string) => void;
+  deleteMusicProjectNote: (projectId: string, noteId: string) => void;
+  promoteMusicProjectNoteToStep: (projectId: string, noteId: string) => void;
   deleteMusicProject: (id: string) => void;
 
   // Energy & Focus + Persistent Live Sessions
@@ -2617,6 +2625,85 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const addMusicTrackNote = useCallback(
+    (trackId: string, text: string, linkedTrackId?: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+      touch((prev) => ({
+        ...prev,
+        musicTracks: prev.musicTracks.map((t) =>
+          t.id === trackId
+            ? {
+                ...t,
+                quickNotes: [
+                  ...(t.quickNotes || []),
+                  {
+                    id: uid('tnote'),
+                    text: clean,
+                    ...(linkedTrackId ? { linkedTrackId } : {}),
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+              }
+            : t
+        ),
+      }));
+    },
+    []
+  );
+
+  const updateMusicTrackNote = useCallback((trackId: string, noteId: string, text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        t.id === trackId
+          ? {
+              ...t,
+              quickNotes: (t.quickNotes || []).map((n) =>
+                n.id === noteId ? { ...n, text: clean } : n
+              ),
+            }
+          : t
+      ),
+    }));
+  }, []);
+
+  const deleteMusicTrackNote = useCallback((trackId: string, noteId: string) => {
+    touch((prev) => ({
+      ...prev,
+      musicTracks: prev.musicTracks.map((t) =>
+        t.id === trackId
+          ? {
+              ...t,
+              quickNotes: (t.quickNotes || []).filter((n) => n.id !== noteId),
+            }
+          : t
+      ),
+    }));
+  }, []);
+
+  const promoteMusicTrackNoteToTodo = useCallback(
+    (trackId: string, noteId: string) => {
+      touch((prev) => ({
+        ...prev,
+        musicTracks: prev.musicTracks.map((t) => {
+          if (t.id !== trackId) return t;
+          const note = (t.quickNotes || []).find((n) => n.id === noteId);
+          if (!note) return t;
+          return {
+            ...t,
+            quickNotes: (t.quickNotes || []).filter((n) => n.id !== noteId),
+            todos: [...(t.todos || []), { id: uid('ttodo'), label: note.text, done: false }],
+          };
+        }),
+      }));
+      notify('Converti en tâche TODO ✓');
+    },
+    [notify]
+  );
+
   const toggleMusicTrackTodo = useCallback((trackId: string, todoId: string) => {
     touch((prev) => ({
       ...prev,
@@ -3270,6 +3357,85 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const addMusicProjectNote = useCallback(
+    (projectId: string, text: string, linkedTrackId?: string) => {
+      const clean = text.trim();
+      if (!clean) return;
+      touch((prev) => ({
+        ...prev,
+        musicProjects: prev.musicProjects.map((p) =>
+          p.id === projectId
+            ? {
+                ...p,
+                quickNotes: [
+                  ...(p.quickNotes || []),
+                  {
+                    id: uid('pnote'),
+                    text: clean,
+                    ...(linkedTrackId ? { linkedTrackId } : {}),
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+              }
+            : p
+        ),
+      }));
+    },
+    []
+  );
+
+  const updateMusicProjectNote = useCallback((projectId: string, noteId: string, text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    touch((prev) => ({
+      ...prev,
+      musicProjects: prev.musicProjects.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              quickNotes: (p.quickNotes || []).map((n) =>
+                n.id === noteId ? { ...n, text: clean } : n
+              ),
+            }
+          : p
+      ),
+    }));
+  }, []);
+
+  const deleteMusicProjectNote = useCallback((projectId: string, noteId: string) => {
+    touch((prev) => ({
+      ...prev,
+      musicProjects: prev.musicProjects.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              quickNotes: (p.quickNotes || []).filter((n) => n.id !== noteId),
+            }
+          : p
+      ),
+    }));
+  }, []);
+
+  const promoteMusicProjectNoteToStep = useCallback(
+    (projectId: string, noteId: string) => {
+      touch((prev) => ({
+        ...prev,
+        musicProjects: prev.musicProjects.map((p) => {
+          if (p.id !== projectId) return p;
+          const note = (p.quickNotes || []).find((n) => n.id === noteId);
+          if (!note) return p;
+          return {
+            ...p,
+            quickNotes: (p.quickNotes || []).filter((n) => n.id !== noteId),
+            steps: [...p.steps, { id: uid('ps'), label: note.text, done: false }],
+          };
+        }),
+      }));
+      notify('Converti en tâche TODO du projet ✓');
+    },
+    [notify]
+  );
+
   const toggleMusicProjectStep = useCallback((projectId: string, stepId: string) => {
     touch((prev) => ({
       ...prev,
@@ -3750,6 +3916,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         updateMusicTrackTodo,
         toggleMusicTrackTodo,
         deleteMusicTrackTodo,
+        addMusicTrackNote,
+        updateMusicTrackNote,
+        deleteMusicTrackNote,
+        promoteMusicTrackNoteToTodo,
         addTrackMarker,
         deleteTrackMarker,
         deleteMusicTrack,
@@ -3771,6 +3941,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addMusicProjectStep,
         updateMusicProjectStep,
         deleteMusicProjectStep,
+        addMusicProjectNote,
+        updateMusicProjectNote,
+        deleteMusicProjectNote,
+        promoteMusicProjectNoteToStep,
         deleteMusicProject,
         setEnergyCheckin,
         addFocusSession,
