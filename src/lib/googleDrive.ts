@@ -9,6 +9,8 @@ export interface DriveAudioFile {
   modifiedTime: string;
   parents?: string[];
   yearFolder?: string; // e.g. "2024/2025" from Drive folder "24/25"
+  parentFolderId?: string;
+  parentFolderName?: string; // Direct parent folder name when it is a song-specific folder
   driveSourceId?: string;
 }
 
@@ -319,9 +321,37 @@ export function parseDriveYearFolderName(folderName: string): string | null {
   return null;
 }
 
+const GENERIC_CONTAINER_FOLDER_RE =
+  /^(?:sons?|musiques?|music|audio|mp3|wav|exports?|bounces?|renders?|mix(?:es)?|masters?|maquettes?|d[eé]mos?|projets?|projects?|rowav|_rowav_data|kora|google\s*drive|mon\s*drive|my\s*drive|studio|tracks?|morceaux?|nouveau\s*dossier|untitled\s*folder|archives?|corbeille|trash|backups?|recs?|enregistrements?|voix|vocals?|stems?|en\s*vrac|vrac|divers|autres?|other|misc|inbox|to\s*sort|[aà]\s*trier)$/i;
+
+const GENERIC_PROJECT_FILENAME_RE =
+  /^(?:(?:nouveau[\s_-]+|new[\s_-]+)?(?:proj(?:et|ect)?|prj)(?:[\s_-]*\d+(?:$|[\s._-].*)|$)|(?:sans[\s_-]*titre|untitled|audio|track|song|session|export|bounce|render|rec(?:ording)?|flp|ableton)(?:[\s_-]*\d+(?:$|[\s._-].*)|$)|\d{1,4}(?:$|[\s._-].*))$/i;
+
+/**
+ * Returns true if an audio filename is a generic DAW/project name (e.g. "projet 12.mp3",
+ * "Project_306_v2.mp3", "projet42_prod.mp3", "Sans titre 3.mp3") rather than a real song title.
+ */
+export function isGenericProjectFilename(filename: string): boolean {
+  let clean = (filename || '')
+    .replace(/\.(mp3|wav|m4a|flac|aac|ogg)$/i, '')
+    .trim();
+  clean = clean.replace(/^(?:copie\s+de\s+|copy\s+of\s+)/i, '').trim();
+  if (!clean) return true;
+  return GENERIC_PROJECT_FILENAME_RE.test(clean);
+}
+
+export function isGenericContainerFolderName(folderName: string): boolean {
+  const clean = (folderName || '').trim();
+  if (!clean || clean.length < 2) return true;
+  if (parseDriveYearFolderName(clean)) return true;
+  if (EXCLUDED_FOLDER_REGEX.test(clean)) return true;
+  return GENERIC_CONTAINER_FOLDER_RE.test(clean);
+}
+
 interface DriveFolderIndex {
   excludedFolders: Set<string>;
   yearByFolderId: Map<string, string>;
+  folderNameById: Map<string, string>;
   childrenByParent: Map<string, string[]>;
 }
 
@@ -329,6 +359,7 @@ interface DriveFolderIndex {
  * Indexes all Google Drive folders to:
  * 1) Exclude drumkit / prods / beats / instrus folders + all their subfolders.
  * 2) Map every folder (and its nested subfolders) to its ancestor year/season folder (e.g. "24/25" -> "2024/2025").
+ * 3) Keep each folder's own name so generic "projetXX.mp3" files inside a song-named folder inherit the song title.
  */
 async function buildDriveFolderIndex(token: string): Promise<DriveFolderIndex> {
   const allFolders: { id: string; name: string; parents?: string[] }[] = [];
@@ -357,9 +388,13 @@ async function buildDriveFolderIndex(token: string): Promise<DriveFolderIndex> {
 
   const excludedFolders = new Set<string>();
   const yearByFolderId = new Map<string, string>();
+  const folderNameById = new Map<string, string>();
   const childrenByParent = new Map<string, string[]>();
 
   for (const folder of allFolders) {
+    if (folder.name) {
+      folderNameById.set(folder.id, folder.name.trim());
+    }
     if (EXCLUDED_FOLDER_REGEX.test(folder.name || '')) {
       excludedFolders.add(folder.id);
     }
@@ -404,7 +439,7 @@ async function buildDriveFolderIndex(token: string): Promise<DriveFolderIndex> {
     }
   }
 
-  return { excludedFolders, yearByFolderId, childrenByParent };
+  return { excludedFolders, yearByFolderId, folderNameById, childrenByParent };
 }
 
 function resolveFileYearFolder(
@@ -536,12 +571,14 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
   maxPages = 10,
   driveSources?: DriveSource[]
 ): Promise<{ files: DriveAudioFile[]; excludedFileIds: string[] }> {
-  const { excludedFolders, yearByFolderId, childrenByParent } = await buildDriveFolderIndex(token);
+  const { excludedFolders, yearByFolderId, folderNameById, childrenByParent } =
+    await buildDriveFolderIndex(token);
 
   // Build folderId -> driveSourceId map when explicit folder sources are configured
   const explicitSources = (driveSources || []).filter(
     (s) => s.folderId && s.folderId !== 'root'
   );
+  const explicitSourceRootIds = new Set(explicitSources.map((s) => s.folderId));
   const hasRootSource = (driveSources || []).some((s) => s.folderId === 'root');
   const rootSourceId = (driveSources || []).find((s) => s.folderId === 'root')?.id;
 
@@ -600,9 +637,21 @@ export async function listAllGoogleDriveAudioFilesWithExclusions(
         matchedSourceId = rootSourceId;
       }
 
+      const directParentId = f.parents?.[0];
+      const rawParentName = directParentId ? folderNameById.get(directParentId) : undefined;
+      const validSongFolderName =
+        directParentId &&
+        rawParentName &&
+        !explicitSourceRootIds.has(directParentId) &&
+        !isGenericContainerFolderName(rawParentName)
+          ? rawParentName
+          : undefined;
+
       all.push({
         ...f,
         yearFolder: resolveFileYearFolder(f.parents, yearByFolderId),
+        parentFolderId: directParentId,
+        parentFolderName: validSongFolderName,
         driveSourceId: matchedSourceId,
       });
     }

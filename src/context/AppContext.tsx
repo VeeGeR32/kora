@@ -38,12 +38,14 @@ import {
   extractDriveFolderId,
   fetchPermanentDriveSession,
   isExcludedProdName,
+  isGenericProjectFilename,
   listAllGoogleDriveAudioFilesWithExclusions,
   verifyDriveFolderAccess,
 } from '../lib/googleDrive';
 import {
   getDeterministicGradientId,
   groupMusicTracks,
+  normalizeGroupKey,
   parseTrackVersion,
   reconcileProjectTrackVersions,
 } from '../lib/musicVersioning';
@@ -1578,11 +1580,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const idx = byDriveId.get(driveId)!;
           if (idx >= 0) {
             const existing = nextTracks[idx];
+            const shouldApplyFolderTitle = Boolean(
+              item.manualGroupTitle && !existing.manualGroupTitle
+            );
             const needsMetaUpdate =
               (item.sourceFilename && existing.sourceFilename !== item.sourceFilename) ||
               (item.modifiedAt && existing.modifiedAt !== item.modifiedAt) ||
               (item.driveYearFolder && existing.driveYearFolder !== item.driveYearFolder) ||
-              (item.driveSourceId && existing.driveSourceId !== item.driveSourceId);
+              (item.driveSourceId && existing.driveSourceId !== item.driveSourceId) ||
+              shouldApplyFolderTitle;
             if (needsMetaUpdate) {
               const oldAutoTitle = (existing.sourceFilename || '')
                 .replace(/\.[^/.]+$/, '')
@@ -1594,6 +1600,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               nextTracks[idx] = {
                 ...existing,
                 ...(shouldUpdateTitle ? { title: item.title } : {}),
+                ...(shouldApplyFolderTitle
+                  ? {
+                      manualGroupTitle: item.manualGroupTitle,
+                      manualGroupKey: existing.manualGroupKey || item.manualGroupKey,
+                    }
+                  : {}),
                 sourceFilename: item.sourceFilename || existing.sourceFilename,
                 driveYearFolder: item.driveYearFolder || existing.driveYearFolder,
                 driveSourceId: item.driveSourceId || existing.driveSourceId,
@@ -1623,6 +1635,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const i = prevMap.get(driveId)!;
               if (i >= 0) {
                 const ex = merged[i];
+                const shouldApplyFolderTitle = Boolean(
+                  item.manualGroupTitle && !ex.manualGroupTitle
+                );
                 const oldAutoTitle = (ex.sourceFilename || '')
                   .replace(/\.[^/.]+$/, '')
                   .replace(/[_-]+/g, ' ')
@@ -1633,6 +1648,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 merged[i] = {
                   ...ex,
                   ...(shouldUpdateTitle ? { title: item.title } : {}),
+                  ...(shouldApplyFolderTitle
+                    ? {
+                        manualGroupTitle: item.manualGroupTitle,
+                        manualGroupKey: ex.manualGroupKey || item.manualGroupKey,
+                      }
+                    : {}),
                   sourceFilename: item.sourceFilename || ex.sourceFilename,
                   driveYearFolder: item.driveYearFolder || ex.driveYearFolder,
                   driveSourceId: item.driveSourceId || ex.driveSourceId,
@@ -1768,14 +1789,66 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const nowIso = new Date().toISOString();
         const countBySource = new Map<string, number>();
 
+        // Detect dedicated single-song Drive folders (e.g. folder "Minuit/" containing "projet 12.mp3", "projet 12 v2.mp3")
+        // so generic "projetXX.mp3" files automatically inherit the folder's song title while keeping sourceFilename intact!
+        const folderStats = new Map<
+          string,
+          { folderName: string; genericKeys: Set<string>; unrelatedNamedKeys: Set<string> }
+        >();
+        for (const f of files) {
+          if (!f.parentFolderId || !f.parentFolderName) continue;
+          let st = folderStats.get(f.parentFolderId);
+          if (!st) {
+            st = {
+              folderName: f.parentFolderName,
+              genericKeys: new Set<string>(),
+              unrelatedNamedKeys: new Set<string>(),
+            };
+            folderStats.set(f.parentFolderId, st);
+          }
+          const cleanTitle = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+          const p = parseTrackVersion({ title: cleanTitle, sourceFilename: f.name });
+          if (isGenericProjectFilename(f.name)) {
+            st.genericKeys.add(p.groupKey);
+          } else {
+            const folderKey = normalizeGroupKey(f.parentFolderName);
+            if (p.groupKey !== folderKey) {
+              st.unrelatedNamedKeys.add(p.groupKey);
+            }
+          }
+        }
+        const songFolderNameById = new Map<string, string>();
+        for (const [fid, st] of folderStats.entries()) {
+          // A folder is treated as a dedicated song folder when it has NO unrelated named tracks
+          // and at most 2 distinct generic project IDs (e.g. projet12 + projet13 exports of the same song).
+          if (st.unrelatedNamedKeys.size === 0 && st.genericKeys.size > 0 && st.genericKeys.size <= 2) {
+            const cleanFolderTitle = st.folderName.replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim();
+            if (cleanFolderTitle) {
+              songFolderNameById.set(fid, cleanFolderTitle);
+            }
+          }
+        }
+
         const payload = files.map((f) => {
           const cleanTitle = f.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
-          const parsed = parseTrackVersion({ title: cleanTitle, sourceFilename: f.name });
+          const folderSongTitle =
+            f.parentFolderId && isGenericProjectFilename(f.name)
+              ? songFolderNameById.get(f.parentFolderId)
+              : undefined;
+          const folderSongKey = folderSongTitle ? normalizeGroupKey(folderSongTitle) : undefined;
+          const parsed = parseTrackVersion({
+            title: cleanTitle,
+            sourceFilename: f.name,
+            ...(folderSongTitle ? { manualGroupTitle: folderSongTitle, manualGroupKey: folderSongKey } : {}),
+          });
           if (f.driveSourceId) {
             countBySource.set(f.driveSourceId, (countBySource.get(f.driveSourceId) || 0) + 1);
           }
           return {
             title: cleanTitle || f.name,
+            ...(folderSongTitle
+              ? { manualGroupTitle: folderSongTitle, manualGroupKey: folderSongKey }
+              : {}),
             artist,
             googleDriveFileId: f.id,
             driveSourceId: f.driveSourceId,
