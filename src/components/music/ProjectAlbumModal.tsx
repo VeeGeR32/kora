@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Copy,
   Disc3,
   Download,
   FolderOpen,
@@ -61,6 +62,7 @@ import { QuickNotesPanel } from './QuickNotesPanel';
 interface ProjectAlbumModalProps {
   projectId: string | null;
   onClose: () => void;
+  onOpenProject?: (projectId: string) => void;
   onOpenProfile?: () => void;
   onOpenTrackDetails?: (trackId: string) => void;
   onOpenContextMenu?: (
@@ -117,6 +119,7 @@ function fmtReleaseShort(iso?: string): string {
 export function ProjectAlbumModal({
   projectId,
   onClose,
+  onOpenProject,
   onOpenProfile,
   onOpenTrackDetails,
   onOpenContextMenu,
@@ -126,6 +129,7 @@ export function ProjectAlbumModal({
     state,
     cloudUser,
     updateMusicProject,
+    duplicateMusicProject,
     toggleMusicProjectStep,
     addMusicProjectStep,
     updateMusicProjectStep,
@@ -993,6 +997,19 @@ export function ProjectAlbumModal({
                   >
                     <Link2 size={13} />
                     <span>Lien public</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newId = duplicateMusicProject(project.id);
+                      if (newId) onOpenProject?.(newId);
+                    }}
+                    title="Dupliquer ce projet (tracklist, packs, TODO & pense-bête)"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 dark:bg-zinc-900 hover:bg-slate-200/80 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-100 px-3.5 py-2 text-xs font-semibold transition cursor-pointer"
+                  >
+                    <Copy size={13} />
+                    <span>Dupliquer</span>
                   </button>
 
                   <button

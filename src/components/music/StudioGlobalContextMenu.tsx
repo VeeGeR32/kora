@@ -64,6 +64,7 @@ export function StudioGlobalContextMenu({
     updateLyricsDoc,
     addLyricsDoc,
     softDeleteLyricsDoc,
+    duplicateMusicProject,
     deleteMusicProject,
     notify,
   } = useApp();
@@ -207,6 +208,19 @@ export function StudioGlobalContextMenu({
                 >
                   <Share2 size={14} className="text-emerald-500 shrink-0" />
                   <span>Partager le lien public</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newId = duplicateMusicProject(proj.id);
+                    onClose();
+                    if (newId) onOpenProject(newId);
+                  }}
+                  className={itemCls}
+                >
+                  <Copy size={14} className="text-slate-500 dark:text-zinc-400 shrink-0" />
+                  <span>Dupliquer le projet</span>
                 </button>
 
                 <button

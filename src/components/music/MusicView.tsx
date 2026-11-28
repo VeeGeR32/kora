@@ -1023,6 +1023,7 @@ export function MusicView({
         <ProjectAlbumModal
           projectId={openProjectId}
           onClose={() => setOpenProjectId(null)}
+          onOpenProject={(nextProjId) => setOpenProjectId(nextProjId)}
           onOpenProfile={() => {
             setOpenProjectId(null);
             setDetailTarget(null);

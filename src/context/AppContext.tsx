@@ -286,6 +286,7 @@ interface AppContextValue {
   ) => { foldersAdded: number; docsAdded: number; skipped: number };
 
   addMusicProject: (project: Omit<MusicProject, 'id'>) => string;
+  duplicateMusicProject: (projectId: string) => string | null;
   updateMusicProject: (id: string, patch: Partial<MusicProject>) => void;
   setProjectTrackVersion: (
     projectId: string,
@@ -3391,6 +3392,77 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [state.musicTracks, state.musicProjects, lastCloudSyncAt, cloudConfigured, cloudUser?.uid]);
 
+  const duplicateMusicProject = useCallback(
+    (projectId: string): string | null => {
+      const src = latestStateRef.current.musicProjects.find((p) => p.id === projectId);
+      if (!src) return null;
+
+      const baseName = src.title.replace(/\s*\(copie(?:\s+\d+)?\)$/i, '').trim() || src.title;
+      const existingTitles = new Set(
+        latestStateRef.current.musicProjects.map((p) => p.title.trim().toLowerCase())
+      );
+      let nextTitle = `${baseName} (copie)`;
+      let n = 2;
+      while (existingTitles.has(nextTitle.toLowerCase())) {
+        nextTitle = `${baseName} (copie ${n})`;
+        n++;
+      }
+
+      const newId = uid('proj');
+      const nowIso = new Date().toISOString();
+      const copy: MusicProject = {
+        ...src,
+        id: newId,
+        title: nextTitle,
+        isTracklistLocked: false,
+        trackIds: [...src.trackIds],
+        ...(src.benchTrackIds ? { benchTrackIds: [...src.benchTrackIds] } : {}),
+        ...(src.pinnedVersionByGroup
+          ? { pinnedVersionByGroup: { ...src.pinnedVersionByGroup } }
+          : {}),
+        steps: (src.steps || []).map((s) => ({ ...s, id: uid('ps') })),
+        ...(src.packs
+          ? {
+              packs: src.packs.map((pk) => ({
+                ...pk,
+                id: uid('pack'),
+                trackIds: [...pk.trackIds],
+                ...(pk.doneTrackIds ? { doneTrackIds: [...pk.doneTrackIds] } : {}),
+                createdAt: nowIso,
+              })),
+            }
+          : {}),
+        ...(src.sprints
+          ? {
+              sprints: src.sprints.map((sp) => ({
+                ...sp,
+                id: uid('spr'),
+                trackIds: [...sp.trackIds],
+                createdAt: nowIso,
+              })),
+            }
+          : {}),
+        ...(src.quickNotes
+          ? {
+              quickNotes: src.quickNotes.map((qn) => ({
+                ...qn,
+                id: uid('pnote'),
+                createdAt: nowIso,
+              })),
+            }
+          : {}),
+      };
+
+      touch((prev) => ({
+        ...prev,
+        musicProjects: [copy, ...prev.musicProjects],
+      }));
+      notify(`Projet dupliqué : « ${nextTitle} » ✓`);
+      return newId;
+    },
+    [notify]
+  );
+
   const updateMusicProjectStep = useCallback((projectId: string, stepId: string, label: string) => {
     const clean = label.trim();
     if (!clean) return;
@@ -3984,6 +4056,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         emptyLyricsTrash,
         importLexCoreBackup,
         addMusicProject,
+        duplicateMusicProject,
         updateMusicProject,
         setProjectTrackVersion,
         toggleMusicProjectStep,
